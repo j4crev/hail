@@ -1,0 +1,56 @@
+{
+  "description": "Reference-provider unseen-connection acknowledgment bodies; authenticated POST /api/v1/account/connections/seen. Unknown identities are successful no-ops.",
+  "valid": [
+    {
+      "connections": [
+        {
+          "id": "01900000-0000-7000-8000-000000000001",
+          "epoch": 1
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {},
+    {
+      "connections": []
+    },
+    {
+      "connections": [
+        {
+          "id": "bad",
+          "epoch": 1
+        }
+      ]
+    },
+    {
+      "connections": [
+        {
+          "id": "01900000-0000-7000-8000-000000000001",
+          "epoch": 0
+        }
+      ]
+    },
+    {
+      "connections": [
+        {
+          "id": "01900000-0000-7000-8000-000000000001",
+          "epoch": 1,
+          "extra": true
+        }
+      ]
+    },
+    {
+      "connections": [
+        {
+          "id": "01900000-0000-7000-8000-000000000001",
+          "epoch": 1
+        },
+        {
+          "id": "01900000-0000-7000-8000-000000000001",
+          "epoch": 1
+        }
+      ]
+    }
+  ]
+}

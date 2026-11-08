@@ -9,8 +9,8 @@ changes signed protocol evidence.
 
 `GET /api/v1/account/unread-counts` requires the authenticated account's
 `messages:read` scope and accepts no query parameters. It returns JSON
-`{ "subscriptions": 0, "connections": 0 }`, with nonnegative integer counts
-across the entire mailbox, independent of pagination. Count only received,
+`{ "subscriptions": 0, "connections": 0, "unseenConnections": 0 }`, with nonnegative integer counts
+independent of pagination. For `subscriptions` and `connections`, count only received,
 unread, non-trashed delivered messages belonging to that account. Connection-
 and shared-conversation-authorized messages contribute to `connections`; other
 authorization types contribute to `subscriptions`. Count messages, not threads;
@@ -21,6 +21,60 @@ methods `405`, and missing scope `403`, using normal account authentication rule
 The client displays positive totals beside Feed (`subscriptions`) and Inbox
 (`connections`), right-aligned, and hides zero or unavailable totals. This display
 is client behavior, not a federation requirement.
+
+## Unseen connections (reference-provider account API)
+
+`unseenConnections` counts active, non-tombstoned incoming connections with an
+unacknowledged marker in the account's current serving generation. It is separate
+from unread messages. The same authenticated `unread-counts` response carries it;
+no separate count endpoint is required. Existing `messages:read` authorization
+applies to this navigation summary.
+
+The provider creates a marker atomically when a live admitted connection becomes
+active, keyed by account, connection ID and epoch. Outbound attempts and crossed
+consent with an outstanding outbound attempt do not create a marker. Pending,
+failed and expired attempts do not count. Replaying or reconciling an already
+applied activation cannot recreate a marker. Disconnecting hides its marker from
+totals immediately; reconnecting through a fresh admission can create a new one.
+
+`GET /api/v1/account/connections` includes boolean `isNew` and positive integer
+`epoch` on each connection. The bounded list (at most 100) puts unseen connections
+first, then orders each group by latest connection state update descending, with
+pair ID as a stable tie-breaker. Reading the list does not acknowledge anything.
+Counts cover all active unseen connections, including entries outside that list.
+
+`POST /api/v1/account/connections/seen` takes exactly:
+
+```json
+{"connections":[{"id":"01900000-0000-7000-8000-000000000001","epoch":1}]}
+```
+
+Require a current passkey session, matching Origin, JSON content type, no query
+parameters, an active unfenced account, and 1–100 distinct IDs. Each item has
+exactly `id` (UUID) and `epoch` (positive safe integer). Return `{"ok":true}`.
+Acknowledge only matching account, current generation, ID and epoch markers.
+Repeated, unknown and obsolete references are harmless no-ops; they never affect
+another account, a newer epoch, or connections omitted from the request. Invalid
+input returns `400`, unsupported methods `405`; ordinary connection API
+session/origin, fencing, content-type and rate-limit errors apply. This cosmetic
+write requires no new passkey assertion or signed connection consent.
+
+`connection_unseen` is provider-local presentation state, not authorization or
+federated history. It is deliberately excluded from both account transfer
+formats. Existing connections at rollout, and reconstructed connections after an
+account move, start acknowledged. Changing a peer's provider or address does not
+create a marker. Generation binding prevents stale markers reviving if an account
+returns. Losing this presentation state cannot change connection permissions.
+
+Client behavior: show a naked positive number beside Connections and a dot on the
+mobile navigation button; hide zero/unavailable counts. Group unseen entries above
+older entries with a teal divider, distinct from selected-row styling. After a
+successful render in the visible page (outside an open connection dialog),
+acknowledge the displayed IDs/epochs and refresh the count. Retain that visit's
+new grouping until navigation away. Failed acknowledgment remains retryable;
+background tabs and failed list loads do not clear it. Refresh while visible
+approximately every 30 seconds and on focus. No system notifications or subscriber
+activity are introduced.
 
 ## Folder actions
 

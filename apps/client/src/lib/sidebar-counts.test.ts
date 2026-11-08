@@ -25,3 +25,14 @@ it('does not fetch totals without a session',async()=>{
   expect((await load(event() as never)).unreadCounts).toBeNull();
   expect(fixture.request).not.toHaveBeenCalled();
 });
+
+it('loads an independent unseen-connection count and rejects malformed values',async()=>{
+  for(const value of [0,2,101]){
+    fixture.request.mockResolvedValue({subscriptions:7,connections:3,unseenConnections:value});
+    expect(await load(event() as never)).toMatchObject({unreadCounts:{subscriptions:7,connections:3},unseenConnections:value});
+  }
+  for(const value of [undefined,-1,0.5,'2',null]){
+    fixture.request.mockResolvedValue({subscriptions:7,connections:3,unseenConnections:value});
+    expect((await load(event() as never)).unseenConnections).toBeNull();
+  }
+});

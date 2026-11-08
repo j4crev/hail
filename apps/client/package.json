@@ -12,6 +12,7 @@
     "test:browser": "bun scripts/check-browser-signup.ts",
     "test:wizard": "bun run build && bun scripts/check-browser-wizard.ts",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test:unseen-connections": "bun run build && bun scripts/check-browser-unseen-connections.ts",
     "test:relationships": "bun run build && bun scripts/check-browser-relationship-removal.ts",
     "test:polish": "bun run build && bun scripts/check-browser-client-polish.ts && bun scripts/check-browser-client-polish.ts --shared",
     "test:mailbox": "bun run build && bun scripts/check-browser-mailbox-cache.ts && bun scripts/check-browser-mailbox-refresh.ts",

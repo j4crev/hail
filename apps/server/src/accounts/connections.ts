@@ -306,6 +306,20 @@ export class AccountConnections {
       });
     }finally{try{if(locked)await connection`SELECT pg_advisory_unlock(684245164)`;}finally{connection.release();}}
   }
+  async seen(session:AccountApiSession,input:Record<string,unknown>){
+    this.keys(input,['connections']);
+    const items=input.connections;
+    if(!Array.isArray(items)||items.length<1||items.length>100||items.some(item=>
+      !item||typeof item!=='object'||Object.keys(item).sort().join(',')!=='epoch,id'||
+      typeof item.id!=='string'||!UUID.test(item.id)||!Number.isSafeInteger(item.epoch)||item.epoch<1)||
+      new Set(items.map(item=>item.id)).size!==items.length)throw new ConnectionError(400);
+    return this.pairTransaction(session,undefined,async tx=>{
+      for(const item of items)await tx`UPDATE connection_unseen SET seen_at=clock_timestamp()
+        WHERE account_id=${session.account_id} AND serving_generation=${session.serving_generation??1}
+          AND connection_id=${item.id} AND epoch=${item.epoch} AND seen_at IS NULL`;
+      return {ok:true};
+    });
+  }
   async list(session:AccountApiSession){
     return this.pairTransaction(session,undefined,async tx=>{
       const codes=await tx<Invitation[]>`SELECT * FROM connection_invitations WHERE account_id=${session.account_id} AND revoked_at IS NULL

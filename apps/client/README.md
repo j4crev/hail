@@ -337,6 +337,8 @@ Run `bun run --cwd apps/client preview:design` from the repository root, then op
 fixture provider with subscription artwork, connection messages, a sent message,
 subscriptions and a sender profile. It needs no passkey or production credentials.
 Use `HAIL_DESIGN_PORT` to choose another port. Stop with Ctrl+C.
+Set `HAIL_DESIGN_UNSEEN_CONNECTIONS=1` to include two unseen connections and an older connection; opening Connections acknowledges the new entries in memory.
+Run `bun run --cwd apps/client test:unseen-connections` for the automated badge, mobile dot, grouping and acknowledgment check.
 
 Reading, read/unread selection, Trash/restore and appearance preferences work in
 memory and reset on restart. Sending, profile changes, account deletion and

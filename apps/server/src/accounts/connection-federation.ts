@@ -207,6 +207,15 @@ export class ConnectionFederation {
     if(snapshot.epoch===Number(pair.epoch)&&pair.connection_id!==null&&pair.connection_id!==snapshot.connection_id)throw new ConnectionError(409,"Conflicting coordinator epoch.");
     if(snapshot.epoch===Number(pair.epoch)&&pair.state===snapshot.state&&pair.connection_id===snapshot.connection_id)return;
     await tx`UPDATE federated_connection_pairs SET epoch=${snapshot.epoch},state=${snapshot.state},connection_id=${snapshot.connection_id},updated_at=clock_timestamp() WHERE id=${pair.id}`;
+    // Only live admission creates presentation state. Replay returns above; transfer
+    // reconstruction never calls this path. Crossed outbound consent needs no badge.
+    if(snapshot.state==='active')await tx`INSERT INTO connection_unseen(account_id,pair_id,serving_generation,connection_id,epoch)
+      SELECT ${pair.account_id},${pair.id},${pair.serving_generation},${snapshot.connection_id},${snapshot.epoch}
+      WHERE EXISTS(SELECT 1 FROM federated_connection_attempts WHERE account_id=${pair.account_id}
+        AND pair_id=${pair.id} AND id=${snapshot.request_id} AND direction='admitted')
+      AND NOT EXISTS(SELECT 1 FROM federated_connection_attempts WHERE account_id=${pair.account_id}
+        AND pair_id=${pair.id} AND direction='outbound' AND state='pending')
+      ON CONFLICT DO NOTHING`;
   }
 
   async prepare(session:AccountApiSession,input:{id:string;did:string;token:string}){
@@ -280,8 +289,13 @@ export class ConnectionFederation {
     return {attemptId:id,connectionId:null,state:row.state==="pending"?"connecting":row.state};
   }
   async list(accountId:string){
-    const active=await this.sql<Pair[]>`SELECT p.* FROM federated_connection_pairs p WHERE account_id=${accountId} AND state='active'
-      AND NOT EXISTS(SELECT 1 FROM federated_connection_tombstones t WHERE t.pair_id=p.id AND t.connection_id=p.connection_id) ORDER BY id LIMIT 100`;
+    const active=await this.sql<(Pair&{is_new:boolean})[]>`SELECT p.*,u.connection_id IS NOT NULL AS is_new
+      FROM federated_connection_pairs p JOIN account_serving_generations g ON g.account_id=p.account_id AND g.generation=p.serving_generation
+      LEFT JOIN connection_unseen u ON u.account_id=p.account_id AND u.connection_id=p.connection_id AND u.epoch=p.epoch
+        AND u.serving_generation=p.serving_generation AND u.seen_at IS NULL
+      WHERE p.account_id=${accountId} AND p.state='active'
+      AND NOT EXISTS(SELECT 1 FROM federated_connection_tombstones t WHERE t.pair_id=p.id AND t.connection_id=p.connection_id)
+      ORDER BY is_new DESC,p.updated_at DESC,p.id LIMIT 100`;
     const pending=await this.sql<{id:string;peer_did:string;peer_address:string;kind:string;state:string}[]>`
       SELECT latest.id,latest.peer_did,latest.peer_address,'connect' AS kind,latest.state FROM (
         SELECT DISTINCT ON (a.pair_id) a.id,p.peer_did,p.peer_address,a.state,p.state AS pair_state FROM federated_connection_attempts a
@@ -293,7 +307,7 @@ export class ConnectionFederation {
       UNION ALL SELECT o.id,p.peer_did,p.peer_address,CASE WHEN e.state='active' THEN 'connect' ELSE 'disconnect' END AS kind,e.state
         FROM federated_connection_outbox o JOIN federated_connection_events e ON e.id=o.event_id JOIN federated_connection_pairs p ON p.id=e.pair_id
         WHERE o.account_id=${accountId} AND o.ack_cose IS NULL LIMIT 300`;
-    return {connections:active.map(p=>({id:p.connection_id!,did:p.peer_did,address:p.peer_address,epoch:Number(p.epoch),connectedAt:p.updated_at.toISOString(),remote:p.peer_service_base!==this.base})),
+    return {connections:active.map(p=>({id:p.connection_id!,did:p.peer_did,address:p.peer_address,epoch:Number(p.epoch),isNew:p.is_new,connectedAt:p.updated_at.toISOString(),remote:p.peer_service_base!==this.base})),
       pendingConnections:[...new Map(pending.map(p=>[p.kind+":"+p.peer_did,{id:p.id,did:p.peer_did,address:p.peer_address,kind:p.kind,state:p.state}])).values()]};
   }
 

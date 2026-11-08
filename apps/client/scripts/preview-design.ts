@@ -6,6 +6,8 @@ import {threadBodyPreview} from '../../server/src/accounts/message-threads.js';
 import {createWebCryptoSigner, signPayload, encodeBase64Url, type HailGrant, type HailSenderProfile} from '@racrproto/codec';
 import {uuidV7} from '../../server/src/identity/uuid-v7.js';
 
+const unseenFixture=process.env.HAIL_DESIGN_UNSEEN_CONNECTIONS==='1';
+const seenConnections=new Set<string>();
 const emptyRelationships=process.env.HAIL_DESIGN_EMPTY_RELATIONSHIPS==='1';
 const sharedMode=process.env.HAIL_DESIGN_SHARED_CONVERSATIONS==='1';
 const port = Number(process.env.HAIL_DESIGN_PORT || 4173);
@@ -150,12 +152,16 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
   if(path==='/api/v1/account/sent/restore'&&request.method==='POST')return json({restored:sent.some(m=>m.kind===input.kind&&m.messageId===input.messageId)&&trash.delete(input.messageId)?1:0});
   if(path==='/api/v1/account/trash/restore'&&request.method==='POST')return json({restored:(input.messages??[]).filter((m:{messageId:string})=>trash.delete(m.messageId)).length});
   // Sending, passkey ceremonies, profile edits and destructive account actions are not simulated.
+  if(path==='/api/v1/account/connections/seen'&&request.method==='POST'){
+    for(const item of input.connections??[])if(item.epoch===1)seenConnections.add(item.id);
+    return json({ok:true});
+  }
   if(request.method!=='GET')return json({error:'This local design preview supports reading, appearance preferences, and message selection/deletion/restoration only.'},501);
   if(path==='/api/v1/account')return json({type:'racr.account',version:1,provider:origin,accountId:'019a15fd-2bd0-7433-8afa-bd0355e0608d',address,did,migrationState:null,custodyProfile:'managed',
     monitorVerificationMode:'reduced-assurance-alpha-v1',managedProfileVersion:'hail-managed-custody-v1',identityPublicKey:null,ownerRecoveryPublicKey:null,scopes:['account:read','grants:read','messages:read','messages:write']});
   if(path==='/api/v1/account/unread-counts'){
     const unread=messages.filter(m=>!m.isRead&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
-    return json({subscriptions:unread.filter(m=>m.kind!=='connection').length,connections:unread.filter(m=>m.kind==='connection').length});
+    return json({subscriptions:unread.filter(m=>m.kind!=='connection').length,connections:unread.filter(m=>m.kind==='connection').length,unseenConnections:emptyRelationships?0:fixtureConnections().filter(c=>c.isNew).length});
   }
   if(path==='/api/v1/account/connection-inbox')return json({messages:fixtureGroups().filter(g=>g.representative).sort((a,b)=>b.activity.localeCompare(a.activity)).map(g=>({...messages.find(m=>connectionKey(m)===connectionKey(g.representative!)),conversation:{unreadCount:g.unread,lastActivity:g.activity,messages:g.received.map(m=>({sender:m.sender,messageId:m.messageId,isRead:m.isRead}))}})),next:null});
   if(path.startsWith('/api/v1/account/connection-threads/')){
@@ -200,7 +206,7 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
     if(request.method==='POST'){allowIntroductions=input.allowIntroductions;conversationsConfigured=true;}
     return json({allowIntroductions,configured:conversationsConfigured,truncated:false,connections:[]});
   }
-  if(path==='/api/v1/account/connections')return json({preview:true,codes:[],connections:emptyRelationships?[]:[{id:connectionId,did:senders[3].did,address:senders[3].address,connectedAt:date(240),remote:true}],pendingConnections:[]});
+  if(path==='/api/v1/account/connections')return json({preview:true,codes:[],connections:emptyRelationships?[]:fixtureConnections(),pendingConnections:[]});
   if(path==='/api/v1/account/publications/audiences')return json({maxRecipients:100,categories:[{category:'general',subscribers:12},{category:'essays',subscribers:8}]});
   if(path==='/api/v1/account/connection-messages/targets')return json({maxRecipients:100,connections:[{connectionId,recipientDid:senders[3].did,epoch:1,address:senders[3].address},...(sharedMode?[{connectionId:sharedConversation.conversationId,recipientDid:maya.did,epoch:1,address:maya.address}]:[])]});
   if(path==='/api/v1/auth/passkeys')return json({recentlyVerified:false,sessions:[],passkeys:[]});
@@ -215,3 +221,9 @@ try {
   const code = await gui.exited;
   server.stop(true);process.exit(code);
 } catch(error) {gui?.kill();server.stop(true);throw error;}
+
+function fixtureConnections(){
+  const peers=unseenFixture?[senders[3],senders[0],senders[1]]:[senders[3]];
+  return peers.map((peer,i)=>({id:i===0?connectionId:`01900000-0000-7000-8000-00000000000${i}`,did:peer.did,address:peer.address,
+    epoch:1,connectedAt:date(240+i),remote:true,isNew:unseenFixture&&i<2&&!seenConnections.has(i===0?connectionId:`01900000-0000-7000-8000-00000000000${i}`)}));
+}

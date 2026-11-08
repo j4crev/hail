@@ -215,6 +215,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     for(const [i,p] of providers.entries())expect(await p.db.sql`SELECT id,bundle FROM federated_connection_attempts WHERE direction='outbound' ORDER BY id`).toEqual(retained[i]);
     const aa=await active(a),ba=await active(b);
     expect(aa,JSON.stringify(requests.filter(r=>r.status!==200).map(r=>[r.path,r.status]))).toHaveLength(1);expect(ba).toHaveLength(1);expect(aa[0]!.id).toBe(ba[0]!.id);
+    expect(aa[0]!.isNew).toBe(false);expect(ba[0]!.isNew).toBe(false); // crossed consent is self-initiated
     const oldId=aa[0]!.id;
     expect(await first.db.sql`SELECT id FROM federated_connection_events WHERE state='active'`).toHaveLength(1);
     expect(await second.db.sql`SELECT id FROM federated_connection_events`).toHaveLength(0);
@@ -238,6 +239,22 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     const fresh=(await second.service.list(b.session)).codes.find(v=>v.personal)!;
     const reconnect=await prepare(a,fresh.link);await commit(a,reconnect);await drain(8);
     const newId=(await active(a))[0]!.id;expect(newId).not.toBe(oldId);expect((await active(b))[0]!.id).toBe(newId);
+    expect((await active(a))[0]!.isNew).toBe(false);
+    const newConnection=(await active(b))[0]!;expect(newConnection.isNew).toBe(true);
+    await second.service.seen(b.session,{connections:[{id:oldId,epoch:1}]});
+    expect((await active(b))[0]!.isNew).toBe(true); // stale acknowledgment cannot clear a reconnection
+    await first.service.seen(a.session,{connections:[{id:newId,epoch:newConnection.epoch}]});
+    expect((await active(b))[0]!.isNew).toBe(true); // account isolation
+    await second.service.seen(b.session,{connections:[{id:newId,epoch:newConnection.epoch+1}]});
+    expect((await active(b))[0]!.isNew).toBe(true);
+    for(let n=0;n<2;n++)await second.service.seen(b.session,{connections:[{id:newId,epoch:newConnection.epoch}]});
+    expect((await active(b))[0]!.isNew).toBe(false);
+    const activationReplay=requests.findLast(r=>r.path.endsWith('/sync')&&inspectSignedPayload('hail.connection-control',decodeBase64Url(r.wire.control as string)).payload.connection_id===newId)!;
+    expect((await activationReplay.target.app.request(activationReplay.target.origin+activationReplay.path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(activationReplay.wire)})).status).toBe(200);
+    expect((await active(b))[0]!.isNew).toBe(false); // replay cannot recreate an acknowledged marker
+    await expect(second.service.seen(b.session,{connections:[]})).rejects.toMatchObject({status:400});
+    await expect(second.service.seen(b.session,{connections:[{id:newId,epoch:newConnection.epoch,extra:true}]})).rejects.toMatchObject({status:400});
+
     const oldDisconnect=requests.find(r=>r.path.endsWith("/disconnect"))!;
     expect((await oldDisconnect.target.app.request(oldDisconnect.target.origin+oldDisconnect.path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(oldDisconnect.wire)})).status).toBe(200);
     await drain(3);expect((await active(a))[0]!.id).toBe(newId);expect((await active(b))[0]!.id).toBe(newId);
@@ -306,6 +323,8 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       return {accounts,bodies,envelopes,authority,service,messaging,publications,delivery,retriever,worker:new DeliveryWorker(delivery,retriever),statuses,signer,schedule};
     };
     const one=stack(first),two=stack(second);
+    expect((await one.messaging.unreadCounts(a.session)).unseenConnections).toBe((await active(a)).filter(c=>c.isNew).length);
+    expect((await two.messaging.unreadCounts(b.session)).unseenConnections).toBe((await active(b)).filter(c=>c.isNew).length);
     const received=async()=>{for(let i=0;i<500&&(one.schedule.processingInFlight||two.schedule.processingInFlight);i++)await Bun.sleep(10);expect(one.schedule.processingInFlight+two.schedule.processingInFlight).toBe(0);};
     const api=(user:User,path:string,input?:unknown,headers:Record<string,string>={})=>user.provider.app.request(user.provider.origin+'/api/v1/account/'+path,{method:input===undefined?'GET':'POST',
       headers:{Cookie:'hail_session='+user.token,Origin:user.provider.origin,'Content-Type':'application/json',...headers},...(input===undefined?{}:{body:JSON.stringify(input)})});
@@ -384,7 +403,12 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
 
       return;
     }
+    const acknowledgedSnapshot=(await active(a)).map(({id,epoch})=>({id,epoch}));
     const local=await prepare(c,ac.link);await commit(c,local);await drain(6);
+    expect((await active(a))[0]!.did).toBe(c.did);expect((await active(a))[0]!.isNew).toBe(true);
+    await first.service.seen(a.session,{connections:acknowledgedSnapshot});
+    expect((await active(a)).find(connection=>connection.did===c.did)!.isNew).toBe(true);
+    expect((await one.messaging.unreadCounts(a.session)).unseenConnections).toBe(1);
     const targets=(await one.publications.connectionTargets(a.session)).connections,localTarget=targets.find(t=>t.recipientDid===c.did)!,remoteTarget=targets.find(t=>t.recipientDid===b.did)!;
     expect(localTarget.epoch).toBe(1);expect(remoteTarget.connectionId).toBe(newId);
     if(mode==='shared conversations'){
@@ -522,7 +546,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     const grouped=await one.messaging.connectionInbox(a.session,null);
     expect(grouped.messages).toHaveLength(1);
     expect(grouped.messages[0]).toMatchObject({sender:b.did,messageId:threadedId,conversation:{unreadCount:2}});
-    expect(await one.messaging.unreadCounts(a.session)).toEqual({subscriptions:0,connections:2});
+    expect(await one.messaging.unreadCounts(a.session)).toMatchObject({subscriptions:0,connections:2});
     const combined=await one.messaging.connectionThread(a.session,b.did,threadedId,null);
     expect(combined?.messages).toHaveLength(3);
     expect(combined?.messages.filter(m=>m.sent)).toHaveLength(1);
@@ -534,7 +558,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     expect((await one.messaging.connectionInbox(a.session,null)).messages[0]).toMatchObject({messageId:localReply,conversation:{unreadCount:1}});
     await one.messaging.setRead(a.session,c.did,localReply,true);
     expect((await one.messaging.connectionInbox(a.session,null)).messages[0]).toMatchObject({messageId:localReply,conversation:{unreadCount:0}});
-    expect(await one.messaging.unreadCounts(a.session)).toEqual({subscriptions:0,connections:0});
+    expect(await one.messaging.unreadCounts(a.session)).toMatchObject({subscriptions:0,connections:0});
     // Neither recipient can see the other recipient's private reply.
     const recipientThread=await two.messaging.connectionThread(b.session,a.did,sentToB.messageId,null);
     expect(recipientThread?.messages.map(m=>m.sender)).not.toContain(c.did);
@@ -544,7 +568,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       await received();await withFreshServingGenerations(first.db.sql,()=>one.worker.processOne());
     }
     const firstPage=await one.messaging.connectionInbox(a.session,null),secondPage=await one.messaging.connectionInbox(a.session,firstPage.next);
-    expect(await one.messaging.unreadCounts(a.session)).toEqual({subscriptions:0,connections:6});
+    expect(await one.messaging.unreadCounts(a.session)).toMatchObject({subscriptions:0,connections:6});
     expect(firstPage.messages).toHaveLength(5);expect(secondPage.messages).toHaveLength(2);expect(secondPage.next).toBeNull();
     expect(new Set([...firstPage.messages,...secondPage.messages].map(m=>m.messageId)).size).toBe(7);
     expect((await api(a,'connection-inbox?after=invalid')).status).toBe(400);
@@ -573,6 +597,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     const oldLocal={publicationId:uuidV7(),connections:[localTarget.connectionId],text:'Never retarget an old batch after reconnect'};
     await restarted.createConnections(a.session,oldLocal);
     const endNative=await first.service.prepare(c.session,{requestId:randomUUID(),action:'disconnect',connectionId:localTarget.connectionId});await commit(c,endNative);
+    await drain(4);expect((await one.messaging.unreadCounts(a.session)).unseenConnections).toBe(0);
     await drain(6);
     const refresh=await first.service.prepare(a.session,{requestId:randomUUID(),action:'replace',id:ac.id});await commit(a,refresh);
     const refreshed=(await first.service.list(a.session)).codes.find(code=>code.personal)!;
@@ -934,6 +959,8 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     const newLogin=await third.passkeys.authenticationOptions(),newLogged=await third.passkeys.authenticate(newLogin.challengeId,b.assertion(newLogin.options.challenge));
     const session=(await third.accounts.authenticate(undefined,newLogged.token))!;b.session=session;b.token=newLogged.token;
     expect(session.serving_generation).toBe(2);
+    expect((await third.service.list(session)).connections.every(connection=>!connection.isNew)).toBe(true);
+    expect((await movedStack.messaging.unreadCounts(session)).unseenConnections).toBe(0);
     const newCode=await create(b);expect(newCode.id).not.toBe(beforeMoveCode.id);expect(new URL(newCode.link).origin).toBe(third.origin);
     return session;
     });

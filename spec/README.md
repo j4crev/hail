@@ -220,3 +220,7 @@ contracts documented in the [builder compatibility inventory](../packages/hail-c
 Reference monitor incident review, email capability authorization, and the two
 owner-signed recovery choices are specified in [monitor incidents](monitor-incidents.md).
 This does not add federation credentials or make mailbox approval independent-owner evidence.
+
+Unseen connection indicators are reference-provider presentation policy, documented
+with the [account navigation counts and acknowledgment API](provider-mailbox.md#unseen-connections-reference-provider-account-api).
+They do not change federation wire formats or connection authorization.

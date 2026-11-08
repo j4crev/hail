@@ -115,7 +115,8 @@ export function registerConnectionRoutes(app:Hono,connections:AccountConnections
       if(account.take(session.account_id,60)!==null)throw new ConnectionError(429,"Wait before retrying connection requests.");
       return await withServingGeneration(session.account_id,session.serving_generation??1,async()=>{
         const step=c.req.param("step");
-        if(step==="conversation-preferences"&&new URL(c.req.url).searchParams.size)throw new ConnectionError(400);
+        if(["seen","conversation-preferences"].includes(step??"")&&new URL(c.req.url).searchParams.size)throw new ConnectionError(400);
+        if(step==="seen"&&c.req.method!=="POST")throw new ConnectionError(405);
         if(c.req.method==="GET"&&step==="conversation-preferences")return c.json(await connections.conversationPreferences(session));
         if(c.req.method==="GET")return c.json(step?await connections.status(session,step):await connections.list(session));
         if(c.req.method!=="POST")throw new ConnectionError(405);
@@ -124,6 +125,7 @@ export function registerConnectionRoutes(app:Hono,connections:AccountConnections
         let input:Record<string,unknown>;
         try{input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;
           if(!input||typeof input!=="object"||Array.isArray(input))throw new Error();}catch{throw new ConnectionError(400);}
+        if(step==="seen")return c.json(await connections.seen(session,input));
         if(step==="conversation-preferences")return c.json(await connections.conversationPreferences(session,input));
         if(step==='conversation-membership')return c.json(await connections.conversationMembership(session,input));
         if(step==='conversation-revive')return c.json(await connections.conversationRevival(session,input));

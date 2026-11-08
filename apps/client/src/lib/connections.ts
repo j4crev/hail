@@ -10,7 +10,7 @@ export interface ConnectApproval {requestId:string;action:string;review:Record<s
   result:{connectionIds?:string[];connectionId?:string|null;invitationId?:string;state?:string;revoked?:boolean;attemptId?:string;propagation?:string}|null;
   options:Parameters<typeof startAuthentication>[0]["optionsJSON"]|null;}
 export interface ConnectionList {preview:true;codes:{id:string;personal:boolean;label:string;expiresAt:number|null;link:string}[];
-  connections:{id:string;did:string;address:string;connectedAt:string;remote?:boolean}[];
+  connections:{id:string;did:string;address:string;connectedAt:string;epoch?:number;isNew?:boolean;remote?:boolean}[];
   pendingConnections?:{id:string;did:string;address:string;kind:"connect"|"disconnect";state:string}[];}
 export interface ConnectionMessageTarget {connectionId:string;recipientDid:string;epoch:number;address:string;}
 export function connectionMessageTargets(value:any):{maxRecipients:number;connections:ConnectionMessageTarget[]}{
@@ -73,7 +73,7 @@ export async function recoverConnection(requestId:string):Promise<ConnectApprova
   return next;
 }
 export async function connectionRequest(step="",body?:unknown){
-  if(!["","prepare","commit","review","conversation-preferences","conversation-membership","conversation-revive"].includes(step)&&!UUID.test(step))throw new Error("Invalid connection action.");
+  if(!["","prepare","commit","review","seen","conversation-preferences","conversation-membership","conversation-revive"].includes(step)&&!UUID.test(step))throw new Error("Invalid connection action.");
   const response=await fetch("/api/v1/account/connections"+(step?"/"+step:""),{method:body===undefined?"GET":"POST",
     credentials:"same-origin",cache:"no-store",redirect:"error",signal:AbortSignal.timeout(45_000),
     headers:body===undefined?{}:{"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
