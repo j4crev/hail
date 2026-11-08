@@ -21,3 +21,5 @@
 **/dist/**
 **/*.tsbuildinfo
 **/.git/**
+!apps/plc-monitor/scripts/**
+!apps/plc-monitor/deploy/cloudflare-alert-worker/alert-message.ts

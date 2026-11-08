@@ -1,9 +1,9 @@
+import { validateAudit, assertAuditContinuity } from "./audit.js";
 import { operationDetail } from "./operation-detail.js";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { isDeepStrictEqual } from "node:util";
-import { cidForCbor } from "@atproto/common";
-import { assureValidNextOp, def, validateOperationLog, type DocumentData, type ExportedOp, type IndexedOperation } from "@did-plc/lib";
+import { def, type DocumentData, type ExportedOp } from "@did-plc/lib";
 import type { SQL } from "bun";
 import { plcStateDigest, type MonitorPlcClient } from "./plc.js";
 import type { MonitorSigner } from "./signing.js";
@@ -169,21 +169,39 @@ export class PlcMonitor {
   // A user-run host's local operator approves the complete reviewed PLC state.
   // A provider-hosted bootstrap monitor cannot treat its own approval as
   // provider-independent user authorization.
-  async approveExpected(did: string, cid: string, reviewed: DocumentData): Promise<void> {
+  async approveExpected(did: string, cid: string, reviewed: DocumentData, emailAlertId?: string): Promise<void> {
     const current = await this.readState(did);
     if (current.cid !== cid || !isDeepStrictEqual(current.state, reviewed)) {
       throw new Error("Reviewed PLC CID or complete expected state does not match the validated log");
     }
     await this.sql.begin(async (tx) => {
       const rows = await tx<{ expected_cid: string }[]>`
-        SELECT expected_cid FROM monitored_dids WHERE did = ${did} FOR UPDATE`;
+        SELECT expected_cid FROM monitored_dids WHERE did = ${did} AND stopped_at IS NULL FOR UPDATE`;
       const previous = rows[0];
-      if (!previous || previous.expected_cid === cid) throw new Error("No new monitored operation to approve");
+      if (!previous) throw new Error("No monitored identity to approve");
+      if (previous.expected_cid === cid) {
+        const emailApproval = !emailAlertId && (await tx`SELECT operation_cid FROM monitor_incident_approvals
+          WHERE did=${did} AND operation_cid=${cid}`)[0];
+        const localApproval = (await tx`SELECT operation_cid FROM monitor_approvals WHERE did=${did} AND operation_cid=${cid}`)[0];
+        if (!emailApproval || localApproval) throw new Error("No new monitored operation to approve");
+      }
+      if (emailAlertId) {
+        const alert = (await tx`SELECT detail FROM monitor_alerts WHERE id=${emailAlertId} AND did=${did}
+          AND category IN ('unexpected-operation','operation-status')`)[0];
+        if (!alert || (typeof alert.detail === "string" ? JSON.parse(alert.detail) : alert.detail).operationCid !== cid) throw new Error("Approval is outside this incident");
+      }
+      const retained = (await tx`SELECT last_audit FROM monitored_dids WHERE did=${did}`)[0];
+      if (retained?.last_audit) this.assertNoHistoryRegression(typeof retained.last_audit === "string" ? JSON.parse(retained.last_audit) : retained.last_audit, current.audit);
       const observation = await tx<{ cid: string }[]>`
         SELECT cid FROM monitor_observations WHERE did = ${did} AND cid = ${cid}`;
       if (!observation.length) throw new Error("Operation has not been observed in the sequenced export");
-      await tx`INSERT INTO monitor_approvals (did, operation_cid, previous_expected_cid, approved_state)
-        VALUES (${did}, ${cid}, ${previous.expected_cid}, ${JSON.stringify(reviewed)}::jsonb)`;
+      if (emailAlertId) {
+        await tx`INSERT INTO monitor_incident_approvals (did,operation_cid,previous_expected_cid,approved_state,alert_id)
+          VALUES (${did},${cid},${previous.expected_cid},${JSON.stringify(reviewed)}::jsonb,${emailAlertId})`;
+      } else {
+        await tx`INSERT INTO monitor_approvals (did,operation_cid,previous_expected_cid,approved_state)
+          VALUES (${did},${cid},${previous.expected_cid},${JSON.stringify(reviewed)}::jsonb)`;
+      }
       await tx`UPDATE monitored_dids SET expected_cid = ${cid}, expected_state = ${JSON.stringify(reviewed)}::jsonb,
         last_verified_cid = ${cid}, last_verified_at = ${this.now()} WHERE did = ${did}`;
     });
@@ -286,29 +304,13 @@ export class PlcMonitor {
   }
 
   private async readState(did:string,source?:readonly unknown[]):Promise<{cid:string;state:DocumentData;audit:ExportedOp[]}>{
-    const audit=(source??await this.plc.getAuditableLog(did)).map(entry=>def.exportedOp.parse(entry));
-    if(!audit.length||audit.length>1000)throw new Error("PLC audit is incomplete or exceeds the monitor limit");
-    const history:IndexedOperation[]=[],seen=new Set<string>();let previousTime=-Infinity;
-    for(const entry of audit){
-      const cid=await cidForCbor(entry.operation),createdAt=new Date(entry.createdAt);
-      if(entry.did!==did||cid.toString()!==entry.cid||seen.has(entry.cid)||!Number.isFinite(createdAt.getTime())||createdAt.getTime()<previousTime)
-        throw new Error("PLC audit bytes or annotations are invalid");
-      const accepted=await assureValidNextOp(did,history.filter(operation=>!operation.nullified),entry.operation,createdAt);
-      for(const nullified of accepted.nullified){const prior=history.find(operation=>operation.cid.equals(nullified));if(!prior)throw new Error("PLC audit recovery is incomplete");prior.nullified=true;}
-      history.push({did,cid,operation:entry.operation,createdAt,nullified:false});seen.add(entry.cid);previousTime=createdAt.getTime();
-    }
-    if(history.some((entry,index)=>entry.nullified!==audit[index]!.nullified))throw new Error("PLC audit nullification is invalid");
-    const log=history.filter(entry=>!entry.nullified).map(entry=>entry.operation),state=await validateOperationLog(did,log),last=history.filter(entry=>!entry.nullified).at(-1);
-    if(!state||!last)throw new Error("PLC audit has no valid current state");
-    return {cid:last.cid.toString(),state,audit};
+    const result = await validateAudit(did, source ?? await this.plc.getAuditableLog(did), this.now().getTime());
+    if (!result.state) throw new Error("PLC audit has no valid current state");
+    return {cid: result.cid, state: result.state, audit: result.audit};
   }
 
-  private assertNoHistoryRegression(previous:readonly ExportedOp[],current:readonly ExportedOp[]):void{
-    const byCid=new Map(current.map(entry=>[entry.cid,entry]));
-    for(const prior of previous){const next=byCid.get(prior.cid);
-      if(!next||prior.did!==next.did||prior.createdAt!==next.createdAt||!isDeepStrictEqual(prior.operation,next.operation)||prior.nullified&&!next.nullified)
-        throw new Error("PLC audit history regressed");
-    }
+  private assertNoHistoryRegression(previous: readonly ExportedOp[], current: readonly ExportedOp[]): void {
+    assertAuditContinuity(previous, current);
   }
 
   private async alert(tx: SQL, did: string | null, category: string, correlation: string,

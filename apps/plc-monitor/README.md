@@ -195,3 +195,39 @@ are separate from a provider/client release. Root-owned ingress tooling requires
 its usual reviewed installation; changing this checkout does not update it.
 Once stop records exist, do not roll back to a monitor build that ignores
 `stopped_at`; schema rollback explicitly refuses to remove this evidence.
+
+## Incident review and recovery
+
+When `MONITOR_INCIDENT_ORIGIN` is configured, non-enrollment alert emails include
+one private incident link. Users can review current directory state, recognize the
+exact change, or sign a correction with their recovery kit, without a Hail login.
+Email capabilities cannot change recipients or disable monitoring; recognizing a
+change does not qualify for independent-owner attestation.
+
+Recovery offers **Restore the previous configuration** (retains prior provider
+keys/service) and **Protect identity and suspend Hail service** (removes provider
+rotation authority and the Hail service). Both require higher-priority owner proof
+within the disputed operation's PLC recovery window. Restoration does not guarantee
+provider availability; internal account/key repairs can still be necessary.
+See the [complete application contract](../../spec/monitor-incidents.md).
+
+Build browser assets with `bun run build:browser`. Run `bun scripts/check-browser.ts`
+for real Chromium signing/verification with network access blocked. Migration 8
+retains capability hashes, sessions, email approval provenance and signed recovery
+attempts. Its rollback refuses after incident evidence exists. Email approvals are stored separately from local-owner approvals. Runtime rollback
+leaves migration 8 and its evidence in place; disable public incident ingress if
+rolling back to a runtime without these routes.
+
+For recovery from a trusted workstation checkout without the monitor:
+
+```bash
+bun src/cli/recover.ts plan DID UNWANTED_CID saved-recovery-kit.json restore reviewed-plan.json
+# Review the complete plan. Use "protect" above only to suspend Hail service.
+bun src/cli/recover.ts sign reviewed-plan.json saved-recovery-kit.json signed-recovery.json --approve-reviewed-plan < /secure/recovery-secret
+bun src/cli/recover.ts submit signed-recovery.json
+```
+
+The secret input must be protected; never put it in arguments or shell history.
+New output paths must not exist. Keep the signed file for exact retries after an
+ambiguous response. No private recovery material goes to the network. The tool
+checks the canonical public directory directly and does not need an email token.

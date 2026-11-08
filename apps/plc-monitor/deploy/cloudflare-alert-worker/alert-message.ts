@@ -73,6 +73,18 @@ export function alertMessage(alert: Record<string, unknown>, hailAddress?: strin
   if (detail.operationRecordedAt) times.unshift(`Operation recorded by directory: ${timestamp(detail.operationRecordedAt)}`);
   if (detail.enrolledAt) times.push(`Enrolled: ${timestamp(detail.enrolledAt)}`);
   if (detail.lastHealthyAt) times.push(`Last successful check: ${timestamp(detail.lastHealthyAt)}`);
+  const review = record(detail.review);
+  let reviewText = "";
+  if (typeof review.url === "string") {
+    try {
+      const url = new URL(review.url);
+      if (url.protocol === "https:" && !url.username && !url.password && !url.hash &&
+          /^\/incidents\/[0-9a-f-]{36}$/.test(url.pathname) && /^[A-Za-z0-9_-]{43}$/.test(url.searchParams.get("token") ?? ""))
+        reviewText = `\n\nReview current status and take action:\n${url.href}\n\nThis private link authorizes management of this incident. Do not forward it. It expires ${timestamp(review.expiresAt)}; an expired link can request a replacement email. Recovery still requires your recovery kit. The link does not extend the PLC recovery window.`;
+    } catch { /* Never turn malformed evidence into a link. */ }
+  }
+  // Keep the bearer out of the technical evidence block and support copies.
+  const evidence = { ...alert, detail: { ...detail, ...(detail.review ? { review: { expiresAt: review.expiresAt, url: "[private link above]" } } : {}) } };
   return { subject: `[Hail PLC] ${title}: ${identity}`,
-    text: `${happened}\n\nHail address: ${address ?? "Not available (not retained during enrollment)"}\nDID: ${alert.did}\n\nWhat this means\n${impact}\n\nWhat to do\n${action}\n\n${times.join("\n")}\n\nTechnical details (signed monitor payload)\n${JSON.stringify(alert, null, 2)}` };
+    text: `${happened}\n\nHail address: ${address ?? "Not available (not retained during enrollment)"}\nDID: ${alert.did}\n\nWhat this means\n${impact}\n\nWhat to do\n${action}${reviewText}\n\n${times.join("\n")}\n\nTechnical details (signed monitor payload)\n${JSON.stringify(evidence, null, 2)}` };
 }

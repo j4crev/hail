@@ -227,3 +227,39 @@ rollback never restores an old database over new observations. The installed
 root-owned wrapper is separate from a repository checkout and requires a reviewed
 privileged installation to update. Do not rerun a one-time host bridge on a converted
 host. Fresh independent deployments should use their own paths and operator policy.
+
+## Public incident review rollout
+
+This is a separate monitor/receiver release; provider and GUI images do not change.
+Deploy the updated email receiver before enabling links. Deploy the monitor with
+migration 8 and the built browser bundle, then explicitly configure
+`MONITOR_INCIDENT_ORIGIN` as a canonical HTTPS origin on this monitor's tunnel.
+The existing private API listener serves the incident pages as well as enrollment.
+No new plaintext/public container port is needed. The incident origin must be
+reachable by users, without the provider-only source-IP admission rule.
+
+Keep `/api/v1/onboarding` and `/api/v1/onboarding/stop` under their existing
+provider-IP/method/host restrictions. Add a separate host-specific matcher for
+`/incidents/*` and only GET/POST; proxy it to the same loopback backend. All other
+paths remain denied. Use `configure-incidents.py --check` then `--apply` through
+separately approved privileged access on an installed host. The script retains
+private copies of the prior Caddyfile and Compose override, sets only the incident
+origin in the existing override, validates Caddy syntax before replacing files,
+and prints the two services requiring recreation/restart. It does not alter the
+root-owned operations wrapper, sudo/SSH policy, database overlay or tunnel routes.
+The chosen origin must already route to this tunnel (the existing enrollment
+hostname is suitable). Changing checkout source alone does not install this config.
+
+Disable query/body/cookie logging and third-party analytics on the entire incident
+route at every ingress layer. Keep edge rate limits and no-cache policy; bypass
+cache/browser challenges for API requests. No email token belongs in health probes,
+operator logs or screenshots. Check a synthetic non-secret UUID page returns the
+review UI and its JS/CSS, response protections are present, unauthenticated `/data`
+returns 401, cross-origin POST returns 403, and unauthorized enrollment still fails.
+Do not send real alerts or publish PLC operations to smoke-test production.
+
+App rollback does not roll back schema or erase signed recovery attempts. Email approvals remain separate from local-owner attestations, including under
+older runtimes. Disable public incident ingress when rolling back to a runtime
+without incident routes. Preserve signing keys so
+outstanding deterministic links and retry payloads remain stable. Preserve the
+receiver's existing email routing, recipient verification and durable deduplication.

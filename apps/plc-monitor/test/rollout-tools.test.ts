@@ -123,3 +123,29 @@ it("excludes stopped identities from deployment coverage verification", async ()
   const source = await Bun.file(new URL("../deploy/public/enrollment-setup.py", import.meta.url)).text();
   expect(source).toContain("WHERE stopped_at IS NULL AND (NOT poll_ready");
 });
+
+it('adds only public incident paths and preserves provider enrollment restrictions and overlays', async () => {
+  const script = new URL('../deploy/public/configure-incidents.py', import.meta.url).pathname;
+  const output = await python(`import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('setup',sys.argv[1]);setup=importlib.util.module_from_spec(spec);spec.loader.exec_module(setup)
+spec=importlib.util.spec_from_file_location('incidents',json.load(sys.stdin));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+old=setup.caddy('enroll.plcmonitor.us');override=setup.override()
+new,result=m.prepare(old,override,'https://enroll.plcmonitor.us')
+assert old[old.index('  handle @tunnel_provider {'):] in new
+assert 'header CF-Connecting-IP '+setup.PROVIDER_IP in new
+assert 'method GET POST' in new and 'path /incidents/*' in new
+assert result['services']['monitor']['environment']['MONITOR_INCIDENT_ORIGIN']=='https://enroll.plcmonitor.us'
+del result['services']['monitor']['environment']['MONITOR_INCIDENT_ORIGIN']
+if not result['services']['monitor']['environment'] and 'environment' not in override['services']['monitor']:
+ del result['services']['monitor']['environment']
+assert result==override
+for origin in ['http://enroll.plcmonitor.us','https://attacker.example','https://enroll.plcmonitor.us/path','https://enroll.plcmonitor.us:443']:
+ try:m.prepare(old,override,origin)
+ except ValueError:pass
+ else:raise AssertionError('Unsafe origin accepted')
+try:m.prepare(new,override,'https://enroll.plcmonitor.us')
+except ValueError:pass
+else:raise AssertionError('Existing config overwritten')
+print('PASS')`, script);
+  expect(output.trim()).toBe('PASS');
+});

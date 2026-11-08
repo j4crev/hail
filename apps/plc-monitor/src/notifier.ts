@@ -1,3 +1,4 @@
+import type { IncidentCapabilities } from "./incident-capabilities.js";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
@@ -78,7 +79,8 @@ interface AlertRow {
 export class MonitorNotifier {
   constructor(private readonly sql: SQL, private readonly signer: MonitorSigner,
     private readonly transport: AlertTransport,
-    private readonly now: () => Date = () => new Date()) {}
+    private readonly now: () => Date = () => new Date(),
+    private readonly incidents?: IncidentCapabilities) {}
 
   async sendOne(): Promise<"idle" | "sent" | "retry"> {
     const token = crypto.randomUUID();
@@ -98,12 +100,13 @@ export class MonitorNotifier {
       return rows[0];
     });
     if (!claim) return "idle";
-    const detail = typeof claim.detail === "string" ? JSON.parse(claim.detail) as unknown : claim.detail;
-    const payload = JSON.stringify({ type: "hail.plc-monitor-alert", version: 1, id: claim.id,
-      did: claim.did, category: claim.category, detail,
-      occurred_at: claim.created_at.toISOString() });
-    const bytes = new TextEncoder().encode(payload);
     try {
+      const detail = typeof claim.detail === "string" ? JSON.parse(claim.detail) as unknown : claim.detail;
+      const payload = JSON.stringify({ type: "hail.plc-monitor-alert", version: 1, id: claim.id,
+        did: claim.did, category: claim.category, detail: this.incidents && claim.category !== "onboarding-enrollment"
+          ? { ...(detail as object), review: await this.incidents.issue(claim) } : detail,
+        occurred_at: claim.created_at.toISOString() });
+      const bytes = new TextEncoder().encode(payload);
       const status = await this.transport.send(claim.alert_webhook_url, bytes,
         this.signer.signAlert(bytes), this.signer.publicDidKey);
       if (status >= 200 && status < 300) {

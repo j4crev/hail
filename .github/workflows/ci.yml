@@ -214,6 +214,10 @@ jobs:
           bun run --cwd apps/plc-monitor typecheck
           bun run --cwd apps/plc-monitor test
           bun run --cwd apps/plc-monitor build
+      - name: Verify monitor recovery in Chromium
+        env:
+          CHROMIUM: google-chrome
+        run: bun apps/plc-monitor/scripts/check-browser.ts
 
   database-monitor:
     needs: changes

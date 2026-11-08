@@ -1,4 +1,4 @@
-import { def, type CompatibleOpOrTombstone, type DocumentData, type ExportedOp, type ExportedOpWithSeq } from "@did-plc/lib";
+import { def, type CompatibleOpOrTombstone, type DocumentData, type ExportedOp, type ExportedOpWithSeq, type Operation } from "@did-plc/lib";
 import { parseJsonWithoutDuplicateKeys } from "./strict-json.js";
 import { createHash } from "node:crypto";
 import { encodeBase64Url, encodeDeterministic, type HailValue } from "@racrproto/codec";
@@ -10,6 +10,7 @@ export function plcStateDigest(state: DocumentData): string {
 const DID = /^did:plc:[a-z2-7]{24}$/;
 
 export interface MonitorPlcClient {
+  submitOperation?(did: string, operation: Operation): Promise<void>;
   exportAfter(after: number, count: number): Promise<ExportedOpWithSeq[]>;
   getOperationLog(did: string): Promise<CompatibleOpOrTombstone[]>;
   getDocumentData(did: string): Promise<DocumentData>;
@@ -52,6 +53,15 @@ export class BoundedMonitorPlcClient implements MonitorPlcClient {
     const value = parseJsonWithoutDuplicateKeys(await this.read(`${this.path(did)}/log/audit`));
     if (!Array.isArray(value)) throw new Error("PLC audit log is not an array");
     return value.map((entry) => def.exportedOp.parse(entry));
+  }
+
+  async submitOperation(did: string, operation: Operation): Promise<void> {
+    const response = await this.fetchRequest(`${this.base}${this.path(did)}`, {
+      method: "POST", redirect: "error", signal: AbortSignal.timeout(this.timeoutMs),
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(def.operation.parse(operation)),
+    });
+    await response.body?.cancel();
+    if (!response.ok) throw new Error("PLC submission was not acknowledged");
   }
 
   private path(did: string): string {

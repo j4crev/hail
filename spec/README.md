@@ -216,3 +216,7 @@ older drafts convert on load without a storage write. Explicit Save as Draft per
 the edited representation.
 Portable Text interchange and editor integration are client
 contracts documented in the [builder compatibility inventory](../packages/hail-content-builder/COMPATIBILITY.md).
+
+Reference monitor incident review, email capability authorization, and the two
+owner-signed recovery choices are specified in [monitor incidents](monitor-incidents.md).
+This does not add federation credentials or make mailbox approval independent-owner evidence.

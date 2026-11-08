@@ -20,6 +20,9 @@ COPY packages/hail-content-builder ./packages/hail-content-builder
 COPY --from=plc-lib-build /workspace/hail/vendor/did-method-plc ./vendor/did-method-plc
 RUN bun install --frozen-lockfile
 RUN bun run --cwd packages/hail-codec-ts build
+COPY apps/plc-monitor/src ./apps/plc-monitor/src
+COPY apps/plc-monitor/scripts ./apps/plc-monitor/scripts
+RUN bun run --cwd apps/plc-monitor build:browser
 
 FROM oven/bun:1.4.0 AS dependencies
 WORKDIR /workspace/hail
@@ -39,6 +42,8 @@ WORKDIR /workspace/hail/apps/plc-monitor
 COPY --from=dependencies /workspace/hail /workspace/hail
 COPY apps/plc-monitor/src ./src
 COPY apps/plc-monitor/migrations ./migrations
+COPY apps/plc-monitor/deploy/cloudflare-alert-worker/alert-message.ts ./deploy/cloudflare-alert-worker/alert-message.ts
+COPY --from=build /workspace/hail/apps/plc-monitor/dist-browser ./dist-browser
 RUN mkdir /data && chown bun:bun /data
 USER bun
 CMD ["bun", "src/cli/run.ts"]
