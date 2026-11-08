@@ -175,3 +175,23 @@ Do not roll the receiver back while new-category alerts may be queued. The
 migration rollback refuses to discard retained follow-up evidence or run beneath
 later migrations. Existing queued payloads remain renderable without enrichment;
 no evidence is rewritten or approved by this change.
+
+### Account deletion
+
+Managed alpha account deletion queues retryable removal of the signup email
+recipient and stops the matching PLC enrollment. Stopped DIDs retain audit and
+replay-prevention evidence but are no longer polled or attested. Independent
+webhook enrollments are not cancelled. See the
+[alpha lifecycle contract](../../spec/alpha-onboarding.md#account-deletion-and-managed-monitoring).
+
+Deploy the updated alert Worker and monitor (including migration 7 and the
+restricted edge allowlist for `/api/v1/onboarding/stop` and installed health
+verifier that excludes stopped DIDs) before the provider
+worker. Provider migration 105 backfills cleanup for already-closed alpha
+accounts. If services are unavailable, cleanup remains queued and retries; watch
+`account-monitor-cleanup` / `account-monitor-cleanup-error` provider logs and
+pending rows in `account_monitor_cleanup`. Monitor and alert Worker deployment
+are separate from a provider/client release. Root-owned ingress tooling requires
+its usual reviewed installation; changing this checkout does not update it.
+Once stop records exist, do not roll back to a monitor build that ignores
+`stopped_at`; schema rollback explicitly refuses to remove this evidence.

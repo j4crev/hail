@@ -90,7 +90,7 @@ def caddy(domain):
     header CF-Connecting-IP %s
     header CF-Connecting-IP %s
     method POST
-    path /api/v1/onboarding
+    path /api/v1/onboarding /api/v1/onboarding/stop
   }
   handle @tunnel_provider {
     reverse_proxy 127.0.0.1:3001
@@ -194,8 +194,8 @@ def verify():
     deadline = time.monotonic() + 150
     while time.monotonic() < deadline:
         if text('docker', 'inspect', MONITOR, '--format', '{{.State.Health.Status}}') == 'healthy' and sql(
-                "SELECT caught_up AND NOT EXISTS (SELECT 1 FROM monitored_dids WHERE NOT poll_ready OR last_polled_at IS NULL "
-                "OR last_polled_at<clock_timestamp()-interval '5 minutes') FROM monitor_cursor WHERE singleton=true") == 't':
+                "SELECT caught_up AND NOT EXISTS (SELECT 1 FROM monitored_dids WHERE stopped_at IS NULL AND (NOT poll_ready OR last_polled_at IS NULL "
+                "OR last_polled_at<clock_timestamp()-interval '5 minutes')) FROM monitor_cursor WHERE singleton=true") == 't':
             probe = """const u='http://127.0.0.1:3001/api/v1/onboarding';
 const post=async(headers)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:'{}'});
 if((await post({})).status!==401||(await post({Authorization:'Bearer '+process.env.MONITOR_ENROLLMENT_TOKEN})).status!==400)process.exit(1);

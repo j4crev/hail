@@ -1,3 +1,4 @@
+import { cleanAccountMonitor } from "./accounts/monitor-cleanup.js";
 import {pruneConversationState} from './accounts/conversation-memberships.js';
 import { createApp } from "./app.js";
 import {PasskeyAuth} from "./accounts/passkeys.js";
@@ -212,6 +213,21 @@ if(connections?.federation)setInterval(async()=>{
   catch(error){console.error(JSON.stringify({level:"error",message:"connection federation worker failed",error:error instanceof Error?error.message:"unknown error"}));}
   finally{connectionRunning=false;}
 },1_000);
+
+if (config.signupMonitor && config.signupEmail) {
+  const cleanupMonitor = new SignupMonitorClient(config.signupMonitor), cleanupEmail = new SignupEmailClient(config.signupEmail);
+  let running = false;
+  const cleanMonitoring = async () => {
+    if (running) return;
+    running = true;
+    try {
+      const outcome = await cleanAccountMonitor(database.sql, cleanupMonitor, cleanupEmail);
+      if (outcome !== "idle") console.info(JSON.stringify({ event: "account-monitor-cleanup", outcome }));
+    } catch { console.error(JSON.stringify({ event: "account-monitor-cleanup-error" })); }
+    finally { running = false; }
+  };
+  void cleanMonitoring();setInterval(cleanMonitoring, 5_000);
+}
 
 let trashCleanupRunning=false;
 async function cleanTrash(){

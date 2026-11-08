@@ -87,7 +87,7 @@ export class MonitorNotifier {
         SELECT alert.id, alert.did, alert.category, alert.detail, alert.created_at,
           account.alert_webhook_url, alert.attempt_count
         FROM monitor_alerts alert JOIN monitored_dids account ON account.did = alert.did
-        WHERE alert.sent_at IS NULL AND alert.next_attempt_at <= now()
+        WHERE account.stopped_at IS NULL AND alert.sent_at IS NULL AND alert.next_attempt_at <= now()
           AND (alert.lease_expires_at IS NULL OR alert.lease_expires_at <= now())
         ORDER BY alert.next_attempt_at FOR UPDATE OF alert SKIP LOCKED LIMIT 1
       `;

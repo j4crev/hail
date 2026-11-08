@@ -24,6 +24,7 @@ export async function signupIdentity(sql: SQL, accountId: string, token: string)
     JOIN public_onboarding_preparations preparation ON preparation.account_id=account.id
     JOIN plc_operation_evidence evidence ON evidence.account_id=account.id AND evidence.previous_cid IS NULL
     WHERE account.id=${accountId} AND account.did=evidence.did
+      AND account.closed_at IS NULL
       AND account.onboarding_state IN ('did-registered','address-staged','active')
       AND preparation.custody_profile='managed' AND preparation.monitor_assurance='reduced-assurance-alpha-v1'
       AND NOT EXISTS (SELECT 1 FROM account_signup_ceremonies c WHERE c.account_id=account.id
@@ -40,6 +41,15 @@ export class SignupEmailClient {
     const url = new URL(config.origin);
     if (url.protocol !== "https:" || url.origin !== config.origin) throw new Error("Signup email requires a canonical HTTPS Worker origin");
     decodeBase64Url(config.token, 32);
+  }
+  async removeMonitoring(did: string, operationCid: string): Promise<void> {
+    const response = await this.request(`${this.config.origin}/signup-email/remove-monitoring`, {
+      method: "POST", redirect: "error", signal: AbortSignal.timeout(10_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.config.token}` },
+      body: JSON.stringify({ did, operationCid }),
+    });
+    await response.body?.cancel();
+    if (response.status !== 204) throw new SignupEmailError(503);
   }
   async invite(input:{id:string;email:string;url:string;expiresAt:number}):Promise<void>{
     try{

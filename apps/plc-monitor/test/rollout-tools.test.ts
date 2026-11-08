@@ -26,7 +26,7 @@ assert 'respond 403' in edge and 'admin off' in edge and 'remote_ip' not in edge
 assert 'reverse_proxy 127.0.0.1:3001' in edge and ':8080' in edge
 assert 'bind 127.0.0.1' in edge and 'host '+cfg['api_domain'] in edge
 assert 'header CF-Connecting-IP 5.161.254.78' in edge and 'header CF-Connecting-IP 2a01:4ff:f0:a15f::1' in edge
-assert 'method POST' in edge and 'path /api/v1/onboarding' in edge
+assert 'method POST' in edge and 'path /api/v1/onboarding /api/v1/onboarding/stop' in edge
 assert rendered['services']['enrollment-edge']['cap_drop']==['ALL']
 assert rendered['services']['enrollment-edge']['cap_add']==['NET_BIND_SERVICE']
 assert cfg['enrollment_token'] not in edge and cfg['enrollment_token'] not in json.dumps(rendered)
@@ -117,4 +117,9 @@ with tempfile.TemporaryDirectory() as directory:
  assert not calls and (p/'compose.postgres.yaml').read_text()=='retained DB overlay'
  print('PASS')`,{});
   expect(output.trim()).toBe("PASS");
+});
+
+it("excludes stopped identities from deployment coverage verification", async () => {
+  const source = await Bun.file(new URL("../deploy/public/enrollment-setup.py", import.meta.url)).text();
+  expect(source).toContain("WHERE stopped_at IS NULL AND (NOT poll_ready");
 });

@@ -58,3 +58,23 @@ it("authenticates and bounds requests and refuses a provider-signed genesis with
   attestOnboarding.mockResolvedValue({ payloadBytes: new Uint8Array([1]), signature: new Uint8Array([2]) });
   expect((await invoke(valid)).status).toBe(200);
 });
+
+it("authenticates and validates managed stop requests without accepting arbitrary destinations", async () => {
+  const signer = new MonitorSigner(generateKeyPairSync("ed25519").privateKey), stopManaged = vi.fn();
+  const config = { token: encodeBase64Url(randomBytes(32)), providerOrigin: "https://provider.example.com", alertOrigin: "https://alerts.example.com",
+    monitorOrigin: "https://monitor.example.com", hostname: "127.0.0.1", port: 3001 };
+  const api = createMonitorEnrollmentApi(config, { stopManaged } as never, signer);
+  const { cidForCbor } = await import("@atproto/common");
+  const body = { did: `did:plc:${"a".repeat(24)}`, operationCid: (await cidForCbor({ test: true })).toString() };
+  const invoke = (value: unknown, token = config.token) => api.fetch(new Request(`${config.monitorOrigin}/api/v1/onboarding/stop`, {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(value),
+  }));
+  expect((await invoke(body, "wrong")).status).toBe(401);
+  for (const invalid of [null, {}, { ...body, did: "bad" }, { ...body, operationCid: "bad" }, { ...body, alertOrigin: "https://other.example" }])
+    expect((await invoke(invalid)).status).toBe(400);
+  expect(stopManaged).not.toHaveBeenCalled();
+  expect((await invoke(body)).status).toBe(204);
+  expect(stopManaged).toHaveBeenCalledWith(body.did, body.operationCid, config.providerOrigin, `${config.alertOrigin}/hail/signup`);
+  stopManaged.mockRejectedValue(new Error("Independent enrollment"));
+  expect((await invoke(body)).status).toBe(409);
+});

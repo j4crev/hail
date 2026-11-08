@@ -90,6 +90,7 @@ integration("independent monitor durable cursor", () => {
   it("enrolls a validated DID, advances an exact sequence and alerts on unexpected changes", async () => {
     const monitor = new PlcMonitor(db.sql, client, observed);
     await monitor.enroll(did, cid, "https://user.example.com/alerts");
+    await expect(monitor.stopManaged(did, cid, "https://sender.example.com", "https://alerts.example.com/hail/signup")).rejects.toThrow("does not match");
     const before=JSON.stringify(await db.sql`SELECT to_jsonb(watched) AS value FROM monitored_dids watched WHERE did=${did}`);
     await monitor.enroll(did, cid, "https://user.example.com/alerts");
     expect(JSON.stringify(await db.sql`SELECT to_jsonb(watched) AS value FROM monitored_dids watched WHERE did=${did}`)).toBe(before);
@@ -400,7 +401,10 @@ integration("alert outcome follow-ups", () => {
       // Expand/rollback/reapply before new evidence exists preserves the enrollment.
       const retained = JSON.stringify(await db.sql`SELECT to_jsonb(watched) FROM monitored_dids watched WHERE did=${did}`);
       const rollback = await db.sql.reserve();
-      try { await rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0006_alert_outcomes.sql", import.meta.url)).text()); }
+      try {
+        await rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0007_stop_managed_monitoring.sql", import.meta.url)).text());
+        await rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0006_alert_outcomes.sql", import.meta.url)).text());
+      }
       finally { rollback.release(); }
       await db.migrate();
       expect(JSON.stringify(await db.sql`SELECT to_jsonb(watched) FROM monitored_dids watched WHERE did=${did}`)).toBe(retained);

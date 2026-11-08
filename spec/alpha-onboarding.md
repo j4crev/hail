@@ -90,3 +90,70 @@ browser API credential. Review the full lifecycle under interruption and replay.
 
 Promotion to an independently monitored profile requires new verified monitoring
 evidence and an explicit transition policy; it must preserve the alpha history.
+
+## Account deletion and managed monitoring
+
+This is reference-provider policy and an alpha service API, not a federation
+operation or authorization to stop independently arranged monitoring. Ordinary
+account deletion never publishes a PLC tombstone or changes the DID document.
+
+For a managed account whose retained preparation declares
+`reduced-assurance-alpha-v1`, successful local deletion must durably record
+cleanup responsibility in the same transaction as closure. Record the account
+ID, DID, original genesis CID and pinned monitor key, not a reusable Hail
+address. Previously closed accounts with this evidence are backfilled on upgrade.
+Other custody/assurance profiles do not enter this cleanup path. Failure to
+record responsibility must roll back closure. Network failures must not undo
+local deletion: retry cleanup until both services acknowledge it, including
+after process restart or loss of a successful response. The browser must disclose
+that cleanup can be delayed and that the PLC identity and independently arranged
+monitoring remain.
+
+The reference worker first removes the security-email destination, then stops
+the configured monitor. It refuses a different configured monitor key. Each
+request is `POST`, `Content-Type: application/json`, with no content encoding,
+redirect following, or user-selected destination. The exact JSON object is:
+
+```json
+{"did":"did:plc:aaaaaaaaaaaaaaaaaaaaaaaa","operationCid":"<canonical genesis DAG-CBOR CID>"}
+```
+
+No extra or duplicate fields are allowed. `did` must be canonical `did:plc`;
+`operationCid` must be a canonical CID with DAG-CBOR codec and SHA-256 multihash.
+The APIs are:
+
+- Monitor: `/api/v1/onboarding/stop`, authenticated with the configured enrollment
+  bearer secret, on the restricted provider ingress. Maximum body: 1024 bytes.
+  The retained bootstrap CID must match; the reviewed bootstrap's Hail service
+  must match the configured provider, and the alert destination must equal the
+  configured receiver's `/hail/signup`. These checks scope removal to the managed
+  signup integration, including existing enrollments. An independent webhook or
+  missing bootstrap is refused. Repeated stops of the same enrollment succeed.
+- Email receiver: `/signup-email/remove-monitoring`, authenticated with the
+  existing provider signup-email bearer secret. Maximum body: 4096 bytes. A
+  retained recipient or stop record with a different CID is refused. Otherwise
+  delete the recipient and its retained signup email record and retain a minimal
+  DID/CID stop record. Missing recipients are idempotent success. Binding the DID
+  again is refused, and subsequent valid signed consumer alerts are acknowledged
+  and discarded without email delivery.
+
+Both return empty `204` on success with `Cache-Control: no-store`; malformed
+requests return `400`, invalid authentication `401`, incorrect content type or
+encoding `415`, excessive body size `413`, and enrollment mismatch `409`.
+The monitor also applies its existing rate limit (`429`, `Retry-After: 15`).
+Failures, including transient service errors, remain pending at the provider.
+
+Stopped monitor records retain audit evidence and a stop timestamp. They are
+excluded from polling, new notification claims, and both ongoing and onboarding
+attestations; old enrollment retries must not restart them. Already delivered
+email cannot be recalled, and an email already handed to the delivery service
+may arrive after deletion. Independently configured monitoring is unaffected.
+The reference worker retries with exponential delay capped at one hour. Its
+outbox and stop evidence cannot be discarded through schema rollback.
+
+Focused conformance evidence: `apps/server/test/signup-monitor.integration.test.ts`
+(closure, outage, lost acknowledgement, replay), monitor enrollment API tests
+(authentication and exact fields), and alert receiver tests (recipient removal,
+idempotency and delayed alerts). This API does not define independent-monitor
+cancellation, owner-authorized re-enrollment after closure, or audit erasure;
+those remain separate, unresolved lifecycle protocols.

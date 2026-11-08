@@ -91,7 +91,7 @@
   <section class="hail-card mt-6 grid gap-4 p-6 sm:p-8" aria-label="Delete account">
     <h2 class="m-0 text-lg">Delete account</h2>
     <p class="m-0 text-sm text-muted">First, remove any custom domains you administer.</p>
-    <p class="m-0">This action removes your account and revokes its passkeys and credentials. Other people’s copies and private protocol audit records are retained. The Hail address can be reused after a one-hour delay.</p>
+    <p class="m-0">This action removes your account and revokes its passkeys and credentials. Hail-managed PLC monitoring and security-email delivery will be stopped; cleanup may be delayed if those services are unavailable. Independently arranged monitoring and your PLC identity remain. Other people’s copies and private protocol audit records are retained. The Hail address can be reused after a one-hour delay.</p>
     <form class="grid gap-3" onsubmit={event=>{event.preventDefault();void deleteAccount();}}>
       <label class="hail-field"><span>Type {data.account.address} to confirm deletion</span><input bind:value={deletionAddress} disabled={deleting} autocomplete="off" /></label>
       <button class="hail-button-secondary" disabled={deleting||deletionAddress!==data.account.address}>Delete account</button>

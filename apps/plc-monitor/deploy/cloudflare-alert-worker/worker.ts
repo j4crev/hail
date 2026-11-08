@@ -47,6 +47,7 @@ export class AlertDeduplicator {
     }
     if(!alert||typeof alert!=="object"||Array.isArray(alert)||typeof alert.id!=="string"||typeof alert.did!=="string"||typeof alert.category!=="string")return new Response(null,{status:400});
     const consumer=path==="/alert/signup",recipient=await this.state.storage.get<Recipient>(`recipient:${alert.did}`);
+    if(consumer&&await this.state.storage.get(`stopped-monitoring:${alert.did}`))return new Response(null,{status:204});
     if(consumer&&(!recipient||alert.category==="onboarding-enrollment"&&
       (alert.detail as Record<string,unknown>|undefined)?.operationCid!==recipient.operationCid))return new Response(null,{status:409});
     const digest=await hash(new TextDecoder().decode(bytes));
@@ -60,6 +61,8 @@ export class AlertDeduplicator {
     });
     if(claimed!=="send")return new Response(null,{status:claimed==="sent"?204:claimed==="busy"?503:409});
     try{
+      // Recheck after the claim transaction: removal may have interleaved with it.
+      if(consumer&&await this.state.storage.get(`stopped-monitoring:${alert.did}`))return new Response(null,{status:204});
       await sendEmail(this.env,{to:recipient?.email??this.env.ALERT_RECIPIENT,from:this.env.ALERT_SENDER,
         ...alertMessage(alert,recipient?.hailAddress)});
       await this.state.storage.transaction(async storage=>{
