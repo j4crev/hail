@@ -57,3 +57,12 @@ it("compares against the declared parent, preserving key order changes and inter
   expect(detail.changes).toEqual([{ field: "rotationKeys", before: ["one", "two"], after: ["two", "one"] }]);
   expect(operationDetail(recovered, audit, "recovered", "genesis", new Date()).changes.map(c => c.field)).toEqual(["alsoKnownAs"]);
 });
+
+it('puts the incident capability in the action section once, with forwarding and expiry boundaries', () => {
+  const token = 'a'.repeat(43), url = `https://monitor.example/incidents/12345678-1234-1234-1234-123456789abc?token=${token}`;
+  const message = alertMessage({ ...base, category: 'coverage-lost', detail: { review: { url, expiresAt: '2026-01-02T00:00:00Z' } } });
+  expect(message.text).toContain(`\n${url}\n`);
+  expect(message.text.split(token)).toHaveLength(2);
+  expect(message.text).toContain('Do not forward');
+  expect(message.text).toContain('does not extend the PLC recovery window');
+});

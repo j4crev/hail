@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey, sign, type KeyObject } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, sign, type KeyObject } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { base58btc } from "multiformats/bases/base58";
 import { encodeDeterministic, type HailValue } from "@racrproto/codec";
@@ -32,6 +32,13 @@ export class MonitorSigner {
       throw new Error("Monitor signing key must be a private PKCS8 file of at most 4 KiB");
     }
     return new MonitorSigner(createPrivateKey({ key: await readFile(path), format: "der", type: "pkcs8" }));
+  }
+
+  // Deterministic, purpose-separated secret: retries reproduce the same URL without
+  // retaining plaintext bearer credentials in the database or alert evidence.
+  incidentToken(alertId: string): string {
+    return createHash("sha256").update(this.sign(new TextEncoder().encode("hail.monitor-incident-capability.v1\0"),
+      new TextEncoder().encode(alertId))).digest("base64url");
   }
 
   signAlert(bytes: Uint8Array): Uint8Array { return this.sign(ALERT_CONTEXT, bytes); }

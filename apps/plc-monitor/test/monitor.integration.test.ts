@@ -402,6 +402,7 @@ integration("alert outcome follow-ups", () => {
       const retained = JSON.stringify(await db.sql`SELECT to_jsonb(watched) FROM monitored_dids watched WHERE did=${did}`);
       const rollback = await db.sql.reserve();
       try {
+        await rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0008_incident_capabilities.sql", import.meta.url)).text());
         await rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0007_stop_managed_monitoring.sql", import.meta.url)).text());
         await rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0006_alert_outcomes.sql", import.meta.url)).text());
       }

@@ -40,6 +40,7 @@ services:
       MONITOR_ENROLLMENT_ALERT_ORIGIN: ${MONITOR_ENROLLMENT_ALERT_ORIGIN:-}
       MONITOR_API_HOST: ${MONITOR_API_HOST:-}
       MONITOR_API_PORT: ${MONITOR_API_PORT:-}
+      MONITOR_INCIDENT_ORIGIN: ${MONITOR_INCIDENT_ORIGIN:-}
     volumes:
       - ./secrets:/run/monitor:ro
       - ./reviewed:/reviewed:ro
