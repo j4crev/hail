@@ -412,6 +412,19 @@ try{
       await wait(async()=>evaluate(`document.querySelector('dialog').open`),'open navigation for account menu');
     }
     await evaluate(`(()=>{const b=[...document.querySelectorAll('[aria-label="Open account menu"]')].find(b=>b.checkVisibility());b.focus();if(!document.getElementById(b.getAttribute('popovertarget')).matches(':popover-open'))b.click();})()`);await wait(async()=>evaluate(`!!document.querySelector('.account-popover:popover-open')`),"avatar opens account menu");};
+  // Navigation completion may close popovers between separate CDP commands.
+  // Open the visible trigger's panel and activate its link in one browser task.
+  const accountLink=async(href:string)=>{
+    await openAccount();
+    await evaluate(`(()=>{
+      const button=[...document.querySelectorAll('[aria-label="Open account menu"]')].find(b=>b.checkVisibility());
+      const panel=document.getElementById(button.getAttribute('popovertarget'));
+      if(!panel.matches(':popover-open'))button.click();
+      const link=panel.querySelector('a[href="'+${JSON.stringify(href)}+'"]');
+      if(!panel.matches(':popover-open')||!link)throw new Error('Account menu link unavailable');
+      link.click();
+    })()`);
+  };
   const accountNavigation=async()=>assert(await evaluate(`Array.from(document.querySelectorAll('a[href="/account"], a[href="/settings"], a[href="/settings/security"]')).every(a=>a.closest('nav[aria-label="Account menu"]'))`),"Account destinations belong only in the profile menu");
   const narrowLayouts=async()=>{
     if(process.env.HAIL_WIZARD_MOBILE!=="true")return;
@@ -627,7 +640,7 @@ try{
   assert(await evaluate(`document.activeElement?.getAttribute('aria-label')==='Open account menu'`),"Account menu restores focus");
   await openAccount();await pointer(process.env.HAIL_WIZARD_MOBILE==='true'?20:600,200);
   await wait(async()=>evaluate(`!document.querySelector('.account-popover:popover-open')`),"Outside click closes account menu");
-  await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/account"]').click()`);
+  await accountLink('/account');
   await wait(()=>has("Key custody"),"Account page holds identity details");
   assert(await evaluate(`!!document.querySelector('section[aria-label="Delete account"]')`),'Account owns deletion controls');
   assert(await evaluate(`document.querySelector('section[aria-label="Delete account"] button').disabled`),'Deletion requires typed address');
@@ -640,7 +653,7 @@ try{
   assert(await evaluate(`!document.querySelector('.mobile-compose')`),'No floating compose outside Feed or Inbox');
   await narrowLayouts();await screenshot("account");
   if(process.env.HAIL_WIZARD_THEME_ONLY === "true") {
-  await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/settings"]').click()`);
+  await accountLink('/settings');
   await wait(async()=>evaluate(`document.querySelector('#theme')?.disabled===false`),"appearance settings ready");
   const appearance=async(value:string)=>{await evaluate(`(()=>{const select=document.querySelector('#theme');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));})()`);await wait(async()=>evaluate(`document.querySelector('#theme')?.disabled===false && document.documentElement.dataset.theme===${JSON.stringify(value)}`),'account appearance saved');};
   const scheme=()=>evaluate(`getComputedStyle(document.documentElement).colorScheme`);
@@ -675,7 +688,7 @@ try{
   assert.equal(displayPreferences.showHeaderImages,false);
   assert(!(await has("Saved in this browser.")) && !(await has("Saved to your account.")),"No redundant storage labels");
   assert.equal(await scheme(),"light");
-  await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/account"]').click()`);
+  await accountLink('/account');
   await wait(()=>has("Key custody"),"account navigation with blocked storage");
   assert.equal(await scheme(),"light","in-memory appearance survives client navigation");
   await cdp("Page.removeScriptToEvaluateOnNewDocument",{identifier:blockedThemeStorage.identifier});
@@ -755,7 +768,7 @@ try{
   assert(await evaluate(`document.querySelector(${JSON.stringify(feedImage)}).getBoundingClientRect().height<=200`),'Subscription images stay bounded');
   assert.equal((await styles(feedImage,['objectFit']))[0],'contain','Promotional artwork is not cropped');
   await screenshot("feed");
-  const settings=async()=>{await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/settings"]').click()`);await wait(async()=>evaluate(`document.querySelector('#show-headers')?.disabled===false`),"reading settings ready");};
+  const settings=async()=>{await accountLink('/settings');await wait(async()=>evaluate(`document.querySelector('#show-headers')?.disabled===false`),"reading settings ready");};
   const feed=async()=>{await evaluate(`(()=>{const a=document.createElement('a');a.href='/';document.body.append(a);a.click();a.remove();})()`);await wait(async()=>evaluate(`location.pathname==='/' && document.querySelector('main h1')?.textContent==='Feed'`),"feed navigation");};
   await settings();await accountNavigation();assert(await evaluate(`!document.querySelector('section[aria-label="Delete account"]')`),'Settings has no account deletion controls');assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll("main a"),a=>a.getAttribute("href"))`),["/settings/domains"],"Settings keeps domain management and embeds conversation preferences");await narrowLayouts();await screenshot("settings");
   assert.deepEqual(await evaluate(`Array.from(document.querySelector('#start-screen').options,o=>({value:o.value,label:o.textContent}))`),[{value:'feed',label:'Feed'},{value:'inbox',label:'Inbox'}]);
