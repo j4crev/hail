@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
   import MobileSheet from "$lib/MobileSheet.svelte";
   import Attachments from "$lib/Attachments.svelte";
@@ -19,7 +21,9 @@
   import ContactAddress from "$lib/ContactAddress.svelte";
   import MessageActions from "$lib/MessageActions.svelte";
   import Unsubscribe from "$lib/Unsubscribe.svelte";
-  let { data,form } = $props();
+  let {data:loaded,form}=$props();
+  const mailbox=mailboxView(()=>loaded,()=>page.url,()=>replyOpen || readPending,true);
+  let data=$derived(mailbox.data);
   let opened = '';
   let failedAvatar = $state(''), avatarImage = $state<HTMLImageElement>();
   $effect(() => {
@@ -36,7 +40,7 @@
   let readError = $state(''), readPending = $state(true);
   $effect(() => {
     const message = data.message, key = `${message.sender}/${message.messageId}`;
-    if (message.trashedAt) { readPending = false; return; }
+    if (message.trashedAt || message.isRead) { readPending = false; return; }
     if (opened === key) return;
     opened = key;
     readError = ''; readPending = true;
@@ -73,6 +77,7 @@
 </script>
 
 <svelte:head><title>Message · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
+<MailboxRefresh floating={false} view={mailbox} locked={replyOpen || readPending} />
 <div class="message-detail mx-auto max-w-[800px]" class:feed-reader={data.message.kind!=='connection'}>
 <MessageBack href={data.message.trashedAt?'/trash':data.message.kind==='connection'?'/?view=connections':'/?view=subscriptions'} label={data.message.trashedAt?'Trash':data.message.kind==='connection'?'Inbox':'Feed'} />
 {#if content.title}<h1 class="reader-title">{content.title}</h1>{:else}<h1 class="sr-only">Received message</h1>{/if}

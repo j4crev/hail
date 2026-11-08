@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
   import MobileSheet from "$lib/MobileSheet.svelte";
   import Attachments from "$lib/Attachments.svelte";
@@ -20,7 +22,9 @@
   import {parseMessage,parseSentMessage,messageDisplayContent,type MessageView,type SentMessageView} from '$lib/messages.js';
   import {mailboxRequest} from '$lib/mailbox.js';
   import {forwardHref} from '$lib/forward.js';
-  let {data}=$props();
+  let {data:loaded}=$props();
+  const mailbox=mailboxView(()=>loaded,()=>page.url,()=>replyOpen || sending || readPending || pending || paging,true);
+  let data=$derived(mailbox.data);
   let replyFailure=$state<{error?:string;messageId?:string;text?:string}>({});
   let rows=$state<ConversationRow[]>([]),selected=$state(''),message=$state<MessageView|SentMessageView>(),start=$state(0),total=$state(0),newerUnread=$state(0);
   let pending=$state(false),readPending=$state(false),error=$state(''),replyOpen=$state(false),sending=$state(false),paging=$state(false);
@@ -126,6 +130,7 @@
   async function reply(all=false){replyAll=all;replyOpen=true;await tick();replyInput?.focus();}
 </script>
 <svelte:head><title>{conversationSubject || 'Messages'} · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
+<MailboxRefresh floating={false} view={mailbox} locked={replyOpen || sending || readPending || pending || paging} />
 <MessageBack href="/?view=connections" label="Inbox" />
 <h1 class="hail-title conversation-subject" class:sr-only={!conversationSubject}>{conversationSubject || 'Messages'}</h1>
 {#if error}<Toast message={error} error />{/if}

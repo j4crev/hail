@@ -162,3 +162,15 @@ third-party providers; the linked per-operation contracts and CLI fixtures are
 required implementation references. A future independently versioned discovery
 or OAuth profile must define its own trust, registration and migration rules;
 it must not silently reinterpret this exchange.
+
+## Reference web-client caching (non-normative)
+
+The reference GUI may retain bounded, session-scoped mailbox results in browser
+memory and revalidate them using existing authenticated account operations. Its
+`/mailbox-data` presentation endpoint is internal to the GUI, not part of this
+client-to-provider profile. “Load older” is a presentation over existing cursors;
+it introduces no snapshot, change token, hash, or incremental-sync guarantees.
+Full message bodies remain available through existing account endpoints; the GUI
+may project compact list summaries before transmitting them to its browser.
+Provider authorization remains authoritative for every read and mutation. See
+[web-client behavior](../apps/client/README.md#mailbox-cache-and-recent-history).

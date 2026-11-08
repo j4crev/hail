@@ -1,0 +1,2 @@
+import {mailboxLoad} from "$lib/mailbox-load.js";
+export const load = mailboxLoad<Awaited<ReturnType<typeof import("$lib/server/mailbox/sent-send.js").load>>>(false);

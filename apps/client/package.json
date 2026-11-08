@@ -14,6 +14,7 @@
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test:relationships": "bun run build && bun scripts/check-browser-relationship-removal.ts",
     "test:polish": "bun run build && bun scripts/check-browser-client-polish.ts && bun scripts/check-browser-client-polish.ts --shared",
+    "test:mailbox": "bun run build && bun scripts/check-browser-mailbox-cache.ts && bun scripts/check-browser-mailbox-refresh.ts",
     "test:cleanup": "bun run build && bun scripts/check-browser-mailbox-cleanup.ts",
     "test:compose": "bun run build && bun scripts/check-browser-compose.ts",
     "test:conversations": "bun run build && bun scripts/check-browser-conversations.ts && bun scripts/check-browser-conversations.ts --shared"

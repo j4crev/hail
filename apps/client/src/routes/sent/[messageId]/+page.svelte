@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
   import Attachments from "$lib/Attachments.svelte";
   import MessageBack from "$lib/MessageBack.svelte";
@@ -12,11 +14,14 @@
   import ContactAddress from "$lib/ContactAddress.svelte";
   import DeliveryIcon from "$lib/DeliveryIcon.svelte";
   import {deliveryDescription} from "$lib/delivery-status.js";
-  let {data,form}=$props();
+  let {data:loaded,form}=$props();
+  const mailbox=mailboxView(()=>loaded,()=>page.url,()=>false,true);
+  let data=$derived(mailbox.data);
   const content = $derived(messageDisplayContent(data.message.blocks));
 </script>
 
 <svelte:head><title>Sent message · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
+<MailboxRefresh floating={false} view={mailbox} locked={false} />
 <div class="mx-auto max-w-[800px]">
 <MessageBack href="/sent" label="Sent messages" />
 {#if content.title}<h1 class="reader-title">{content.title}</h1>{:else}<h1 class="sr-only">Sent message</h1>{/if}

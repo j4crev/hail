@@ -4,11 +4,11 @@ vi.mock("$env/dynamic/private",()=>({env:{HAIL_WEB_CLIENT_PROVIDER:"https://prov
 import {isAccountPath,loginPath,returnPath} from "./auth-routing.js";
 import {handle} from "../hooks.server.js";
 import {load as layout} from "../routes/+layout.server.js";
-import {load as home} from "../routes/+page.server.js";
+import {load as home} from "./server/mailbox/feed.js";
 
 it("uses one sign-in destination for every anonymous private screen and action",async()=>{
   const cookies={get:()=>undefined},resolve=vi.fn();
-  for(const path of ["/admin","/categories","/account","/settings","/connections","/permissions","/settings/security","/sent","/compose","/sent/message-id","/message/did%3Aplc%3Atest/message-id"]){
+  for(const path of ["/admin","/categories","/account","/settings","/connections","/permissions","/settings/security","/sent","/compose","/sent/message-id","/sent/send/category/message-id","/conversation/sender/message-id","/message/did%3Aplc%3Atest/message-id"]){
     expect(isAccountPath(path)).toBe(true);
     for(const search of ["","?after=page","?/reply"]){
       const url=new URL("https://provider.example"+path+search);
@@ -40,4 +40,12 @@ it("shows homepage sign-in for validated return paths even with an existing sess
       await expect(home({url,cookies:{get:()=>token},setHeaders:vi.fn()} as never)).resolves.toEqual({configured:false,returnTo:expected,registration:null});
     }
   }
+});
+
+it("guards the anonymous connection inbox before page or data rendering",async()=>{
+  const url=new URL('https://provider.example/?view=connections'),resolve=vi.fn();
+  const response=await handle({event:{url,cookies:{get:()=>undefined}},resolve} as never);
+  expect(response.status).toBe(303);
+  expect(response.headers.get('location')).toBe(loginPath(url));
+  expect(resolve).not.toHaveBeenCalled();
 });

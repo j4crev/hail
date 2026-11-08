@@ -1,7 +1,7 @@
 import {expect,it,vi} from "vitest";
 
 vi.mock("$env/dynamic/private",()=>({env:{HAIL_WEB_CLIENT_PROVIDER:"https://provider.example",HAIL_WEB_CLIENT_API_ORIGIN:"https://provider.example",HAIL_WEB_CLIENT_ORIGIN:"https://provider.example"}}));
-import {load} from "../routes/+page.server.js";
+import {load} from "./server/mailbox/feed.js";
 import {load as loadPermissions} from "../routes/permissions/+page.server.js";
 import {AccountApiClient} from "@racrproto/client-support/account-api";
 

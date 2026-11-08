@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxCounts} from "$lib/mailbox-counts.js";
+  const counts = $derived($mailboxCounts?.scope === page.data.mailboxScope ? $mailboxCounts?.counts : page.data.unreadCounts);
   import ToastHost from "$lib/ToastHost.svelte";
   import "../app.css";
   import {onMount} from "svelte";
@@ -22,8 +24,8 @@
   let drawerOpen = $state(false);
   let viewingMessage = $derived(page.route.id === '/message/[sender]/[messageId]' || page.route.id === '/conversation/[sender]/[messageId]' || page.route.id === '/sent/[messageId]' || page.route.id === '/sent/send/[kind]/[messageId]');
   const navigation = $derived([
-    {href: "/?view=subscriptions", label: "Feed", icon: "feed", unread: page.data.unreadCounts?.subscriptions},
-    {href: "/?view=connections", label: "Inbox", icon: "chat", unread: page.data.unreadCounts?.connections},
+    {href: "/?view=subscriptions", label: "Feed", icon: "feed", unread: counts?.subscriptions},
+    {href: "/?view=connections", label: "Inbox", icon: "chat", unread: counts?.connections},
     {href: "/drafts", label: "Drafts", icon: "compose"},
     {href: "/sent", label: "Sent", icon: "sent"},
     {href: "/trash", label: "Trash", icon: "trash"},
@@ -71,7 +73,7 @@
   <div class="nav-bottom"></div>
 {/snippet}
 <!-- Full navigation prevents signup/recovery CSP from leaking into the app. -->
-<div class:focused class:viewing-message={viewingMessage} class="app-shell" data-sveltekit-reload={!page.data.hasAccountSession || page.url.pathname === "/signup" || page.url.pathname === "/signup/recovery"}>
+<div data-sveltekit-preload-data="off" class:focused class:viewing-message={viewingMessage} class="app-shell" data-sveltekit-reload={!page.data.hasAccountSession || page.url.pathname === "/signup" || page.url.pathname === "/signup/recovery"}>
   <a class="skip-link" href="#main-content">Skip to content</a>
   {#if focused}
     <header class="public-header">{@render brand()}{#if page.url.pathname !== "/"}<a class="hail-button-secondary" href="/">{page.data.hasAccountSession ? "Back to home" : "Home"}</a>{:else if page.data.registration?.mode === "invite"}<span class="alpha-badge">Invitation-only alpha</span>{/if}</header>

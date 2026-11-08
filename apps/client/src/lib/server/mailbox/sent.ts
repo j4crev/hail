@@ -1,7 +1,7 @@
 import {canaryAccount} from "$lib/server/canary.js";
 import {parseSentSends} from "$lib/messages.js";
 
-export async function load({url,cookies}){
+export async function load({url,cookies}: import("@sveltejs/kit").RequestEvent){
   const {account,client}=await canaryAccount(cookies,url),after=url.searchParams.get("after");
   const page=parseSentSends(await client.request(`/sent?include=sends${after?`&after=${encodeURIComponent(after)}`:""}`,undefined,"/api/v1/account",2_000_000));
   const preferences=await client.request("/message-preferences");

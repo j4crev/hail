@@ -1,7 +1,7 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const fixture=vi.hoisted(()=>({request:vi.fn(),avatars:vi.fn()}));
 vi.mock('$lib/server/canary.js',()=>({canaryAccount:async()=>({account:{did:'owner'},client:{request:fixture.request}}),senderAvatars:fixture.avatars}));
-import {load as trash} from '../routes/trash/+page.server.js';
+import {load as trash} from './server/mailbox/trash.js';
 import {load as connections} from '../routes/connections/+page.server.js';
 const event=()=>({url:new URL('https://example.com/'),cookies:{},setHeaders:vi.fn()}) as never;
 beforeEach(()=>{vi.clearAllMocks();fixture.avatars.mockResolvedValue(new Map([['sender',{src:'data:image/png;base64,AQID',width:44,height:44}]]));});

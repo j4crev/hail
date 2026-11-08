@@ -450,7 +450,7 @@ try{
   assert(await evaluate("document.documentElement.scrollWidth<=innerWidth"),"Signed-out feed overflows viewport");
   assert.equal(await evaluate(`!!document.querySelector('nav[aria-label="Main navigation"]') || !!document.querySelector('a[href="/compose"]')`),false,"Public home must not show private folders or compose");
   await narrowLayouts();await screenshot("home");
-  const privatePaths=["/drafts","/trash","/categories","/account","/settings","/connections","/permissions","/settings/security","/sent?after=older","/compose","/?view=connections",`/sent/${incomingId}`,`/message/${encodeURIComponent(peerDid)}/${incomingId}`];
+  const privatePaths=["/drafts","/trash","/categories","/account","/settings","/connections","/permissions","/settings/security","/sent?after=older","/compose","/?view=connections",`/sent/${incomingId}`,`/sent/send/category/${incomingId}`,`/conversation/${encodeURIComponent(peerDid)}/${incomingId}`,`/message/${encodeURIComponent(peerDid)}/${incomingId}`];
   for(const path of privatePaths){
     const response=await fetch(origin+path,{redirect:"manual"});assert.equal(response.status,303);
     assert.equal(new URL(response.headers.get("location")!,origin).searchParams.get("next"),path);
@@ -795,10 +795,17 @@ try{
   await feed();await wait(async()=>evaluate(`!document.querySelector(${JSON.stringify(feedImage)})`),"hide feed headers through settings");
   await evaluate("document.documentElement.dataset.beforePreferenceReload='true'");
   await cdp("Page.reload");await wait(async()=>evaluate(`!document.documentElement.dataset.beforePreferenceReload && !!document.querySelector('[aria-label="Messages"]') && !document.querySelector(${JSON.stringify(feedImage)})`),"persist hidden header preference");
-  await evaluate(`document.querySelector('[aria-label="Feed pages"] a').click()`);
-  await wait(async()=>evaluate("new URL(location.href).searchParams.get('after')==='older-page' && !!document.querySelector('[aria-label=\"Feed pages\"] a[href=\"/?view=subscriptions\"]')"),"older feed page");
+  await wait(async()=>evaluate(`document.querySelector('[aria-label="Feed pages"] button')?.disabled===false`),'older feed batch ready');
+  const feedUrl=await evaluate('location.href');
+  await evaluate(`document.querySelector('[aria-label="Feed pages"] button').click()`);
+  await wait(async()=>evaluate(`!document.querySelector('[aria-label="Feed pages"] button')`),'older feed batch exhausted');
+  assert.equal(await evaluate('location.href'),feedUrl,'Load older preserves the current folder URL');
+  assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Messages"] .message-row').length`),1,'Overlapping cursor results do not duplicate messages');
+  // Direct cursor URLs still support returning to the recent window.
+  await cdp('Page.navigate',{url:origin+'/?view=subscriptions&after=older-page'});
+  await wait(async()=>evaluate(`!!document.querySelector('[aria-label="Feed pages"] a[href="/?view=subscriptions"]')`),'direct older feed page');
   await evaluate(`document.querySelector('[aria-label="Feed pages"] a[href="/?view=subscriptions"]').click()`);
-  await wait(async()=>evaluate("location.search==='?view=subscriptions' && !!document.querySelector('[aria-label=\"Feed pages\"] a[href*=after]')"),"newest feed page");
+  await wait(async()=>evaluate(`location.search==='?view=subscriptions' && !!document.querySelector('[aria-label="Feed pages"] button')`),'newest feed window');
   await settings();assert.equal(await evaluate(`document.querySelector('#show-headers').checked`),false);
   await evaluate(`document.querySelector('#show-headers').click()`);await wait(async()=>evaluate(`document.querySelector('#show-headers')?.disabled===false`),'header preference saved');await feed();
   await wait(async()=>evaluate(`!!document.querySelector(${JSON.stringify(feedImage)})`),"show feed headers again");

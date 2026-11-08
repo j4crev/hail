@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
   import MailboxCleanup from "$lib/MailboxCleanup.svelte";
   import {page} from "$app/state";
@@ -6,7 +8,10 @@
   import MailboxEmptyState from "$lib/MailboxEmptyState.svelte";
   import MessageListRow from "$lib/MessageListRow.svelte";
   import {showInboxHeaders, loadHeaderPreference} from "$lib/preferences.js";
-  let {data}=$props();
+  let {data:loaded}=$props();
+  let cleanupLocked=$state(false);
+  const mailbox = mailboxView(()=>loaded, ()=>page.url, ()=>selected.length > 0 || cleanupLocked);
+  let data=$derived(mailbox.data);
   import {afterNavigate,invalidateAll} from '$app/navigation';
   import {mailboxRequest} from '$lib/mailbox.js';
   import SelectionAvatar from '$lib/SelectionAvatar.svelte';
@@ -38,7 +43,9 @@
 
 <svelte:head><title>Sent · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
 <div class="sent-list min-w-0 pb-28 min-[901px]:pb-0">
-  <MailboxCleanup folder="Sent" trashEnabled={data.trashEnabled} empty={!data.messages.length&&!data.paged} />
+  <MailboxRefresh view={mailbox} locked={selected.length > 0 || cleanupLocked}>
+    {#snippet heading()}<MailboxCleanup onlockchange={active=>cleanupLocked=active} folder="Sent" trashEnabled={data.trashEnabled} empty={!data.messages.length&&!data.paged} />{/snippet}
+  </MailboxRefresh>
   {#if status}<Toast message={status} />{/if}
   {#if error}<Toast message={error} error />{/if}
   {#if selectedMessages.length}
@@ -62,7 +69,7 @@
         </MessageListRow>
       {/each}
     </section>
-    {#if data.paged||data.next}<nav aria-label="Sent pages" class="mt-6 flex flex-wrap justify-center gap-3">{#if data.paged}<a class="hail-button-secondary" href="/sent">← Newest messages</a>{/if}{#if data.next}<a class="hail-button-secondary" href={`/sent?after=${encodeURIComponent(data.next)}`}>Older messages →</a>{/if}</nav>{/if}
+    {#if data.paged||data.next}<nav aria-label="Sent pages" class="mt-6 flex flex-wrap justify-center gap-3">{#if data.paged}<a class="hail-button-secondary" href="/sent">← Newest messages</a>{/if}{#if data.next}<button class="hail-button-secondary" disabled={mailbox.busy||mailbox.pending||selected.length > 0} onclick={()=>mailbox.older("after",data.next)}>{mailbox.batches >= 4 ? "Continue to older history" : "Load older"}</button>{/if}</nav>{/if}
   {:else}<MailboxEmptyState icon="sent" title="Message in a bottle?" />{/if}
 </div>
 

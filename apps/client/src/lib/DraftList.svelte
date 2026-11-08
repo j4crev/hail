@@ -9,8 +9,9 @@
   import SelectionAvatar from '$lib/SelectionAvatar.svelte';
   import SelectionActions from '$lib/SelectionActions.svelte';
   import Icon from '$lib/Icon.svelte';
-  let {drafts,trash=false,trashEnabled=true,address}:{drafts:Draft[];trash?:boolean;trashEnabled?:boolean;address:string}=$props();
+  let {onselection=(_active:boolean)=>{},drafts,trash=false,trashEnabled=true,address}:{onselection?:(active:boolean)=>void;drafts:Draft[];trash?:boolean;trashEnabled?:boolean;address:string}=$props();
   let selected=$state<string[]>([]),busy=$state(false),status=$state(''),ready=$state(false);
+  $effect(()=>onselection(selected.length > 0 || busy));
   onMount(()=>{ready=true;});afterNavigate(()=>selected=[]);
   const name=(draft:Draft)=>draft.content.audience==='category'?draft.content.category||'Subscribers':draft.content.connections.length?`${draft.content.connections.length} connection(s)`:'No recipients yet';
   async function act(){
