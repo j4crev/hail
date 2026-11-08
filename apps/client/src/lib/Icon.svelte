@@ -24,6 +24,7 @@
     sent: 'm3 11 18-8-8 18-3-8-7-2Z M10 13 21 3',
     people: person + ' M18.5 8l1.5 1.5 2.5-3',
     settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6',
+    'shield-outline': 'm12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4Z',
     shield: 'm12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4Z m-4 9 3 3 5-5',
     user: person,
     preview: 'M6 9V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7 M14 3v18 M10 14a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M9 17l4 4',

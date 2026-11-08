@@ -2,7 +2,7 @@
   import Toast from "$lib/Toast.svelte";
   import {afterNavigate} from "$app/navigation";
   import Icon from "$lib/Icon.svelte";
-  let {address = "Your account", compact = false, avatar = null, drawerAccount = false}: {address?: string; compact?: boolean; avatar?: string | null; drawerAccount?: boolean} = $props();
+  let {address = "Your account", compact = false, avatar = null, drawerAccount = false, providerOperator = false}: {address?: string; compact?: boolean; avatar?: string | null; drawerAccount?: boolean; providerOperator?: boolean} = $props();
   let failedAvatar = $state(''), avatarImage = $state<HTMLImageElement>();
   $effect(() => {
     const element=avatarImage, src=avatar;
@@ -43,6 +43,9 @@
     <a href="/account"><Icon name="user" />Account</a>
     <a href="/settings"><Icon name="settings" />Settings</a>
   </nav>
+  {#if providerOperator}
+    <nav class="admin-menu" aria-label="Administration"><a href="/admin"><Icon name="shield-outline" />Admin</a></nav>
+  {/if}
   <form method="POST" action="/auth/logout" onsubmit={signOut}><button disabled={signingOut}><Icon name="logout" />{signingOut ? "Signing out…" : "Sign out"}</button></form>
   {#if error}<Toast message={error} error />{/if}
 </div>
@@ -74,6 +77,7 @@
       [text-decoration:none] [background:transparent];
   }
   nav a:hover, form button:hover { @apply [background:var(--color-brand-soft)]; }
+  .admin-menu { @apply [border-top:1px_solid_var(--color-line)]; }
   form { @apply [border-top:1px_solid_var(--color-line)] pt-[6px]; }
   form button { @apply text-danger; }
   @media (max-width:900px) {
