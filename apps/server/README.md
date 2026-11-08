@@ -91,6 +91,10 @@ configure email forwarding. Keep an off-provider email path for outage alerts.
 
 ## racr Account API
 
+Independent providers can implement the optional [CLI interoperability profile](../../spec/client-api.md)
+using these wire contracts without this server’s storage schema or passkey login.
+The reference web client additionally requires the passkey browser APIs below.
+
 Migration 32 adds the authenticated account-management slice used by
 `racr` in [`../cli`](../cli). It is separate from provider administration and
 federation. The credential commands below are an API reference, not additional

@@ -325,7 +325,7 @@ const COMMANDS: &[(&str, &str, &str, &str)] = &[
         "account browser-login",
         "",
         "provider state credentials scope",
-        "Issue scoped CLI access through a system-browser passkey login with PKCE.",
+        "Issue scoped CLI access through a provider-hosted system-browser login with PKCE.",
     ),
     (
         "account login",

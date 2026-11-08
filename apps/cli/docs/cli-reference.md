@@ -85,7 +85,7 @@ and run `racr doctor --action "<command>"` for supported prerequisite checks.
 
 ### `account browser-login`
 
-Issue scoped CLI access through a system-browser passkey login with PKCE.
+Issue scoped CLI access through a provider-hosted system-browser login with PKCE.
 
 ```text
 racr account browser-login --provider <value> --state <value> --credentials <value> [--scope <value>]

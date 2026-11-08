@@ -1,5 +1,28 @@
 # RACR CLI release notes
 
+## 0.1.5 (prerelease)
+
+- Support provider-chosen browser authorization paths on the selected HTTPS origin.
+  Providers can authenticate CLI users without passkeys while implementing the
+  documented RACR client/account API profile.
+- Report generic `INTERACTION_REQUIRED` errors and provider approval requirements
+  in `doctor`, while retaining passkey-specific diagnostics where applicable.
+- Reject ambiguous authorization/callback parameters, URL userinfo and invalid
+  authorization request IDs before exchanging access.
+- Document the optional client interoperability profile and update login guidance.
+  The reference web client continues to require passkeys.
+
+### Upgrade and compatibility
+
+Replace the executable using the archive, checksum and provenance instructions
+in [the installation guide](docs/cli-installation.md). Existing credential and
+vault formats, account API v1 and CLI output contract v2 remain unchanged; no
+database or CLI-file migration is required for this change. Providers must
+implement the documented RACR API: this release does not add OAuth, arbitrary
+API discovery, headless login or a real SSO integration. Provider-neutral login
+and account access are exercised with an independent HTTPS fixture. Linux x86-64
+archives are qualified on Ubuntu 22.04 and 24.04 by the release workflow.
+
 ## 0.1.3 (prerelease)
 
 - Rename the executable and release archives from `hailp` to `racr`.

@@ -52,7 +52,7 @@ async fn selected(client: &Client, path: &str, input: Option<&Value>) -> Result<
             .is_some_and(|s| s.iter().any(|v| v == "account:write"))
     {
         return Err(Error::client(
-            "Connection consent requires owner-controlled custody and account:read/account:write; managed consent requires a browser passkey",
+            "Connection consent requires owner-controlled custody and account:read/account:write; managed consent requires provider-hosted browser approval",
         ));
     }
     if let Some(s) = optional(path)? {
