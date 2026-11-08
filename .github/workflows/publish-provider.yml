@@ -84,6 +84,10 @@ jobs:
         env:
           REPOSITORY: ${{ github.repository }}
         run: echo "name=ghcr.io/${REPOSITORY,,}/provider" >> "$GITHUB_OUTPUT"
+      - name: Require source-map upload credentials
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: test -n "$SENTRY_AUTH_TOKEN"
       - name: Build and publish provider image
         id: build
         uses: docker/build-push-action@v7
@@ -106,6 +110,12 @@ jobs:
         with:
           context: .
           file: apps/client/Dockerfile
+          build-args: |
+            HAIL_RELEASE=${{ github.sha }}
+            SENTRY_ORG=jason-creviston
+            SENTRY_PROJECT=haili-web
+          secrets: |
+            sentry_auth_token=${{ secrets.SENTRY_AUTH_TOKEN }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.name }}-web-client:sha-${{ github.sha }}
