@@ -9,7 +9,7 @@
         <email>j4@j4crev.com</email>
       </address>
     </author>
-    <date year="2026" month="November" day="6" />
+    <date year="2026" month="November" day="8" />
     <area>Applications and Real-Time</area>
     <workgroup>Individual Submission</workgroup>
     <keyword>permission-based messaging</keyword>
@@ -34,7 +34,7 @@
       <t>Hail names the communication medium; a hail is an individual recipient-authorized message. RACR names the underlying protocol that providers implement to exchange hail. Hail identifiers such as hail.envelope, application/hail-body+cbor, #hail-messaging, and HailMessaging name the objects, formats, keys, and services used by that protocol. They remain current identifiers, not deprecated names awaiting replacement. This terminology does not change wire bytes, signature domains, or interoperability requirements.</t>
       <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <xref target="RFC2119" />
         <xref target="RFC8174" /> when, and only when, they appear in all capitals, as shown here.</t>
-      <t>This draft specifies the architecture and summarizes normative core requirements from <xref target="HAIL-SPEC" />. Where a complete wire or semantic definition has not yet been incorporated, the corresponding specification in that pinned snapshot is a normative dependency. Editorial omissions in this draft do not create alternative encodings, relaxed validation, or new authority. For subscription scopes, Sender Profile fields, and the authentication ordering, resource-admission, and retention bounds specified here, the definitions in this draft take precedence over the pinned snapshot. Attachment definitions are supplied by <xref target="HAIL-ATTACHMENTS" />. Any other inconsistency between the two documents is a defect to resolve before publication.</t>
+      <t>This draft specifies the architecture and summarizes normative core requirements from <xref target="HAIL-SPEC" />. Where a complete wire or semantic definition has not yet been incorporated, the corresponding specification in that pinned snapshot is a normative dependency. Editorial omissions in this draft do not create alternative encodings, relaxed validation, or new authority. Attachment definitions are supplied by <xref target="HAIL-ATTACHMENTS" />. Any inconsistency between this draft and its normative references is a defect to resolve before publication.</t>
       <t>The core flow is delivery under a Grant using Envelope version 1. Envelope versions select distinct authorization profiles; higher-numbered versions do not supersede version 1 for Grant delivery. Connections, threaded replies, shared conversations, and provider transfer are implemented extensions, summarized in <xref target="extensions" />. They are not deferred merely because their complete definitions are outside this document. Implementations claiming an extension MUST implement its complete authorization and lifecycle rules.</t>
       <t>A provider is infrastructure acting for one or more participant DIDs. A sender and recipient are protocol identities, not necessarily people. A Grant is a recipient-signed authorization lineage. An Envelope is a signed per-recipient delivery instruction. A Body is an immutable encoded content document. Acceptance is a durable authorization decision; delivery is durable storage of verified content and its recipient-specific message record.</t>
     </section>
@@ -64,7 +64,7 @@
       <section anchor="discovery">
         <name>Address Bindings and Sender Profiles</name>
         <t>An address uses a lowercase canonical ASCII local part and an IDNA A-label domain. Its local part permits dot-separated letter/digit/hyphen labels, is at most 63 bytes, and excludes quoting, comments, whitespace, non-ASCII characters, and domain literals. The complete canonical address is at most 254 bytes. These rules deliberately differ from SMTP mailbox syntax. The exact IDNA, DNS-delegation, and public-suffix checks remain in the Address Binding specification.</t>
-        <t>Discovery uses WebFinger <xref target="RFC7033" /> with an acct URI <xref target="RFC7565" />. The client requires the exact canonical subject and exactly one matching link with extension relation https://racrproto.com/rel/address-binding and the COSE media type. The link relation uses the extension-URI mechanism of <xref target="RFC8288" />. This relation URI supersedes the corresponding value in the pinned specification snapshot. The domain-selected HTTPS resource supplies a version-2 Address Binding signed by the named DID identity key. Neither a signature without domain publication nor domain publication without the signature verifies the address.</t>
+        <t>Discovery uses WebFinger <xref target="RFC7033" /> with an acct URI <xref target="RFC7565" />. The client requires the exact canonical subject and exactly one matching link with extension relation https://racrproto.com/rel/address-binding and the COSE media type. The link relation uses the extension-URI mechanism of <xref target="RFC8288" />. The domain-selected HTTPS resource supplies a version-2 Address Binding signed by the named DID identity key. Neither a signature without domain publication nor domain publication without the signature verifies the address.</t>
         <t>An Address Binding contains type, version, address, did, issued_at, and key_id. It has no expiration field and requires no periodic renewal. Current domain publication and current DID authority are nevertheless required. Cached verification lasts at most 3600 seconds, and is shortened by HTTP freshness, delegation TTLs, PLC policy, or local security policy. A retained signed binding does not justify indefinite verified-address display.</t>
         <t>A prospective recipient retrieves Sender Profile version 2 from profiles/{sender_did} at the current sender service. The profile is signed by #hail-messaging and includes a revision, display metadata, offered categories, and optional bounded bundled assets. Profile display metadata is not independent proof of an organization name. Grant creation binds the exact verified Address Binding and Sender Profile representation digests into consent_context.</t>
       </section>
@@ -474,16 +474,16 @@ been incorporated into this document. This document obsoletes RFC
         <seriesInfo name="RFC" value="6839" />
         <seriesInfo name="DOI" value="10.17487/RFC6839" />
       </reference>
-      <reference anchor="HAIL-ATTACHMENTS" target="https://github.com/j4crev/hail/blob/360a249397ff11bdda8c028048545ff169c4fcc6/spec/attachments.md">
+      <reference anchor="HAIL-ATTACHMENTS" target="https://github.com/j4crev/hail/blob/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec/attachments.md">
         <front>
-          <title>Message attachments, commit 360a249397ff11bdda8c028048545ff169c4fcc6</title>
+          <title>Message attachments, commit 496f1232905ecdb853c8aaa0fca9ce9e12ad2691</title>
           <author fullname="Hail contributors" />
           <date year="2026" month="November" />
         </front>
       </reference>
-      <reference anchor="HAIL-SPEC" target="https://github.com/j4crev/hail/tree/d286113cd82024d009fb07cc60041f290047f148/spec">
+      <reference anchor="HAIL-SPEC" target="https://github.com/j4crev/hail/tree/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec">
         <front>
-          <title>Hail alpha specification, commit d286113cd82024d009fb07cc60041f290047f148</title>
+          <title>Hail alpha specification, commit 496f1232905ecdb853c8aaa0fca9ce9e12ad2691</title>
           <author fullname="Hail contributors" />
           <date year="2026" month="November" />
         </front>
@@ -535,13 +535,13 @@ been incorporated into this document. This document obsoletes RFC
     </section>
     <section anchor="source-map">
       <name>Source Map and Review Boundary</name>
-      <t>The initial source snapshot is d286113cd82024d009fb07cc60041f290047f148. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md.</t>
+      <t>The normative source snapshot is 496f1232905ecdb853c8aaa0fca9ce9e12ad2691 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md.</t>
       <t>The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.</t>
       <t>Open issues distinguish editorial incorporation work from genuinely unresolved protocol decisions. In particular, current body size, mandatory SPT support, bearer body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.</t>
     </section>
     <section anchor="body-cddl">
       <name>Body Structural Schema Excerpt</name>
-      <t>The following CDDL (<xref target="RFC8610" />) uses the pinned hail.cddl body and asset definitions with the attachment fields from <xref target="HAIL-ATTACHMENTS" /> and the digest dependency included. It defines structure only: the prose and source specification impose additional mark-reference, role, PNG, text, attachment-content, aggregate-size, and cross-field validation. In particular, spt-3 permits one to eight image or header assets, all referenced, and at most eight image blocks with eight million total displayed pixels; only the first block may reference a header asset. Unknown fields are not permitted.</t>
+      <t>The following CDDL (<xref target="RFC8610" />) uses the pinned hail.cddl body, asset, and attachment definitions, with attachment semantics from <xref target="HAIL-ATTACHMENTS" /> and the digest dependency included. It defines structure only: the prose and source specification impose additional mark-reference, role, PNG, text, attachment-content, aggregate-size, and cross-field validation. In particular, spt-3 permits one to eight image or header assets, all referenced, and at most eight image blocks with eight million total displayed pixels; only the first block may reference a header asset. Unknown fields are not permitted.</t>
       <sourcecode type="cddl">sha256 = bstr .size 32
 
 digest = {

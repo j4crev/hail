@@ -1227,7 +1227,7 @@ li > p:last-of-type:only-child {
 </tr></thead>
 <tfoot><tr>
 <td class="left">Creviston</td>
-<td class="center">Expires 10 May 2027</td>
+<td class="center">Expires 12 May 2027</td>
 <td class="right">[Page]</td>
 </tr></tfoot>
 </table>
@@ -1240,12 +1240,12 @@ li > p:last-of-type:only-child {
 <dd class="internet-draft">draft-creviston-racr-00</dd>
 <dt class="label-published">Published:</dt>
 <dd class="published">
-<time datetime="2026-11-06" class="published">6 November 2026</time>
+<time datetime="2026-11-08" class="published">8 November 2026</time>
     </dd>
 <dt class="label-intended-status">Intended Status:</dt>
 <dd class="intended-status">Experimental</dd>
 <dt class="label-expires">Expires:</dt>
-<dd class="expires"><time datetime="2027-05-10">10 May 2027</time></dd>
+<dd class="expires"><time datetime="2027-05-12">12 May 2027</time></dd>
 <dt class="label-authors">Author:</dt>
 <dd class="authors">
 <div class="author">
@@ -1286,7 +1286,7 @@ li > p:last-of-type:only-child {
         time. It is inappropriate to use Internet-Drafts as reference
         material or to cite them other than as "work in progress."<a href="#section-boilerplate.1-3" class="pilcrow">¶</a></p>
 <p id="section-boilerplate.1-4">
-        This Internet-Draft will expire on 10 May 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
+        This Internet-Draft will expire on 12 May 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="copyright">
@@ -1429,7 +1429,7 @@ li > p:last-of-type:only-child {
 <p id="section-2-1">Hail names the communication medium; a hail is an individual recipient-authorized message. RACR names the underlying protocol that providers implement to exchange hail. Hail identifiers such as hail.envelope, application/hail-body+cbor, #hail-messaging, and HailMessaging name the objects, formats, keys, and services used by that protocol. They remain current identifiers, not deprecated names awaiting replacement. This terminology does not change wire bytes, signature domains, or interoperability requirements.<a href="#section-2-1" class="pilcrow">¶</a></p>
 <p id="section-2-2">The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 <span>[<a href="#RFC2119" class="cite xref">RFC2119</a>]</span>
         <span>[<a href="#RFC8174" class="cite xref">RFC8174</a>]</span> when, and only when, they appear in all capitals, as shown here.<a href="#section-2-2" class="pilcrow">¶</a></p>
-<p id="section-2-3">This draft specifies the architecture and summarizes normative core requirements from <span>[<a href="#HAIL-SPEC" class="cite xref">HAIL-SPEC</a>]</span>. Where a complete wire or semantic definition has not yet been incorporated, the corresponding specification in that pinned snapshot is a normative dependency. Editorial omissions in this draft do not create alternative encodings, relaxed validation, or new authority. For subscription scopes, Sender Profile fields, and the authentication ordering, resource-admission, and retention bounds specified here, the definitions in this draft take precedence over the pinned snapshot. Attachment definitions are supplied by <span>[<a href="#HAIL-ATTACHMENTS" class="cite xref">HAIL-ATTACHMENTS</a>]</span>. Any other inconsistency between the two documents is a defect to resolve before publication.<a href="#section-2-3" class="pilcrow">¶</a></p>
+<p id="section-2-3">This draft specifies the architecture and summarizes normative core requirements from <span>[<a href="#HAIL-SPEC" class="cite xref">HAIL-SPEC</a>]</span>. Where a complete wire or semantic definition has not yet been incorporated, the corresponding specification in that pinned snapshot is a normative dependency. Editorial omissions in this draft do not create alternative encodings, relaxed validation, or new authority. Attachment definitions are supplied by <span>[<a href="#HAIL-ATTACHMENTS" class="cite xref">HAIL-ATTACHMENTS</a>]</span>. Any inconsistency between this draft and its normative references is a defect to resolve before publication.<a href="#section-2-3" class="pilcrow">¶</a></p>
 <p id="section-2-4">The core flow is delivery under a Grant using Envelope version 1. Envelope versions select distinct authorization profiles; higher-numbered versions do not supersede version 1 for Grant delivery. Connections, threaded replies, shared conversations, and provider transfer are implemented extensions, summarized in <a href="#extensions" class="auto internal xref">Section 10</a>. They are not deferred merely because their complete definitions are outside this document. Implementations claiming an extension MUST implement its complete authorization and lifecycle rules.<a href="#section-2-4" class="pilcrow">¶</a></p>
 <p id="section-2-5">A provider is infrastructure acting for one or more participant DIDs. A sender and recipient are protocol identities, not necessarily people. A Grant is a recipient-signed authorization lineage. An Envelope is a signed per-recipient delivery instruction. A Body is an immutable encoded content document. Acceptance is a durable authorization decision; delivery is durable storage of verified content and its recipient-specific message record.<a href="#section-2-5" class="pilcrow">¶</a></p>
 </section>
@@ -1472,7 +1472,7 @@ li > p:last-of-type:only-child {
 <a href="#section-4.1" class="section-number selfRef">4.1. </a><a href="#name-address-bindings-and-sender" class="section-name selfRef">Address Bindings and Sender Profiles</a>
         </h3>
 <p id="section-4.1-1">An address uses a lowercase canonical ASCII local part and an IDNA A-label domain. Its local part permits dot-separated letter/digit/hyphen labels, is at most 63 bytes, and excludes quoting, comments, whitespace, non-ASCII characters, and domain literals. The complete canonical address is at most 254 bytes. These rules deliberately differ from SMTP mailbox syntax. The exact IDNA, DNS-delegation, and public-suffix checks remain in the Address Binding specification.<a href="#section-4.1-1" class="pilcrow">¶</a></p>
-<p id="section-4.1-2">Discovery uses WebFinger <span>[<a href="#RFC7033" class="cite xref">RFC7033</a>]</span> with an acct URI <span>[<a href="#RFC7565" class="cite xref">RFC7565</a>]</span>. The client requires the exact canonical subject and exactly one matching link with extension relation https://racrproto.com/rel/address-binding and the COSE media type. The link relation uses the extension-URI mechanism of <span>[<a href="#RFC8288" class="cite xref">RFC8288</a>]</span>. This relation URI supersedes the corresponding value in the pinned specification snapshot. The domain-selected HTTPS resource supplies a version-2 Address Binding signed by the named DID identity key. Neither a signature without domain publication nor domain publication without the signature verifies the address.<a href="#section-4.1-2" class="pilcrow">¶</a></p>
+<p id="section-4.1-2">Discovery uses WebFinger <span>[<a href="#RFC7033" class="cite xref">RFC7033</a>]</span> with an acct URI <span>[<a href="#RFC7565" class="cite xref">RFC7565</a>]</span>. The client requires the exact canonical subject and exactly one matching link with extension relation https://racrproto.com/rel/address-binding and the COSE media type. The link relation uses the extension-URI mechanism of <span>[<a href="#RFC8288" class="cite xref">RFC8288</a>]</span>. The domain-selected HTTPS resource supplies a version-2 Address Binding signed by the named DID identity key. Neither a signature without domain publication nor domain publication without the signature verifies the address.<a href="#section-4.1-2" class="pilcrow">¶</a></p>
 <p id="section-4.1-3">An Address Binding contains type, version, address, did, issued_at, and key_id. It has no expiration field and requires no periodic renewal. Current domain publication and current DID authority are nevertheless required. Cached verification lasts at most 3600 seconds, and is shortened by HTTP freshness, delegation TTLs, PLC policy, or local security policy. A retained signed binding does not justify indefinite verified-address display.<a href="#section-4.1-3" class="pilcrow">¶</a></p>
 <p id="section-4.1-4">A prospective recipient retrieves Sender Profile version 2 from profiles/{sender_did} at the current sender service. The profile is signed by #hail-messaging and includes a revision, display metadata, offered categories, and optional bounded bundled assets. Profile display metadata is not independent proof of an organization name. Grant creation binds the exact verified Address Binding and Sender Profile representation digests into consent_context.<a href="#section-4.1-4" class="pilcrow">¶</a></p>
 </section>
@@ -1726,11 +1726,11 @@ li > p:last-of-type:only-child {
 <dl class="references">
 <dt id="HAIL-ATTACHMENTS">[HAIL-ATTACHMENTS]</dt>
       <dd>
-<span class="refAuthor">contributors, H.</span>, <span class="refTitle">"Message attachments, commit 360a249397ff11bdda8c028048545ff169c4fcc6"</span>, <time datetime="2026-11" class="refDate">November 2026</time>, <span>&lt;<a href="https://github.com/j4crev/hail/blob/360a249397ff11bdda8c028048545ff169c4fcc6/spec/attachments.md">https://github.com/j4crev/hail/blob/360a249397ff11bdda8c028048545ff169c4fcc6/spec/attachments.md</a>&gt;</span>. </dd>
+<span class="refAuthor">contributors, H.</span>, <span class="refTitle">"Message attachments, commit 496f1232905ecdb853c8aaa0fca9ce9e12ad2691"</span>, <time datetime="2026-11" class="refDate">November 2026</time>, <span>&lt;<a href="https://github.com/j4crev/hail/blob/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec/attachments.md">https://github.com/j4crev/hail/blob/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec/attachments.md</a>&gt;</span>. </dd>
 <dd class="break"></dd>
 <dt id="HAIL-SPEC">[HAIL-SPEC]</dt>
       <dd>
-<span class="refAuthor">contributors, H.</span>, <span class="refTitle">"Hail alpha specification, commit d286113cd82024d009fb07cc60041f290047f148"</span>, <time datetime="2026-11" class="refDate">November 2026</time>, <span>&lt;<a href="https://github.com/j4crev/hail/tree/d286113cd82024d009fb07cc60041f290047f148/spec">https://github.com/j4crev/hail/tree/d286113cd82024d009fb07cc60041f290047f148/spec</a>&gt;</span>. </dd>
+<span class="refAuthor">contributors, H.</span>, <span class="refTitle">"Hail alpha specification, commit 496f1232905ecdb853c8aaa0fca9ce9e12ad2691"</span>, <time datetime="2026-11" class="refDate">November 2026</time>, <span>&lt;<a href="https://github.com/j4crev/hail/tree/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec">https://github.com/j4crev/hail/tree/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec</a>&gt;</span>. </dd>
 <dd class="break"></dd>
 <dt id="RFC2119">[RFC2119]</dt>
       <dd>
@@ -1841,7 +1841,7 @@ li > p:last-of-type:only-child {
       <h2 id="name-source-map-and-review-bound">
 <a href="#appendix-B" class="section-number selfRef">Appendix B. </a><a href="#name-source-map-and-review-bound" class="section-name selfRef">Source Map and Review Boundary</a>
       </h2>
-<p id="appendix-B-1">The initial source snapshot is d286113cd82024d009fb07cc60041f290047f148. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
+<p id="appendix-B-1">The normative source snapshot is 496f1232905ecdb853c8aaa0fca9ce9e12ad2691 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
 <p id="appendix-B-2">The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.<a href="#appendix-B-2" class="pilcrow">¶</a></p>
 <p id="appendix-B-3">Open issues distinguish editorial incorporation work from genuinely unresolved protocol decisions. In particular, current body size, mandatory SPT support, bearer body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.<a href="#appendix-B-3" class="pilcrow">¶</a></p>
 </section>
@@ -1851,7 +1851,7 @@ li > p:last-of-type:only-child {
       <h2 id="name-body-structural-schema-exce">
 <a href="#appendix-C" class="section-number selfRef">Appendix C. </a><a href="#name-body-structural-schema-exce" class="section-name selfRef">Body Structural Schema Excerpt</a>
       </h2>
-<p id="appendix-C-1">The following CDDL (<span>[<a href="#RFC8610" class="cite xref">RFC8610</a>]</span>) uses the pinned hail.cddl body and asset definitions with the attachment fields from <span>[<a href="#HAIL-ATTACHMENTS" class="cite xref">HAIL-ATTACHMENTS</a>]</span> and the digest dependency included. It defines structure only: the prose and source specification impose additional mark-reference, role, PNG, text, attachment-content, aggregate-size, and cross-field validation. In particular, spt-3 permits one to eight image or header assets, all referenced, and at most eight image blocks with eight million total displayed pixels; only the first block may reference a header asset. Unknown fields are not permitted.<a href="#appendix-C-1" class="pilcrow">¶</a></p>
+<p id="appendix-C-1">The following CDDL (<span>[<a href="#RFC8610" class="cite xref">RFC8610</a>]</span>) uses the pinned hail.cddl body, asset, and attachment definitions, with attachment semantics from <span>[<a href="#HAIL-ATTACHMENTS" class="cite xref">HAIL-ATTACHMENTS</a>]</span> and the digest dependency included. It defines structure only: the prose and source specification impose additional mark-reference, role, PNG, text, attachment-content, aggregate-size, and cross-field validation. In particular, spt-3 permits one to eight image or header assets, all referenced, and at most eight image blocks with eight million total displayed pixels; only the first block may reference a header asset. Unknown fields are not permitted.<a href="#appendix-C-1" class="pilcrow">¶</a></p>
 <div class="breakable lang-cddl sourcecode" id="appendix-C-2">
 <pre>sha256 = bstr .size 32
 
