@@ -31,8 +31,12 @@ function render(value: Snapshot) {
   el('evidence').textContent = JSON.stringify({ did: value.did, detail: value.detail, currentCid: value.currentCid, audit: value.audit }, null, 2);
   el('recognition').hidden = value.operationStatus !== 'current' || value.currentCid === value.expectedCid || !value.currentState;
   input('recognize-confirm').checked = false;
-  el('recovery').hidden = !value.recoveryCid || value.operationStatus === 'nullified' || Boolean(value.recovery);
-  el('outcome').hidden = !value.recovery;
+  el('recovery').hidden = !value.recoveryCid || value.operationStatus === 'nullified' || Boolean(value.recovery) || Boolean(pending);
+  el('outcome').hidden = !value.recovery && !pending;
+  if (pending && !value.recovery) {
+    el('result').textContent = 'Signed on this device, but server acceptance is not confirmed. Retry these exact bytes; do not sign a different correction.';
+    el('retry').hidden = false;
+  }
   if (value.recovery) {
     pending = { operation: value.recovery.operation, currentCid: value.recovery.reviewedCurrentCid, mode: value.recovery.mode };
     el('result').textContent = value.recovery.observed
@@ -78,6 +82,7 @@ el('submit').onclick = () => void busy(async () => {
   const operation = await signRecovery(value.did, value.audit, value.recoveryCid, prepared.vault, secret, prepared.plan.operation, prepared.mode);
   pending = { operation, currentCid: value.currentCid, mode: prepared.mode };
   clearPlan();
+  render(value); // Keep an exact-byte retry available even if the first POST fails.
   // Public signed bytes may be retained for exact retry; keys and the kit are never uploaded.
   render(await request('recover', pending));
 });
