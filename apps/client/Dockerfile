@@ -24,8 +24,13 @@ COPY --from=plc-lib-build /workspace/hail/vendor/did-method-plc ./vendor/did-met
 RUN bun install --frozen-lockfile --filter hailproto --filter hail-client --filter @racrproto/codec --filter @racrproto/client-support --filter @racrproto/content-builder
 RUN bun run --cwd packages/hail-codec-ts build
 COPY apps/client ./apps/client
+ARG HAIL_RELEASE=development
+ARG SENTRY_ORG
+ARG SENTRY_PROJECT
 # This limits V8 old space only. CI also caps the entire BuildKit container.
-RUN NODE_OPTIONS=--max-old-space-size=1024 bun run --cwd apps/client build
+RUN --mount=type=secret,id=sentry_auth_token \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" \
+    SENTRY_RELEASE="$HAIL_RELEASE" NODE_OPTIONS=--max-old-space-size=1024 bun run --cwd apps/client build
 
 FROM oven/bun:1.4.0 AS dependencies
 WORKDIR /workspace/hail
@@ -43,6 +48,8 @@ RUN bun install --production --frozen-lockfile --filter hail-client --filter @ra
 
 FROM oven/bun:1.4.0
 WORKDIR /workspace/hail/apps/client
+ARG HAIL_RELEASE=development
+ENV PUBLIC_SENTRY_RELEASE=$HAIL_RELEASE
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 BODY_SIZE_LIMIT=28M
 COPY --from=dependencies /workspace/hail/node_modules /workspace/hail/node_modules
 COPY --from=dependencies /workspace/hail/packages /workspace/hail/packages

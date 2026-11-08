@@ -94,6 +94,9 @@ services:
       PORT: 3000
       ORIGIN: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
       HAIL_WEB_CLIENT_NAME: Haili
+      # Public ingest key for this Haili-specific deployment; empty disables telemetry.
+      PUBLIC_SENTRY_DSN: ${HAIL_WEB_CLIENT_SENTRY_DSN-https://80c13bf2881ac862e38923c7ed14201a@o4512397983023104.ingest.us.sentry.io/4512398013825025}
+      PUBLIC_SENTRY_ENVIRONMENT: production
       HAIL_WEB_CLIENT_PROVIDER: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
       # Private Docker transport; public provider/passkey origins stay HTTPS.
       HAIL_WEB_CLIENT_API_ORIGIN: http://provider:3000

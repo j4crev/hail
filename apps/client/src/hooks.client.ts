@@ -1,7 +1,19 @@
 import {mailboxCounts} from '$lib/mailbox-counts.js';
 import {mailboxCache} from '$lib/mailbox-cache.js';
+import * as Sentry from '@sentry/sveltekit';
+import {env} from '$env/dynamic/public';
+import {privacyOptions} from '$lib/sentry.js';
+
+export const handleError=Sentry.handleErrorWithSentry();
 
 export function init() {
+  if(env.PUBLIC_SENTRY_DSN) Sentry.init({
+    dsn:env.PUBLIC_SENTRY_DSN,environment:env.PUBLIC_SENTRY_ENVIRONMENT||'development',
+    release:env.PUBLIC_SENTRY_RELEASE,
+    tracesSampleRate:env.PUBLIC_SENTRY_ENVIRONMENT==='production'?0.1:1,
+    ...privacyOptions,
+    integrations:defaults=>defaults.filter(integration=>!['Breadcrumbs','BrowserSession'].includes(integration.name)),
+  });
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('hail-mailbox');
   channel?.addEventListener('message', event => {
     mailboxCache.clear(); mailboxCounts.set(null);

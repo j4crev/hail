@@ -2,13 +2,20 @@ import {withAccountReads} from "$lib/server/account-reads.js";
 import type { Handle } from "@sveltejs/kit";
 import {isAccountPath,loginPath} from "$lib/auth-routing.js";
 import {isConfigured} from "$lib/server/canary.js";
+import {env as publicEnv} from '$env/dynamic/public';
+import {sequence} from '@sveltejs/kit/hooks';
+import {sentryHandle,handleErrorWithSentry} from '@sentry/sveltekit';
+import {sentryCsp,sentryOrigin} from '$lib/sentry.js';
 
-export const handle: Handle = async ({ event, resolve }) => {
+const applicationHandle: Handle = async ({ event, resolve }) => {
   const connectionInbox = event.url.pathname === "/" && event.url.searchParams.get("view") === "connections" && !event.url.searchParams.has("next");
   if ((isAccountPath(event.url.pathname) || connectionInbox) && !isConfigured(event.cookies)) {
     return new Response(null,{status:303,headers:{location:loginPath(event.url),"cache-control":"no-store","referrer-policy":"no-referrer"}});
   }
   const response = await (event.request.method === "GET" ? withAccountReads(() => resolve(event)) : resolve(event));
+  const ingestOrigin=sentryOrigin(publicEnv.PUBLIC_SENTRY_DSN);
+  const csp=response.headers.get('content-security-policy');
+  if(ingestOrigin && csp) response.headers.set('content-security-policy',sentryCsp(csp,ingestOrigin));
   response.headers.set("cache-control","no-store");
   // Native same-origin POSTs need a non-null Origin for SvelteKit's CSRF check.
   response.headers.set("referrer-policy",(event.url.pathname.startsWith("/auth/") || (event.url.pathname === "/" && event.url.searchParams.has("next")))?"no-referrer":"same-origin");
@@ -31,3 +38,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   return response;
 };
+
+const instrumentedHandle=sequence(sentryHandle(),applicationHandle);
+export const handle:Handle=input=>publicEnv.PUBLIC_SENTRY_DSN?instrumentedHandle(input):applicationHandle(input);
+export const handleError=handleErrorWithSentry();

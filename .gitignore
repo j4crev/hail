@@ -4,6 +4,7 @@ coverage/
 *.tsbuildinfo
 target/
 .env
+.env.sentry-build-plugin
 apps/*/deploy/**/secrets/
 apps/plc-monitor/deploy/cloudflare-alert-worker/.dev.vars*
 /apps/plc-monitor/dist-browser/

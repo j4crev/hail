@@ -1,7 +1,7 @@
 import adapter from "@sveltejs/adapter-node";
 
 export default {
-  kit: { adapter: adapter(),paths:{relative:false}, csp: {
+  kit: { adapter: adapter(),paths:{relative:false}, experimental:{instrumentation:{server:true},tracing:{server:true}}, csp: {
     mode: "auto",
     directives: {
       "default-src": ["self"], "script-src": ["self"], "style-src": ["self", "unsafe-inline"],

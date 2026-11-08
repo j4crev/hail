@@ -1,5 +1,40 @@
 # Independent reference web client
 
+## Sentry error reporting
+
+The SvelteKit client reports browser errors and unexpected server errors when
+`PUBLIC_SENTRY_DSN` is set at runtime. Without it, reporting is disabled. Set
+`PUBLIC_SENTRY_ENVIRONMENT` (`production` for a hosted instance) and
+`PUBLIC_SENTRY_RELEASE` to the deployed Git commit. The client image embeds the
+publication commit via the `HAIL_RELEASE` build argument. The provider and monitor
+are separate services and are not instrumented by this integration.
+
+The Haili deployment uses the public ingest key for `jason-creviston/haili-web`.
+Set `HAIL_WEB_CLIENT_SENTRY_DSN` to an empty value to disable it. The standalone
+profile defaults to disabled and requires the operator's own DSN.
+
+All unexpected errors are captured; request timing is sampled at 10% in production
+and 100% elsewhere. Reports omit request bodies, headers, cookies, query strings,
+account identity, breadcrumbs, local variables and arbitrary exception messages.
+Error type, source file/function/line, release and environment remain; provider API
+errors retain their HTTP status. Span names are operation types rather than URLs.
+Replay and log/metric export are disabled. Browser reporting adds only the configured
+HTTPS ingest origin to `connect-src`; the recovery page's `connect-src 'none'` and
+signup restrictions remain in force, so browser reporting there may be blocked.
+
+For readable source locations, provide `SENTRY_AUTH_TOKEN` through the GitHub Actions
+repository secret store. Publication passes it as a BuildKit secret, never a build
+argument or image environment variable. The build uploads source maps and their
+embedded application source to the configured Sentry project and deletes browser
+maps afterward. Local builds can upload with `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`,
+`SENTRY_PROJECT`, and `SENTRY_RELEASE` in the build environment. A build without a
+token remains usable but does not upload maps. Do not commit a build token.
+
+Verification uses the built application and fictional loopback fixture, with a
+temporary failing route removed afterward. Confirm the resulting issue in Sentry,
+including original source locations after source-map upload, before claiming a
+production rollout is fully verified. No permanent crash endpoint is installed.
+
 ## Verification
 
 PRs confined to this directory run web typechecking, unit tests, browser checks,
