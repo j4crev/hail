@@ -58,6 +58,16 @@ pub async fn doctor(
             {
                 blockers.push(json!({"code":"PASSKEY_REQUIRED", "message":format!("{action} requires a passkey")}));
             }
+            if let Some(action) = action.filter(|a| !a.is_empty())
+                && capabilities["interactionRequired"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|v| v == action))
+                && !capabilities["passkeyRequired"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|v| v == action))
+            {
+                blockers.push(json!({"code":"INTERACTION_REQUIRED", "message":format!("{action} requires provider-hosted approval")}));
+            }
             if capabilities["signup"]["mode"] == "invite" {
                 blockers.push(json!({"code":"SIGNUP_INVITATION_REQUIRED", "message":"Signup requires an invitation"}));
             }

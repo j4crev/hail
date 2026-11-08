@@ -63,6 +63,13 @@ An empty list means no subscriptions are offered.
 Connection, reply-capability, and shared-conversation authorization are separate
 from subscription Grants. Their messages MUST NOT contain a category.
 
+## Client interoperability
+
+The optional [RACR client profile](client-api.md) defines CLI provider
+interoperability, authentication-method-neutral browser authorization and the
+account API boundary. It is not required for federation. The reference web
+client retains its passkey-specific browser contract.
+
 ## Reference client namespace
 
 The reference provider's account API and client state use `racr.*` type names,

@@ -300,7 +300,7 @@ fn http_error(status: u16, headers: &HeaderMap) -> Error {
     let code = headers.get("Hail-Error-Code").and_then(|v| v.to_str().ok());
     let code = match (status, code) {
         (401, Some("CREDENTIAL_EXPIRED" | "CREDENTIAL_REVOKED"))
-        | (403, Some("MISSING_SCOPE" | "PASSKEY_REQUIRED"))
+        | (403, Some("MISSING_SCOPE" | "PASSKEY_REQUIRED" | "INTERACTION_REQUIRED"))
         | (410, Some("APPROVAL_EXPIRED")) => code.unwrap().to_owned(),
         _ => format!("HTTP_{status}"),
     };

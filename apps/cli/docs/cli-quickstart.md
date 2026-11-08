@@ -1,8 +1,7 @@
 # Use racr with your existing web account
 
 [Install racr](cli-installation.md) first. This guide assumes an existing Hail
-account with a working browser passkey and a provider that enables CLI browser
-authorization. It does not create another identity or change custody.
+account with a provider that implements [CLI browser authorization](../../../spec/client-api.md). It does not create another identity or change custody.
 
 ## Sign in with read-only access
 
@@ -20,7 +19,9 @@ racr account browser-login \
   --scope messages:read
 ```
 
-Authenticate with your passkey and review the requested permissions in the browser.
+Sign in using your provider’s authentication method and review the requested
+permissions in the browser. The reference provider requires a passkey; other
+providers may use a different method.
 The resulting credential stays in the private local file. Keep the state file
 private too; if interrupted, retain the original paths and arguments for the
 retry. This is a desktop flow, not headless-device authorization.
@@ -56,8 +57,9 @@ vault secrets or recovery packages into support requests.
   and credential paths. An interrupted login should retain its original paths.
 - If the browser cannot open, check your desktop's `xdg-open` installation and
   default browser. SSH/headless hosts are not covered by this quickstart.
-- Lost passkeys require the [account recovery procedure](account-access-recovery.md),
-  not a new account. Keep your original recovery package and secret.
+- If you cannot sign in, use your provider’s recovery procedure. For the reference
+  provider, see [account recovery](account-access-recovery.md). Keep your original
+  recovery package and secret.
 
 See the [command reference](cli-reference.md) for options, the
 [workflow guide](cli-workflows.md) for complete task recipes, and the

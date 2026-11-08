@@ -43,18 +43,24 @@ fn expiry(v: &Value) -> Result<i64, Error> {
         .map(|v| v.timestamp_millis())
         .ok_or_else(invalid)
 }
-fn authorization(state: &Value, provider: &str, check_id: bool) -> Result<(), Error> {
+fn authorization(state: &Value, provider: &str) -> Result<(), Error> {
     let url = reqwest::Url::parse(state["authorizationUrl"].as_str().ok_or_else(invalid)?)
         .map_err(|_| invalid())?;
-    let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
-    if check_id
-        && !state["requestId"]
-            .as_str()
-            .is_some_and(|s| UUID.is_match(s))
+    let params: Vec<_> = url.query_pairs().collect();
+    let parameter = |name: &str| {
+        let mut values = params.iter().filter(|(key, _)| key == name);
+        let value = values.next().map(|(_, value)| value.as_ref());
+        if values.next().is_some() { None } else { value }
+    };
+    if !state["requestId"]
+        .as_str()
+        .is_some_and(|s| UUID.is_match(s))
         || url.origin().ascii_serialization() != provider
-        || url.path() != "/auth/authorize"
-        || params.get("request").map(|s| s.as_ref()) != state["requestId"].as_str()
-        || params.get("state").map(|s| s.as_ref()) != state["state"].as_str()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.as_str().len() > 8192
+        || parameter("request") != state["requestId"].as_str()
+        || parameter("state") != state["state"].as_str()
         || url.fragment()
             != Some(format!("code={}", state["code"].as_str().ok_or_else(invalid)?).as_str())
     {
@@ -68,7 +74,7 @@ async fn request(client: &Client, path: &str, body: &Value) -> Result<Value, Err
         .request_at(path, "/api/v1/auth/authorization", Some(body))
         .await
         .map_err(|e| {
-            if e.code == "TRANSPORT_ERROR" {
+            if matches!(e.code.as_str(), "TRANSPORT_ERROR" | "INTERACTION_REQUIRED") {
                 e
             } else {
                 Error::client(&e.message)
@@ -106,7 +112,8 @@ async fn callback(
                 .find(|(k, _)| k == key)
                 .map(|(_, v)| v.as_ref())
         };
-        (url.path() == "/callback"
+        (pairs.len() == 2
+            && url.path() == "/callback"
             && get("state") == state["state"].as_str()
             && get("code") == state["code"].as_str()
             && pairs
@@ -177,7 +184,7 @@ pub async fn run(args: &Args) -> Result<Value, Error> {
             return Err(invalid());
         }
         if s.get("requestId").is_some() {
-            authorization(s, provider, true)?;
+            authorization(s, provider)?;
         } else if s["approved"] == true {
             return Err(invalid());
         }
@@ -187,6 +194,8 @@ pub async fn run(args: &Args) -> Result<Value, Error> {
             .map_err(|_| invalid())?;
         if url.scheme() != "http"
             || url.host_str() != Some("127.0.0.1")
+            || !url.username().is_empty()
+            || url.password().is_some()
             || url.path() != "/callback"
             || url.query().is_some()
             || url.fragment().is_some()
@@ -218,7 +227,7 @@ pub async fn run(args: &Args) -> Result<Value, Error> {
             }
             state[field] = prepared[field].clone();
         }
-        authorization(&state, provider, false)?;
+        authorization(&state, provider)?;
         private::replace(path, &state)?;
     }
     if state["approved"] != true {

@@ -60,6 +60,7 @@ try {
       if (scenario === "simple-write") return json({path,body:await request.json()});
       if (scenario === "redirect") return new Response(null, { status: 302, headers: { Location: `${url.origin}/forbidden` } });
       if (scenario === "throttle") return new Response(token, { status: 429, headers: { "Retry-After": "600" } });
+      if (scenario === "interaction") return new Response(token, { status: 403, headers: { "Hail-Error-Code": "INTERACTION_REQUIRED" } });
       if (scenario === "expired") return new Response(token, { status: 401, headers: { "Hail-Error-Code": "CREDENTIAL_EXPIRED" } });
       if (scenario === "wrong-error-code") return new Response(token, { status: 403, headers: { "Hail-Error-Code": "CREDENTIAL_EXPIRED" } });
       if (scenario === "bad-json") return new Response("{", { headers: { "Content-Type": "application/json" } });
@@ -77,7 +78,8 @@ try {
       if (scenario === "array") return json([]);
       if (path === "/api/v1/capabilities") return json(scenario === "bad-capabilities" ? {} : {
         type:"racr.capabilities",version:1,features:{inboxWait:true},signup:{mode:scenario === "doctor-blockers" ? "invite" : "open"},
-        passkeyRequired:["account browser-login"]
+        passkeyRequired:scenario === "neutral-doctor" ? [] : ["account browser-login"],
+        ...(scenario === "neutral-doctor" ? {interactionRequired:["account browser-login"]} : {})
       });
       if (path.startsWith("/messages/") || path === "/inbox/updates") {
         if (scenario === "hang" || scenario === "hang-second" && requests.length > 1) return new Promise<Response>(() => {});
@@ -197,6 +199,14 @@ try {
   scenario = "doctor-blockers";
   await compare(["doctor","--scope","messages:read","--scope","grants:write","--action","account browser-login"]);
   for (const name of ["bad-capabilities","expired"]) { scenario = name; await compare(["doctor"]); }
+  scenario = "neutral-doctor";
+  const neutralDoctor = await run([binary],["doctor","--action","account browser-login"]);
+  assert.equal(neutralDoctor.exit,0);
+  assert.equal(neutralDoctor.stdout.blockers[0].code,"INTERACTION_REQUIRED");
+  scenario = "interaction";
+  const interaction = await run([binary],["account","show"]);
+  assert.equal(interaction.stderr.error.code,"INTERACTION_REQUIRED");
+  assert.equal(interaction.exit,1);
   scenario = "normal";
   for (const args of [["doctor","--scope","unknown"], ["doctor","--scope",""], ["conversation","show","bad-did"],
     ["conversation","show",did,"--trash"], ["inbox","wait","--timeout","0"], ["message","status",id,"--interval","1"],

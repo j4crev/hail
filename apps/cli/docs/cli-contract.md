@@ -1,6 +1,8 @@
 # racr developer/agent contract — v2
 
-This is the reference client's contract, not a mandatory federation API. Hail
+This is the CLI output contract, not a mandatory federation API. Independent
+providers can implement the optional [client interoperability profile](../../../spec/client-api.md)
+to support the CLI without using the reference server or passkeys. Hail
 signed objects and federation HTTP semantics remain governed by `hail/spec`.
 The CLI package version is separate from contract v2,
 the provider's `/api/v1` path, and signed-object/file format versions.
@@ -164,7 +166,7 @@ cursors are invalid after rollback/reapply.
 
 Errors retain `httpStatus` and `retryable`, while `error.code` can now be
 `CREDENTIAL_EXPIRED`, `CREDENTIAL_REVOKED`, `MISSING_SCOPE`, `PASSKEY_REQUIRED`,
-or `APPROVAL_EXPIRED`. The provider sends these codes in `Hail-Error-Code` and
+`INTERACTION_REQUIRED`, or `APPROVAL_EXPIRED`. The provider sends these codes in `Hail-Error-Code` and
 its JSON problem response. The CLI accepts only known codes matched to their
 HTTP status, ignores untrusted error text, and falls back to `HTTP_<status>`
 for older providers or unspecified conditions. Do not infer expiry from every
