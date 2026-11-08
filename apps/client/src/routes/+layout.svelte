@@ -83,7 +83,6 @@
 {#snippet links()}
   <a class="hail-button compose-button" href="/compose" aria-current={page.url.pathname === "/compose" ? "page" : undefined}>Compose</a>
   <div class="nav-group"><nav aria-label="Main navigation">{#each navigation as item, index}{#if index === 5}<p class="nav-label [margin:22px_14px_6px] text-muted text-[10px] font-[600] tracking-[.1em] uppercase">Your network</p>{/if}<a href={item.href} aria-current={active(item.href) ? "page" : undefined}><Icon name={item.icon} />{item.label}{#if item.unread !== undefined && item.unread > 0}<span class="ml-auto text-right tabular-nums" aria-label={`${item.unread} unread messages`}>{item.unread}</span>{/if}{#if item.unseen && item.unseen > 0}<span class="ml-auto text-right tabular-nums text-brand-strong" aria-label={`${item.unseen} unseen connections`}>{item.unseen}</span>{/if}</a>{/each}</nav></div>
-  {#if page.data.account?.providerOperator}<a class="hail-button-secondary" href="/admin">Provider administration</a>{/if}
   <div class="nav-bottom"></div>
 {/snippet}
 <!-- Full navigation prevents signup/recovery CSP from leaking into the app. -->
@@ -92,10 +91,10 @@
   {#if focused}
     <header class="public-header">{@render brand()}{#if page.url.pathname !== "/"}<a class="hail-button-secondary" href="/">{page.data.hasAccountSession ? "Back to home" : "Home"}</a>{:else if page.data.registration?.mode === "invite"}<span class="alpha-badge">Invitation-only alpha</span>{/if}</header>
   {:else}
-    <aside class="sidebar">{@render brand()}{@render links()}<div class="sidebar-account [border-top:1px_solid_var(--color-line)] pt-[10px]"><UserMenu {address} {avatar} /></div></aside>
+    <aside class="sidebar">{@render brand()}{@render links()}<div class="sidebar-account [border-top:1px_solid_var(--color-line)] pt-[10px]"><UserMenu {address} {avatar} providerOperator={page.data.account?.providerOperator} /></div></aside>
     <header class="mobile-header"><button class="icon-button" onclick={openDrawer} aria-label={unseenConnections ? `Open navigation, ${unseenConnections} unseen connections` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="mobile-navigation"><Icon name="menu" />{#if unseenConnections > 0}<span class="navigation-dot" aria-hidden="true"></span>{/if}</button>{@render brand()}</header>
     <dialog id="mobile-navigation" class="navigation-drawer" bind:this={drawer} onclose={() => {drawerOpen = false;}} onclick={event => {if (event.target === drawer) closeDrawer();}} aria-label="Navigation">
-      <div class="drawer-content"><div class="drawer-heading flex items-center justify-between gap-[10px]">{@render brand()}</div>{@render links()}<div class="drawer-footer"><UserMenu {address} {avatar} compact drawerAccount /><button class="icon-button" onclick={closeDrawer} aria-label="Close navigation"><Icon name="close" /></button></div></div>
+      <div class="drawer-content"><div class="drawer-heading flex items-center justify-between gap-[10px]">{@render brand()}</div>{@render links()}<div class="drawer-footer"><UserMenu {address} {avatar} providerOperator={page.data.account?.providerOperator} compact drawerAccount /><button class="icon-button" onclick={closeDrawer} aria-label="Close navigation"><Icon name="close" /></button></div></div>
     </dialog>
   {/if}
   <main id="main-content" tabindex="-1">{#if page.data.account?.addressReleased}

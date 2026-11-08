@@ -278,7 +278,7 @@ subscription updates; Inbox shows connection messages. Both have their own
 navigation entry and no tabs. Desktop uses Compose in navigation. On mobile, Feed and Inbox also have a floating
 compose button for subscribers and connections respectively; selection hides it. The circular account avatar
 opens a native popover as the sole navigation to Account, Settings and
-Sign out; those pages have no cross-link cards. Both the
+Sign out, plus Admin for provider operators; those pages have no cross-link cards. Both the
 popover and drawer support outside-click and Escape dismissal; the drawer locks
 background scrolling and restores focus when closed. Account details live at
 `/account`, including Sign-in & security for passkeys and active sessions. Old
@@ -372,6 +372,7 @@ Run `bun run --cwd apps/client preview:design` from the repository root, then op
 fixture provider with subscription artwork, connection messages, a sent message,
 subscriptions and a sender profile. It needs no passkey or production credentials.
 Use `HAIL_DESIGN_PORT` to choose another port. Stop with Ctrl+C.
+Set `HAIL_DESIGN_OPERATOR=1` to show the admin-only profile menu link; operator API actions are unavailable in this fixture.
 Set `HAIL_DESIGN_UNSEEN_CONNECTIONS=1` to include two unseen connections and an older connection; opening Connections acknowledges the new entries in memory.
 Run `bun run --cwd apps/client test:unseen-connections` for the automated badge, mobile dot, grouping and acknowledgment check.
 
