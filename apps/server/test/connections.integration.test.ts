@@ -146,6 +146,17 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
     // Introduction consent is a separate local policy: existing connections
     // default on without overwriting explicit choices; browser/API checks apply.
     const preferencesApp=new Hono();registerConnectionRoutes(preferencesApp,service,accounts,origin);
+    const seenPath=origin+'/api/v1/account/connections/seen';
+    const seenHeaders={Origin:origin,'Content-Type':'application/json',Cookie:'hail_session='+a.token};
+    const seenCall=(body:unknown,headers=seenHeaders,path=seenPath)=>preferencesApp.request(path,{method:'POST',headers,body:JSON.stringify(body)});
+    const seenVectors=await Bun.file(new URL('../../../spec/vectors/provider-connections.json',import.meta.url)).json();
+    for(const body of seenVectors.valid)expect((await seenCall(body)).status).toBe(200);
+    for(const body of seenVectors.invalid)expect((await seenCall(body)).status).toBe(400);
+    expect((await seenCall(seenVectors.valid[0],{...seenHeaders,Origin:'https://evil.example.com'})).status).toBe(403);
+    expect((await seenCall(seenVectors.valid[0],{...seenHeaders,Cookie:''})).status).toBe(401);
+    expect((await seenCall(seenVectors.valid[0],{...seenHeaders,'Content-Type':'text/plain'})).status).toBe(415);
+    expect((await seenCall(seenVectors.valid[0],seenHeaders,seenPath+'?all=true')).status).toBe(400);
+    expect((await preferencesApp.request(seenPath,{headers:seenHeaders})).status).toBe(405);
     const preferencePath=origin+'/api/v1/account/connections/conversation-preferences';
     const preferenceCall=(body?:unknown,user=a,headers:Record<string,string>={})=>preferencesApp.request(preferencePath,{
       method:body===undefined?'GET':'POST',headers:{Origin:origin,'Content-Type':'application/json',Cookie:'hail_session='+user.token,...headers},

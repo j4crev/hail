@@ -16,10 +16,24 @@
     return () => {cleanup(); window.removeEventListener("focus", refresh);};
   });
   import {page} from "$app/state";
-  import {afterNavigate} from "$app/navigation";
+  import {afterNavigate, invalidate} from "$app/navigation";
   import Icon from "$lib/Icon.svelte";
   import UserMenu from "$lib/UserMenu.svelte";
   let {children} = $props();
+  const unseenConnections = $derived(page.data.unseenConnections ?? 0);
+  onMount(() => {
+    let pending = false, lastRefresh = Date.now();
+    const refresh = async () => {
+      if (pending || !page.data.hasAccountSession || document.visibilityState !== 'visible' || Date.now()-lastRefresh < 10_000) return;
+      pending = true; lastRefresh = Date.now();
+      try {await invalidate('hail:counts');} finally {pending = false;}
+    };
+    const update = () => {void refresh().catch(() => {});};
+    window.addEventListener('focus', update);
+    document.addEventListener('visibilitychange', update);
+    const timer = setInterval(update, 30_000 + Math.random()*5000);
+    return () => {clearInterval(timer);window.removeEventListener('focus', update);document.removeEventListener('visibilitychange', update);};
+  });
   let drawer = $state<HTMLDialogElement>();
   let drawerOpen = $state(false);
   let viewingMessage = $derived(page.route.id === '/message/[sender]/[messageId]' || page.route.id === '/conversation/[sender]/[messageId]' || page.route.id === '/sent/[messageId]' || page.route.id === '/sent/send/[kind]/[messageId]');
@@ -30,7 +44,7 @@
     {href: "/sent", label: "Sent", icon: "sent"},
     {href: "/trash", label: "Trash", icon: "trash"},
     {href: "/permissions", label: "Subscriptions", icon: "people"},
-    {href: "/connections", label: "Connections", icon: "user"},
+    {href: "/connections", label: "Connections", icon: "user", unseen: unseenConnections},
     {href: "/categories", label: "Categories", icon: "feed"}
   ]);
   let focused = $derived(!page.data.hasAccountSession || (page.url.pathname === "/" && page.url.searchParams.has("next")) || page.url.pathname.startsWith("/auth/") || page.url.pathname.startsWith("/signup"));
@@ -68,7 +82,7 @@
 {/snippet}
 {#snippet links()}
   <a class="hail-button compose-button" href="/compose" aria-current={page.url.pathname === "/compose" ? "page" : undefined}>Compose</a>
-  <div class="nav-group"><nav aria-label="Main navigation">{#each navigation as item, index}{#if index === 5}<p class="nav-label [margin:22px_14px_6px] text-muted text-[10px] font-[600] tracking-[.1em] uppercase">Your network</p>{/if}<a href={item.href} aria-current={active(item.href) ? "page" : undefined}><Icon name={item.icon} />{item.label}{#if item.unread !== undefined && item.unread > 0}<span class="ml-auto text-right tabular-nums" aria-label={`${item.unread} unread messages`}>{item.unread}</span>{/if}</a>{/each}</nav></div>
+  <div class="nav-group"><nav aria-label="Main navigation">{#each navigation as item, index}{#if index === 5}<p class="nav-label [margin:22px_14px_6px] text-muted text-[10px] font-[600] tracking-[.1em] uppercase">Your network</p>{/if}<a href={item.href} aria-current={active(item.href) ? "page" : undefined}><Icon name={item.icon} />{item.label}{#if item.unread !== undefined && item.unread > 0}<span class="ml-auto text-right tabular-nums" aria-label={`${item.unread} unread messages`}>{item.unread}</span>{/if}{#if item.unseen && item.unseen > 0}<span class="ml-auto text-right tabular-nums text-brand-strong" aria-label={`${item.unseen} unseen connections`}>{item.unseen}</span>{/if}</a>{/each}</nav></div>
   {#if page.data.account?.providerOperator}<a class="hail-button-secondary" href="/admin">Provider administration</a>{/if}
   <div class="nav-bottom"></div>
 {/snippet}
@@ -79,7 +93,7 @@
     <header class="public-header">{@render brand()}{#if page.url.pathname !== "/"}<a class="hail-button-secondary" href="/">{page.data.hasAccountSession ? "Back to home" : "Home"}</a>{:else if page.data.registration?.mode === "invite"}<span class="alpha-badge">Invitation-only alpha</span>{/if}</header>
   {:else}
     <aside class="sidebar">{@render brand()}{@render links()}<div class="sidebar-account [border-top:1px_solid_var(--color-line)] pt-[10px]"><UserMenu {address} {avatar} /></div></aside>
-    <header class="mobile-header"><button class="icon-button" onclick={openDrawer} aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="mobile-navigation"><Icon name="menu" /></button>{@render brand()}</header>
+    <header class="mobile-header"><button class="icon-button" onclick={openDrawer} aria-label={unseenConnections ? `Open navigation, ${unseenConnections} unseen connections` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="mobile-navigation"><Icon name="menu" />{#if unseenConnections > 0}<span class="navigation-dot" aria-hidden="true"></span>{/if}</button>{@render brand()}</header>
     <dialog id="mobile-navigation" class="navigation-drawer" bind:this={drawer} onclose={() => {drawerOpen = false;}} onclick={event => {if (event.target === drawer) closeDrawer();}} aria-label="Navigation">
       <div class="drawer-content"><div class="drawer-heading flex items-center justify-between gap-[10px]">{@render brand()}</div>{@render links()}<div class="drawer-footer"><UserMenu {address} {avatar} compact drawerAccount /><button class="icon-button" onclick={closeDrawer} aria-label="Close navigation"><Icon name="close" /></button></div></div>
     </dialog>
@@ -117,7 +131,8 @@
   .focused main { @apply min-h-0 [padding:32px_0_64px] [background:transparent]; }
   .alpha-badge { @apply [border:1px_solid_var(--color-line)] rounded-[99px] [padding:7px_12px] text-muted text-[11px]; }
   .mobile-header { @apply hidden; }
-  .icon-button { @apply grid place-items-center w-[44px] h-[44px] p-0 [border:0] [background:transparent]; }
+  .navigation-dot { position:absolute; top:5px; right:5px; width:7px; height:7px; border-radius:50%; background:var(--color-brand); box-shadow:0 0 0 3px var(--color-canvas); }
+  .icon-button { position:relative; @apply grid place-items-center w-[44px] h-[44px] p-0 [border:0] [background:transparent]; }
   .navigation-drawer {
     @apply fixed [inset:0_auto_0_0] w-[min(320px,_calc(100vw_-_40px))] h-[100dvh] [max-height:none] [max-width:none] m-0
       p-0 [border:0];

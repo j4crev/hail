@@ -8,7 +8,7 @@
   import DateTime from "$lib/DateTime.svelte";
   import ContactAddress from "$lib/ContactAddress.svelte";
   import {onMount,tick} from "svelte";
-  import {invalidateAll} from "$app/navigation";
+  import {invalidate, invalidateAll} from "$app/navigation";
   import SelectionAvatar from "$lib/SelectionAvatar.svelte";
   import SelectionActions from "$lib/SelectionActions.svelte";
   import {senderQr} from "$lib/permissions.js";
@@ -37,12 +37,49 @@
   let shown=$state<string|null>(null),draft=$state<Record<string,unknown>|null>(null);
   const qr=$derived(shown?senderQr(shown):null);
   const personal=$derived(list?.codes.find(code=>code.personal));
-  async function load(){list=await connectionRequest();}
+  // Retain the visit's grouping after acknowledgment; selection has its own styling.
+  let newKeys=$state<string[]>([]);
+  const key=(connection:ConnectionList['connections'][number])=>`${connection.id}:${connection.epoch}`;
+  const groups=$derived([
+    {title:'New connections',fresh:true,items:(list?.connections??[]).filter(c=>newKeys.includes(key(c)))},
+    {title:'Earlier connections',fresh:false,items:(list?.connections??[]).filter(c=>!newKeys.includes(key(c)))}
+  ]);
+  let mounted=false,acknowledging=false,refreshing=false;
+  const acknowledged=new Set<string>();
+  function acceptList(next:ConnectionList){
+    list=next;
+    newKeys=[...new Set([...newKeys,...next.connections.filter(c=>c.isNew).map(key)])];
+    void acknowledge();
+  }
+  async function acknowledge(){
+    if(!mounted||acknowledging||!list||document.visibilityState!=='visible'||addOpen)return;
+    const items=list.connections.filter(c=>c.isNew&&c.epoch&&!acknowledged.has(key(c)));
+    if(!items.length)return;
+    acknowledging=true;
+    try{
+      await tick();
+      if(!mounted||document.visibilityState!=='visible'||addOpen)return;
+      await connectionRequest('seen',{connections:items.map(c=>({id:c.id,epoch:c.epoch}))});
+      for(const item of items)acknowledged.add(key(item));
+      if(mounted)await invalidate('hail:counts');
+    }catch{/* Keep unseen state on failure; retry while the page is visible. */}
+    finally{acknowledging=false;}
+  }
+  async function load(){acceptList(await connectionRequest());}
   onMount(()=>{
+    mounted=true;
     try{pendingId=sessionStorage.getItem(CONNECTION_APPROVAL);}catch{/* Storage may be unavailable. */}
     void run(initialize);
     const timer=setInterval(()=>{if(!busy&&!prepared&&!recoveryNeeded&&list?.pendingConnections?.some(p=>!["expired","conflict"].includes(p.state)))void load().catch(()=>{message="Synchronization status is unavailable. Your saved request will keep retrying.";});},3000);
-    return()=>clearInterval(timer);
+    const refresh=async()=>{
+      if(document.visibilityState!=='visible'||busy||prepared||recoveryNeeded||addOpen||selected.length||refreshing)return;
+      refreshing=true;
+      try{await load();}catch{/* Keep the last successfully displayed list. */}finally{refreshing=false;}
+    };
+    const update=()=>{void refresh();};
+    const refreshTimer=setInterval(update,30_000);
+    window.addEventListener('focus',update);document.addEventListener('visibilitychange',update);
+    return()=>{mounted=false;clearInterval(timer);clearInterval(refreshTimer);window.removeEventListener('focus',update);document.removeEventListener('visibilitychange',update);};
   });
   async function run(action:()=>Promise<void>){if(busy)return;busy=true;message="";success="";try{await action();}catch(error){message=error instanceof Error?error.message:"Connection request failed.";}finally{busy=false;}}
   async function prepare(input:Record<string,unknown>,immediate=false){
@@ -52,7 +89,7 @@
   }
   function remember(id:string|null){pendingId=id;try{if(id)sessionStorage.setItem(CONNECTION_APPROVAL,id);else sessionStorage.removeItem(CONNECTION_APPROVAL);}catch{/* Keep in-page recovery available. */}}
   async function initialize(){
-    if(initialList)list=initialList;else await load();
+    if(initialList)acceptList(initialList);else await load();
     if(pendingId){addOpen=true;await check();}
   }
   async function check(){
@@ -126,15 +163,32 @@
           {#snippet actions()}<button class="hail-button-secondary" disabled={busy} onclick={()=>run(removeSelected)}>{selectedConnections.length===1?'Remove connection':'Remove connections'}</button>{/snippet}
         </SelectionActions>
       {/if}
+      {#each groups as group (group.title)}
+      {#if group.items.length}
+      <div class="connection-group" class:new-connections={group.fresh}>
+      {#if newKeys.length}<div class="connection-divider"><h3>{group.title}</h3><span aria-hidden="true"></span></div>{/if}
       <div class="compact-list">
-      {#each list.connections as connection (connection.id)}
+      {#each group.items as connection (connection.id)}
         <article class="list-row contact-row" class:is-selected={selected.includes(connection.id)}>
           <SelectionAvatar name={connection.address} avatar={avatars[connection.did]} selected={selected.includes(connection.id)} disabled={busy||prepared!==null||recoveryNeeded||draft!==null} label={`Select connection with ${connection.address}`} ontoggle={()=>toggle(connection.id)} /><div class="contact-copy"><strong class="text-sm"><ContactAddress {owner} did={connection.did} address={connection.address} /></strong>
           <code class="contact-identity" title={connection.did}>{connection.did}</code></div>
         </article>
       {/each}
       </div>
+      </div>
+      {/if}
+      {/each}
     </section>
     {#if list.pendingConnections?.length}<section class="grid gap-3" aria-label="Connection synchronization"><h3 class="m-0 text-xl">Synchronizing with other providers</h3>{#each list.pendingConnections as pending}<article class="hail-card grid min-w-0 gap-2 p-5"><strong class="[overflow-wrap:anywhere]">{pending.address}</strong><p class="m-0 text-sm text-muted">{pending.state==="expired"?"This connection attempt expired. Open a current code to review and try again.":pending.state==="conflict"?"This attempt could not be confirmed because the reviewed identity or relationship changed. Review a current code before trying again.":pending.kind==="disconnect"?"Disconnected here. Notifying the other provider; automatic retries continue if it is offline.":pending.state==="active"?"Connected here. Updating the other provider's view; automatic retries continue if it is offline.":"Your connection approval is saved. Awaiting verified confirmation from both providers; no additional acceptance is needed."}</p></article>{/each}</section>{/if}
   </section>
 {:else if message}<section class="mt-8 grid gap-4" aria-label="Connection codes unavailable"><Toast message={message} error /><button class="hail-button-secondary justify-self-start" disabled={busy} onclick={()=>run(initialize)}>Retry loading connection codes</button></section>{:else}<p class="text-sm text-muted" role="status">Loading connections…</p>{/if}
+
+<style>
+  .connection-group { min-width:0; }
+  .connection-divider { display:flex; align-items:center; gap:14px; margin:4px 0 10px; color:var(--color-muted); }
+  .connection-divider h3 { margin:0; font-size:12px; font-weight:600; letter-spacing:.025em; white-space:nowrap; }
+  .connection-divider span { height:1px; flex:1; background:var(--color-line); }
+  .new-connections .connection-divider { color:var(--color-brand-strong); }
+  .new-connections .connection-divider span { background:linear-gradient(to right,var(--color-brand),var(--color-brand-soft)); }
+  .new-connections { margin-bottom:8px; }
+</style>

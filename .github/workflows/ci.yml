@@ -120,6 +120,7 @@ jobs:
           bun scripts/check-browser-signup.ts
           bun scripts/check-browser-wizard.ts
           bun scripts/check-browser-relationship-removal.ts
+          bun scripts/check-browser-unseen-connections.ts
           bun scripts/check-browser-compose.ts
           bun scripts/check-browser-conversations.ts
           bun scripts/check-browser-conversations.ts --shared

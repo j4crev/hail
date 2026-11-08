@@ -180,7 +180,13 @@ export class AccountMessaging {
       FROM delivered_messages message JOIN received_envelopes envelope
         ON envelope.sender_did=message.sender_did AND envelope.message_id=message.message_id AND envelope.recipient_did=message.recipient_did
       WHERE message.recipient_did=${session.did} AND message.trashed_at IS NULL AND message.is_read=false`;
-    return counts!;
+    const [unseen]=await this.sql<{unseenConnections:number}[]>`SELECT count(*)::integer AS "unseenConnections"
+      FROM connection_unseen u JOIN federated_connection_pairs p ON p.id=u.pair_id
+      JOIN account_serving_generations g ON g.account_id=p.account_id AND g.generation=p.serving_generation
+      WHERE u.account_id=${session.account_id} AND u.seen_at IS NULL AND u.serving_generation=g.generation
+        AND p.state='active' AND p.connection_id=u.connection_id AND p.epoch=u.epoch
+        AND NOT EXISTS(SELECT 1 FROM federated_connection_tombstones t WHERE t.pair_id=p.id AND t.connection_id=p.connection_id)`;
+    return {...counts!,unseenConnections:unseen!.unseenConnections};
   }
 
   async inbox(session:AccountApiSession,after:string|null) {

@@ -118,3 +118,5 @@ structure separately from the message-body and bundled-header budgets.
 lossy/lossless/transparent WebP files generated with ImageMagick, plus their
 authenticated metadata and deterministic body encodings. Tests use these committed
 bytes without requiring an image encoder or pixel decoder.
+
+`provider-connections.json` defines accepted and rejected unseen-connection acknowledgment bodies for the reference-provider account API. Exercised by `apps/server/test/connections.integration.test.ts`; these are not federation wire objects.
