@@ -1,3 +1,4 @@
+import { CID } from "multiformats/cid";
 import { cidForCbor } from "@atproto/common";
 import { parseDidKey, P256_JWT_ALG, SECP256K1_JWT_ALG } from "@atproto/crypto";
 import { assureValidSig, def, didForCreateOp, validateOperationLog } from "@did-plc/lib";
@@ -42,7 +43,8 @@ export function createMonitorEnrollmentApi(config: MonitorEnrollmentConfig, moni
   const json = (value: unknown, status = 200) => Response.json(value, { status,
     headers: { "Cache-Control": "no-store", ...(status === 202 || status === 429 ? { "Retry-After": "15" } : {}) } });
   return { async fetch(input: Request): Promise<Response> {
-    if (new URL(input.url).pathname !== "/api/v1/onboarding") return json({ error: "Not found" }, 404);
+    const stopping = new URL(input.url).pathname === "/api/v1/onboarding/stop";
+    if (!stopping && new URL(input.url).pathname !== "/api/v1/onboarding") return json({ error: "Not found" }, 404);
     if (input.method !== "POST") return json({ error: "Use POST" }, 405);
     if (!await authenticated(input, config.token)) return json({ error: "Unauthorized enrollment" }, 401);
     const now = Date.now();
@@ -50,6 +52,23 @@ export function createMonitorEnrollmentApi(config: MonitorEnrollmentConfig, moni
     if (++requests > 60) return json({ error: "Enrollment rate limited" }, 429);
     if (input.headers.get("Content-Type") !== "application/json" || input.headers.has("Content-Encoding"))
       return json({ error: "Use uncoded JSON" }, 415);
+    if (stopping) {
+      let did: string, operationCid: string;
+      try {
+        const bytes = await boundedBody(input, 1024);
+        if (!bytes) return json({ error: "Stop request exceeds limit" }, 413);
+        const row = parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as Record<string, unknown>;
+        if (!row || Array.isArray(row) || Object.keys(row).sort().join(",") !== "did,operationCid" ||
+          typeof row.did !== "string" || !/^did:plc:[a-z2-7]{24}$/.test(row.did) || typeof row.operationCid !== "string") throw new Error();
+        const cid = CID.parse(row.operationCid);
+        if (cid.toString() !== row.operationCid || cid.code !== 0x71 || cid.multihash.code !== 0x12 || cid.multihash.digest.length !== 32) throw new Error();
+        did = row.did; operationCid = row.operationCid;
+      } catch { return json({ error: "Invalid managed monitoring stop request" }, 400); }
+      try {
+        await monitor.stopManaged(did, operationCid, config.providerOrigin, `${config.alertOrigin}${SIGNUP_ALERT_PATH}`);
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      } catch { return json({ error: "Managed monitoring stop refused or unavailable" }, 409); }
+    }
     let query: MonitorEmailBindingQuery, state: NonNullable<Awaited<ReturnType<typeof validateOperationLog>>>;
     try {
       const bytes = await boundedBody(input, 32_768);

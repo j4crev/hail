@@ -1,3 +1,5 @@
+import { AccountLifecycle } from "../src/accounts/lifecycle.js";
+import { cleanAccountMonitor } from "../src/accounts/monitor-cleanup.js";
 import { exerciseCustomDomainPublication } from "./client-support/custom-domain-publication.js";
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from "node:crypto";
 import { SQL } from "bun";
@@ -105,7 +107,7 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
     const monitorFetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const request = new Request(url, init); expect(new URL(request.url).origin).toBe(monitorOrigin); monitorCalls++;
       const body = await request.clone().json() as Record<string, unknown>;
-      expect(Object.keys(body).sort()).toEqual(["operation", "signupHash", "signupId"]);
+      expect(Object.keys(body).sort()).toEqual(new URL(request.url).pathname.endsWith("/stop") ? ["did", "operationCid"] : ["operation", "signupHash", "signupId"]);
       const response = await api.fetch(request);
       if (loseMonitorReply) { loseMonitorReply = false; throw new Error("Lost committed monitor response"); }
       if (tamperSignature && response.status === 200) {
@@ -395,6 +397,52 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
           await tx`UPDATE account_serving_generations SET generation=2 WHERE account_id=${retired.accountId}`;});
         await expect(coordinator.status(retiredId,retiredToken)).rejects.toMatchObject({status:403});
       }finally{generationVault.recoverySecret.fill(0);}
+      if (!customDomain) {
+        const ownerSession = (await accounts.authenticate(undefined, session.token))!;
+        const identity = (await db.sql`SELECT did,operation_cid FROM plc_operation_evidence WHERE account_id=${setup.accountId} AND previous_cid IS NULL`)[0]!;
+        const cleanupClient = new SignupMonitorClient({ apiOrigin: monitorOrigin, token: monitorToken, publicKey: signer.publicDidKey }, monitorFetch);
+        await expect(new AccountLifecycle(db.sql).close(ownerSession, "wrong@provider.example.com")).rejects.toThrow();
+        expect(await db.sql`SELECT * FROM account_monitor_cleanup`).toHaveLength(0);
+        expect(await new AccountLifecycle(db.sql).close(ownerSession, ownerSession.canonical_address)).toEqual({ closed: true });
+        expect(await accounts.authenticate(undefined, session.token)).toBeNull();
+        expect(await db.sql`SELECT * FROM account_monitor_cleanup WHERE completed_at IS NULL`).toHaveLength(1);
+        expect(await cleanAccountMonitor(db.sql, { publicKey: "wrong-pin", stop: async () => { throw new Error("Must not call"); } }, email)).toBe("retry");
+        expect(stored.has(`recipient:${identity.did}`)).toBe(true);
+        await db.sql`UPDATE account_monitor_cleanup SET next_attempt_at=clock_timestamp()`;
+        receiverAvailable = false;
+        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("retry");
+        expect((await monitorDb.sql`SELECT stopped_at FROM monitored_dids WHERE did=${identity.did}`)[0]!.stopped_at).toBeNull();
+        receiverAvailable = true;
+        await db.sql`UPDATE account_monitor_cleanup SET next_attempt_at=clock_timestamp()`;
+        loseMonitorReply = true;
+        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("retry");
+        expect(stored.has(`recipient:${identity.did}`)).toBe(false);
+        expect((await monitorDb.sql`SELECT stopped_at FROM monitored_dids WHERE did=${identity.did}`)[0]!.stopped_at).not.toBeNull();
+        // A subsequent worker invocation safely finishes after a lost acknowledgement.
+        await db.sql`UPDATE account_monitor_cleanup SET next_attempt_at=clock_timestamp()`;
+        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("completed");
+        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("idle");
+        expect((await monitor.pollDid(identity.did)).inspected).toBe(0);
+        await expect(monitor.attestOnboarding(identity.did, identity.operation_cid, monitorOrigin, signer)).rejects.toThrow();
+        await expect(monitor.enroll(identity.did, identity.operation_cid, `${alertOrigin}/hail/signup`, await plc.getDocumentData(identity.did))).rejects.toThrow("stopped");
+        const rollbackStop = await monitorDb.sql.reserve();
+        try {
+          await expect(rollbackStop.unsafe(await Bun.file(new URL("../../plc-monitor/migrations/rollback/0007_stop_managed_monitoring.sql", import.meta.url)).text())).rejects.toThrow("Stopped monitoring evidence");
+        } finally { await rollbackStop.unsafe("ROLLBACK"); rollbackStop.release(); }
+        const rollbackCleanup = await db.sql.reserve();
+        try {
+          await expect(rollbackCleanup.unsafe(await Bun.file(new URL("../migrations/rollback/0105_account_monitor_cleanup.sql", import.meta.url)).text())).rejects.toThrow("cleanup responsibility");
+        } finally { await rollbackCleanup.unsafe("ROLLBACK"); rollbackCleanup.release(); }
+        // Simulate upgrade from before the outbox existed, with an already closed account.
+        await db.sql`DROP TABLE account_monitor_cleanup`;
+        await db.sql`DELETE FROM schema_migrations WHERE version=105`;
+        await db.migrate();
+        expect(await db.sql`SELECT * FROM account_monitor_cleanup WHERE account_id=${setup.accountId} AND completed_at IS NULL`).toHaveLength(1);
+        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("completed");
+        // The other account's live enrollment remains watched.
+        expect((await monitorDb.sql`SELECT stopped_at FROM monitored_dids WHERE did=${genesis.did}`)[0]!.stopped_at).toBeNull();
+      }
+
     }finally{browserVault.recoverySecret.fill(0);}
   } finally {
     vault.recoverySecret.fill(0); await db.close(); await monitorDb.close();

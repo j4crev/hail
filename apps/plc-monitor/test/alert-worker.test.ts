@@ -270,3 +270,37 @@ it("sends provider invitations only through authenticated pinned-origin requests
   expect((await request(second)).status).toBe(503);expect((await request(second)).status).toBe(503);
   expect(send).toHaveBeenCalledTimes(2);
 });
+
+it("removes managed alert recipients idempotently and discards delayed signed alerts", async () => {
+  const signer = new MonitorSigner(generateKeyPairSync("ed25519").privateKey), send = vi.fn();
+  const env: any = { EMAIL: { send }, MONITOR_PUBLIC_KEY: signer.publicDidKey, SIGNUP_EMAIL_TOKEN: encodeBase64Url(new Uint8Array(32)) };
+  const receiver = deduplicator(env); env.ALERT_DEDUPLICATOR = receiver;
+  const did = `did:plc:${"b".repeat(24)}`, operationCid = (await cidForCbor({ test: true })).toString(), signupId = crypto.randomUUID();
+  receiver.values.set(`recipient:${did}`, { did, operationCid, signupId, email: "owner@example.com" });
+  receiver.values.set(`signup:${signupId}`, { email: "owner@example.com" });
+  const remove = (body: unknown, token = env.SIGNUP_EMAIL_TOKEN) => worker.fetch(new Request("https://alerts.example.com/signup-email/remove-monitoring", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body),
+  }), env);
+  expect((await remove({ did, operationCid }, "wrong")).status).toBe(401);
+  expect((await remove({ did, operationCid, extra: true })).status).toBe(400);
+  expect((await remove({ did, operationCid: (await cidForCbor({ other: true })).toString() })).status).toBe(409);
+  expect(receiver.values.has(`recipient:${did}`)).toBe(true);
+  for (let i = 0; i < 2; i++) expect((await remove({ did, operationCid })).status).toBe(204);
+  expect(receiver.values.has(`recipient:${did}`)).toBe(false);
+  expect(receiver.values.has(`signup:${signupId}`)).toBe(false);
+  const signupHash = encodeBase64Url(new Uint8Array(32));
+  receiver.values.set(`signup:${signupId}`, { email: "owner@example.com", signupHash, state: "verified", verifiedAt: Date.now(), expiresAt: Date.now() + 60_000 });
+  expect((await worker.fetch(new Request("https://alerts.example.com/signup-email/bind", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.SIGNUP_EMAIL_TOKEN}` },
+    body: JSON.stringify({ signupId, signupHash, did, operationCid }),
+  }), env)).status).toBe(409);
+  expect(receiver.values.has(`recipient:${did}`)).toBe(false);
+
+  const bytes = new TextEncoder().encode(JSON.stringify({ type: "hail.plc-monitor-alert", version: 1, id: crypto.randomUUID(), did,
+    category: "unexpected-operation", detail: {}, occurred_at: new Date().toISOString() }));
+  expect((await worker.fetch(new Request("https://alerts.example.com/hail/signup", { method: "POST", headers: {
+    "Content-Type": "application/json", "X-Hail-Monitor-Key": signer.publicDidKey,
+    "X-Hail-Monitor-Signature": encodeBase64Url(signer.signAlert(bytes)),
+  }, body: bytes }), env)).status).toBe(204);
+  expect(send).not.toHaveBeenCalled();
+});

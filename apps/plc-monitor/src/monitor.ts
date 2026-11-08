@@ -38,12 +38,13 @@ export class PlcMonitor {
       // lock before watched rows (polling locks watched rows before the cursor).
       await tx`SELECT pg_advisory_xact_lock(686169155, hashtext(${did}))`;
       const prior = (await tx<{ expected_cid: string; expected_state: unknown; alert_webhook_url: string;
-        bootstrap_cid: string | null; bootstrap_state: unknown }[]>`
-        SELECT watched.expected_cid,watched.expected_state,watched.alert_webhook_url,
+        bootstrap_cid: string | null; bootstrap_state: unknown; stopped_at: Date | null }[]>`
+        SELECT watched.expected_cid,watched.expected_state,watched.alert_webhook_url,watched.stopped_at,
           bootstrap.operation_cid AS bootstrap_cid,bootstrap.reviewed_state AS bootstrap_state
         FROM monitored_dids watched LEFT JOIN monitor_bootstrap_checkpoints bootstrap ON bootstrap.did=watched.did
         WHERE watched.did=${did} FOR UPDATE OF watched`)[0];
       if (prior) {
+        if (prior.stopped_at) throw new Error("Monitoring was stopped for this identity");
         const expected = typeof prior.expected_state === "string" ? JSON.parse(prior.expected_state) : prior.expected_state;
         const bootstrap = typeof prior.bootstrap_state === "string" ? JSON.parse(prior.bootstrap_state) : prior.bootstrap_state;
         if (prior.expected_cid !== expectedCid || prior.alert_webhook_url !== alertWebhookUrl ||
@@ -67,6 +68,23 @@ export class PlcMonitor {
     });
   }
 
+  // Only the managed signup enrollment at the pinned provider/receiver is in scope.
+  // Retain a tombstone and audit history so old enrollment retries cannot restart it.
+  async stopManaged(did: string, operationCid: string, providerOrigin: string, alertWebhookUrl: string): Promise<void> {
+    await this.sql.begin(async tx => {
+      await tx`SELECT pg_advisory_xact_lock(686169155, hashtext(${did}))`;
+      const row = (await tx`SELECT b.operation_cid,b.reviewed_state,w.alert_webhook_url
+        FROM monitored_dids w JOIN monitor_bootstrap_checkpoints b ON b.did=w.did
+        WHERE w.did=${did} FOR UPDATE OF w`)[0];
+      const state = row && (typeof row.reviewed_state === "string" ? JSON.parse(row.reviewed_state) : row.reviewed_state);
+      if (!row || row.operation_cid !== operationCid || row.alert_webhook_url !== alertWebhookUrl ||
+        state?.services?.hail?.type !== "HailMessaging" || state.services.hail.endpoint !== `${providerOrigin}/hail`)
+        throw new Error("Managed enrollment does not match");
+      await tx`UPDATE monitored_dids SET stopped_at=coalesce(stopped_at,clock_timestamp()),poll_ready=false WHERE did=${did}`;
+      await tx`UPDATE monitor_alerts SET lease_token=NULL,lease_expires_at=NULL WHERE did=${did} AND sent_at IS NULL`;
+    });
+  }
+
   async poll(_legacyCount?:number): Promise<MonitorPollResult> {
     return this.pollWatched();
   }
@@ -85,7 +103,7 @@ export class PlcMonitor {
       let result:MonitorPollResult["state"]="current",inspected=0;
       const monitored = await tx<{ did:string;expected_cid:string;expected_state:unknown;enrolled_at:Date;
         last_polled_at:Date|null;last_audit:unknown;poll_ready:boolean }[]>`SELECT did,expected_cid,expected_state,enrolled_at,last_polled_at,last_audit,poll_ready
-        FROM monitored_dids WHERE (${did ?? null}::text IS NULL OR did=${did ?? null}) ORDER BY did FOR UPDATE`;
+        FROM monitored_dids WHERE stopped_at IS NULL AND (${did ?? null}::text IS NULL OR did=${did ?? null}) ORDER BY did FOR UPDATE`;
       for (const row of monitored) {
         const baseline = row.last_polled_at && row.last_polled_at > row.enrolled_at ? row.last_polled_at : row.enrolled_at;
         const coverageGap = now.getTime() - baseline.getTime() > 86_400_000;
@@ -195,7 +213,7 @@ export class PlcMonitor {
           AND alert.category IN ('coverage-lost', 'export-gap', 'invalid-operation-log')) AS gaps
       FROM monitored_dids watched
       LEFT JOIN monitor_bootstrap_checkpoints bootstrap ON bootstrap.did = watched.did
-      WHERE watched.did = ${did} FOR SHARE OF watched
+      WHERE watched.did = ${did} AND watched.stopped_at IS NULL FOR SHARE OF watched
     `;
     const watched = rows[0];
     const expectation = typeof watched?.expected_state === "string"
@@ -241,7 +259,7 @@ export class PlcMonitor {
             AND alert.category IN ('coverage-lost', 'export-gap', 'invalid-operation-log')) AS gaps
         FROM monitored_dids watched
         LEFT JOIN monitor_bootstrap_checkpoints bootstrap ON bootstrap.did = watched.did
-        WHERE watched.did = ${did} FOR SHARE OF watched
+        WHERE watched.did = ${did} AND watched.stopped_at IS NULL FOR SHARE OF watched
       `)[0];
       const expected = typeof watched?.expected_state === "string" ? JSON.parse(watched.expected_state) : watched?.expected_state;
       const bootstrap = typeof watched?.bootstrap_state === "string" ? JSON.parse(watched.bootstrap_state) : watched?.bootstrap_state;

@@ -246,6 +246,7 @@ const migrations: readonly Migration[] = [
   {version:102,name:"message-attachments",url:new URL("../../migrations/0102_message_attachments.sql",import.meta.url)},
   {version:103,name:"start-screen",url:new URL("../../migrations/0103_start_screen.sql",import.meta.url)},
   {version:104,name:"federation-budgets",url:new URL("../../migrations/0104_federation_budgets.sql",import.meta.url)},
+  {version:105,name:"account-monitor-cleanup",url:new URL("../../migrations/0105_account_monitor_cleanup.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

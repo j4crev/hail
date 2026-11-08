@@ -99,6 +99,7 @@ it.skipIf(!process.env.DATABASE_URL)('withdraws domains, quarantines reuse, and 
   expect((await app.request(origin+'/api/v1/account/delete',{method:'POST',headers:{...headers,Origin:'https://foreign.example'},body:JSON.stringify({address:old.session.canonical_address,eraseInbox:true})})).status).toBe(403);
   const closed=await app.request(origin+'/api/v1/account/delete',{method:'POST',headers,body:JSON.stringify({address:old.session.canonical_address,eraseInbox:true})});
   expect(closed.status,await closed.clone().text()).toBe(200);expect(await closed.json()).toEqual({closed:true});
+  expect(await db.sql`SELECT * FROM account_monitor_cleanup`).toHaveLength(0); // Independent/POC accounts are not cancelled.
   expect(await accounts.authenticate('Bearer '+credential.token)).toBeNull();expect(await accounts.authenticate(undefined,old.token)).toBeNull();
   expect(await db.sql`SELECT message_id FROM delivered_messages WHERE recipient_did=${old.did}`).toHaveLength(0);
   expect((await db.sql`SELECT state FROM delivery_work WHERE sender_did=${admin.did} AND message_id=${message}`)[0].state).toBe('cancelled');

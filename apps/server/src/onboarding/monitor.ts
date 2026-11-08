@@ -27,6 +27,15 @@ export class SignupMonitorClient {
     if (key.length !== 34 || key[0] !== 0xed || key[1] !== 1) throw new Error("Monitor API requires a pinned Ed25519 public key");
     this.publicKey = config.publicKey;
   }
+  async stop(did: string, operationCid: string): Promise<void> {
+    const response = await this.request(`${this.config.apiOrigin}/api/v1/onboarding/stop`, {
+      method: "POST", redirect: "error", signal: AbortSignal.timeout(10_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.config.token}` },
+      body: JSON.stringify({ did, operationCid }),
+    });
+    await response.body?.cancel();
+    if (response.status !== 204) throw new SignupMonitorError(503);
+  }
   async enroll(identity: SignupIdentity, signupId: string, token: string): Promise<{ status: 200 | 202; body: Record<string, unknown> }> {
     try {
       const operation = def.operation.strict().parse(typeof identity.operation === "string" ? parseJsonWithoutDuplicateKeys(identity.operation) : identity.operation);

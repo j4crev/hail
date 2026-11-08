@@ -27,7 +27,7 @@ export interface Recipient {
 interface Rate { count: number; expiresAt: number; }
 const hour = 3_600_000, codeLifetime = 10 * 60_000, verifiedLifetime = 24 * hour;
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
-export const signupEmailPaths = new Set(["/signup-email", "/signup-email/verify", "/signup-email/bind", "/signup-email/invite"]);
+export const signupEmailPaths = new Set(["/signup-email", "/signup-email/verify", "/signup-email/bind", "/signup-email/invite", "/signup-email/remove-monitoring"]);
 const reply = (value: unknown, status = 200, retry?: number) => Response.json(value, { status,
   headers: { "Cache-Control": "no-store", ...(retry ? { "Retry-After": String(retry) } : {}) } });
 
@@ -56,6 +56,7 @@ export async function sendEmail(env: Pick<EmailEnvironment, "EMAIL">, message: O
 }
 
 export async function signupEmail(path: string, input: unknown, storage: DurableStorage, env: EmailEnvironment): Promise<Response> {
+  if(path==="/signup-email/remove-monitoring")return removeMonitoring(input,storage);
   if(path==="/signup-email/invite")return sendSignupInvitation(input,storage,env);
   if (!input || typeof input !== "object" || Array.isArray(input)) return reply({ error: "Invalid signup email request" }, 400);
   const row = input as Record<string, unknown>, fields = path === "/signup-email" ? ["signupId", "signupHash", "email", "resend"] :
@@ -133,6 +134,7 @@ export async function signupEmail(path: string, input: unknown, storage: Durable
   const did = row.did, operationCid = row.operationCid;
   return storage.transaction(async tx => {
     const saved = await tx.get<Signup>(key), recipientKey = `recipient:${did}`, recipient = await tx.get<Recipient>(recipientKey);
+    if (await tx.get(`stopped-monitoring:${did}`)) return reply({ error: "Monitoring was stopped" }, 409);
     if (!saved || saved.signupHash !== signupHash || !saved.verifiedAt ||
       saved.state !== "verified" && saved.state !== "bound" || saved.state !== "bound" && saved.expiresAt <= now ||
       saved.state === "bound" && (saved.did !== did || saved.operationCid !== operationCid) ||
@@ -202,4 +204,27 @@ async function sendSignupInvitation(input:unknown,storage:DurableStorage,env:Ema
     // An email API failure can be ambiguous. Do not send a second copy on retry.
     return reply({error:"Invitation delivery unconfirmed"},503);
   }
+}
+
+// Provider-authenticated, reduced-assurance signup receiver only. Keep a minimal
+// DID/CID tombstone; erase the recipient and its retained signup email record.
+async function removeMonitoring(input: unknown, storage: DurableStorage): Promise<Response> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return reply({ error: "Invalid removal" }, 400);
+  const row = input as Record<string, unknown>;
+  if (Object.keys(row).sort().join(",") !== "did,operationCid" || typeof row.did !== "string" ||
+    !/^did:plc:[a-z2-7]{24}$/.test(row.did) || typeof row.operationCid !== "string") return reply({ error: "Invalid removal" }, 400);
+  try {
+    const cid = CID.parse(row.operationCid);
+    if (cid.toString() !== row.operationCid || cid.code !== 0x71 || cid.multihash.code !== 0x12 || cid.multihash.digest.length !== 32) throw new Error();
+  } catch { return reply({ error: "Invalid removal" }, 400); }
+  const did = row.did, operationCid = row.operationCid;
+  return storage.transaction(async tx => {
+    const recipient = await tx.get<Recipient>(`recipient:${did}`), stopped = await tx.get<string>(`stopped-monitoring:${did}`);
+    if (recipient && recipient.operationCid !== operationCid || stopped && stopped !== operationCid)
+      return reply({ error: "Enrollment differs" }, 409);
+    await tx.put(`stopped-monitoring:${did}`, operationCid);
+    await tx.delete(`recipient:${did}`);
+    if (recipient) await tx.delete(`signup:${recipient.signupId}`);
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  });
 }

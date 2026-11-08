@@ -100,6 +100,12 @@ export class AccountLifecycle {
       await tx`UPDATE account_api_credentials SET revoked_at=coalesce(revoked_at,clock_timestamp()) WHERE account_id=${session.account_id}`;
       await tx`UPDATE account_passkey_sessions SET revoked_at=coalesce(revoked_at,clock_timestamp()) WHERE account_id=${session.account_id}`;
       await tx`UPDATE account_passkeys SET revoked_at=coalesce(revoked_at,clock_timestamp()) WHERE account_id=${session.account_id}`;
+      await tx`INSERT INTO account_monitor_cleanup(account_id,did,operation_cid,monitor_public_key)
+        SELECT a.id,a.did,e.operation_cid,p.monitor_public_key FROM provider_accounts a
+        JOIN public_onboarding_preparations p ON p.account_id=a.id
+        JOIN plc_operation_evidence e ON e.account_id=a.id AND e.did=a.did AND e.previous_cid IS NULL
+        WHERE a.id=${session.account_id} AND p.custody_profile='managed' AND p.monitor_assurance='reduced-assurance-alpha-v1'
+        ON CONFLICT(account_id) DO NOTHING`;
       await releaseAccountAddress(tx,session.account_id,"account-deletion");
       await tx`UPDATE provider_accounts SET closed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=${session.account_id}`;
       return {closed:true};

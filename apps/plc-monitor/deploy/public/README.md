@@ -193,7 +193,7 @@ The base Compose publishes no API port. For automatic enrollment, bind the monit
 API to `0.0.0.0:3001` inside the container and add only a host-loopback port mapping
 in your private deployment overlay. Put a loopback reverse proxy in front of it and
 route a host Cloudflare Tunnel to that proxy. Preserve the enrollment Host, POST
-method and exact `/api/v1/onboarding` path; all other requests should be denied.
+method and exact `/api/v1/onboarding` and `/api/v1/onboarding/stop` paths; all other requests should be denied.
 Keep provider admission restrictions and the service-token check. The current API
 pins one provider; it is not a multi-provider enrollment service.
 
