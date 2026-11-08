@@ -411,7 +411,7 @@ try{
       await evaluate(`document.querySelector('[aria-label="Open navigation"]').click()`);
       await wait(async()=>evaluate(`document.querySelector('dialog').open`),'open navigation for account menu');
     }
-    await evaluate(`(()=>{const b=[...document.querySelectorAll('[aria-label="Open account menu"]')].find(b=>b.checkVisibility());b.focus();b.click();})()`);await wait(async()=>evaluate(`!!document.querySelector('[popover]:popover-open')`),"avatar opens account menu");};
+    await evaluate(`(()=>{const b=[...document.querySelectorAll('[aria-label="Open account menu"]')].find(b=>b.checkVisibility());b.focus();if(!document.getElementById(b.getAttribute('popovertarget')).matches(':popover-open'))b.click();})()`);await wait(async()=>evaluate(`!!document.querySelector('.account-popover:popover-open')`),"avatar opens account menu");};
   const accountNavigation=async()=>assert(await evaluate(`Array.from(document.querySelectorAll('a[href="/account"], a[href="/settings"], a[href="/settings/security"]')).every(a=>a.closest('nav[aria-label="Account menu"]'))`),"Account destinations belong only in the profile menu");
   const narrowLayouts=async()=>{
     if(process.env.HAIL_WIZARD_MOBILE!=="true")return;
@@ -623,11 +623,11 @@ try{
     assert(await evaluate(`(()=>{const button=document.querySelector('.drawer-footer .account-trigger').getBoundingClientRect(),avatar=document.querySelector('.drawer-footer .account-trigger .avatar').getBoundingClientRect();return button.width===48&&button.height===48&&Math.abs((avatar.left+avatar.right)-(button.left+button.right))<1&&Math.abs((avatar.top+avatar.bottom)-(button.top+button.bottom))<1;})()`),'Mobile account avatar is centered in its square expanded button');
   }
   await screenshot("account-menu");await escape();
-  await wait(async()=>evaluate(`!document.querySelector('[popover]:popover-open')`),"Escape closes account menu");
+  await wait(async()=>evaluate(`!document.querySelector('.account-popover:popover-open')`),"Escape closes account menu");
   assert(await evaluate(`document.activeElement?.getAttribute('aria-label')==='Open account menu'`),"Account menu restores focus");
   await openAccount();await pointer(process.env.HAIL_WIZARD_MOBILE==='true'?20:600,200);
-  await wait(async()=>evaluate(`!document.querySelector('[popover]:popover-open')`),"Outside click closes account menu");
-  await openAccount();await evaluate(`document.querySelector('[popover]:popover-open a[href="/account"]').click()`);
+  await wait(async()=>evaluate(`!document.querySelector('.account-popover:popover-open')`),"Outside click closes account menu");
+  await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/account"]').click()`);
   await wait(()=>has("Key custody"),"Account page holds identity details");
   assert(await evaluate(`!!document.querySelector('section[aria-label="Delete account"]')`),'Account owns deletion controls');
   assert(await evaluate(`document.querySelector('section[aria-label="Delete account"] button').disabled`),'Deletion requires typed address');
@@ -640,7 +640,7 @@ try{
   assert(await evaluate(`!document.querySelector('.mobile-compose')`),'No floating compose outside Feed or Inbox');
   await narrowLayouts();await screenshot("account");
   if(process.env.HAIL_WIZARD_THEME_ONLY === "true") {
-  await openAccount();await evaluate(`document.querySelector('[popover]:popover-open a[href="/settings"]').click()`);
+  await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/settings"]').click()`);
   await wait(async()=>evaluate(`document.querySelector('#theme')?.disabled===false`),"appearance settings ready");
   const appearance=async(value:string)=>{await evaluate(`(()=>{const select=document.querySelector('#theme');select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));})()`);await wait(async()=>evaluate(`document.querySelector('#theme')?.disabled===false && document.documentElement.dataset.theme===${JSON.stringify(value)}`),'account appearance saved');};
   const scheme=()=>evaluate(`getComputedStyle(document.documentElement).colorScheme`);
@@ -675,7 +675,7 @@ try{
   assert.equal(displayPreferences.showHeaderImages,false);
   assert(!(await has("Saved in this browser.")) && !(await has("Saved to your account.")),"No redundant storage labels");
   assert.equal(await scheme(),"light");
-  await openAccount();await evaluate(`document.querySelector('[popover]:popover-open a[href="/account"]').click()`);
+  await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/account"]').click()`);
   await wait(()=>has("Key custody"),"account navigation with blocked storage");
   assert.equal(await scheme(),"light","in-memory appearance survives client navigation");
   await cdp("Page.removeScriptToEvaluateOnNewDocument",{identifier:blockedThemeStorage.identifier});
@@ -755,7 +755,7 @@ try{
   assert(await evaluate(`document.querySelector(${JSON.stringify(feedImage)}).getBoundingClientRect().height<=200`),'Subscription images stay bounded');
   assert.equal((await styles(feedImage,['objectFit']))[0],'contain','Promotional artwork is not cropped');
   await screenshot("feed");
-  const settings=async()=>{await openAccount();await evaluate(`document.querySelector('[popover]:popover-open a[href="/settings"]').click()`);await wait(async()=>evaluate(`document.querySelector('#show-headers')?.disabled===false`),"reading settings ready");};
+  const settings=async()=>{await openAccount();await evaluate(`document.querySelector('.account-popover:popover-open a[href="/settings"]').click()`);await wait(async()=>evaluate(`document.querySelector('#show-headers')?.disabled===false`),"reading settings ready");};
   const feed=async()=>{await evaluate(`(()=>{const a=document.createElement('a');a.href='/';document.body.append(a);a.click();a.remove();})()`);await wait(async()=>evaluate(`location.pathname==='/' && document.querySelector('main h1')?.textContent==='Feed'`),"feed navigation");};
   await settings();await accountNavigation();assert(await evaluate(`!document.querySelector('section[aria-label="Delete account"]')`),'Settings has no account deletion controls');assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll("main a"),a=>a.getAttribute("href"))`),["/settings/domains"],"Settings keeps domain management and embeds conversation preferences");await narrowLayouts();await screenshot("settings");
   assert.deepEqual(await evaluate(`Array.from(document.querySelector('#start-screen').options,o=>({value:o.value,label:o.textContent}))`),[{value:'feed',label:'Feed'},{value:'inbox',label:'Inbox'}]);
@@ -1154,10 +1154,10 @@ try{
   await switchRegistration('public');
   await screenshot('admin-registration');
   await openAccount();
-  await evaluate(`document.querySelector('[popover]:popover-open form button').click()`);
+  await evaluate(`document.querySelector('.account-popover:popover-open form button').click()`);
   await wait(()=>has("Couldn’t sign out. Please try again."),"logout failure offers retry");
   assert(authenticated,"Failed logout retains the session");
-  await evaluate(`document.querySelector('[popover]:popover-open form button').click()`);
+  await evaluate(`document.querySelector('.account-popover:popover-open form button').click()`);
   await wait(async()=>evaluate(`location.pathname==='/'&&document.body.innerText.includes('Your permission.')`),"avatar menu signs out to homepage");
   assert(!authenticated);assert(requests.some(r=>r.path==='/api/v1/auth/logout'));
   const loggedOut=await cdp("Network.getCookies",{urls:[origin]});assert(!loggedOut.cookies.some((cookie:any)=>cookie.name==='hail_session'),"Sign-out clears session cookie");
