@@ -168,7 +168,13 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
         return {sender:m.sender,messageId:m.messageId,sent:m.sent,isRead:m.isRead,createdAt:m.at,senderAddress:m.sender===maya.did?maya.address:senders[3].address,
           title:title?.children.map((s:any)=>s.text).join('')??'',preview:threadBodyPreview(source.body),recipients:m.sent?[senders[3],maya]:[]};})});
   }
-  if(path==='/api/v1/account/inbox')return json({messages:messages.filter(m=>(url.searchParams.get('kind')==='connections')===(m.kind==='connection')&&!trash.has(m.messageId)&&!deleted.has(m.messageId)),next:null});
+  if(path==='/api/v1/account/inbox') {
+    const rows=messages.filter(m=>(url.searchParams.get('kind')==='connections')===(m.kind==='connection')&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
+    const limit=Number(process.env.HAIL_DESIGN_PAGE_SIZE)||rows.length||1;
+    const after=url.searchParams.get('after'), start=after?Math.max(0,rows.findIndex(m=>m.messageId===after)+1):0;
+    const page=rows.slice(start,start+limit);
+    return json({messages:page,next:start+limit<rows.length?page.at(-1)!.messageId:null});
+  }
   if(path==='/api/v1/account/trash')return json({messages:messages.filter(m=>trash.has(m.messageId)).map(m=>({...m,trashedAt:trash.get(m.messageId)})),next:null});
   if(path.startsWith('/api/v1/account/inbox/')){const m=messages.find(m=>path===`/api/v1/account/inbox/${m.sender}/${m.messageId}`&&!deleted.has(m.messageId));return m?json({...m,trashedAt:trash.get(m.messageId)??null}):json({},404);}
   if(path.startsWith('/api/v1/account/threads/')){

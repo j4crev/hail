@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
   import DraftList from "$lib/DraftList.svelte";
   import MailboxCleanup from "$lib/MailboxCleanup.svelte";
@@ -15,7 +17,11 @@
   import {mailboxRequest} from '$lib/mailbox.js';
   import SelectionAvatar from '$lib/SelectionAvatar.svelte';
   import SelectionActions from '$lib/SelectionActions.svelte';
-  let {data}=$props();
+  let {data:loaded}=$props();
+  let draftSelection=$state(false);
+  let cleanupLocked=$state(false);
+  const mailbox = mailboxView(()=>loaded, ()=>page.url, ()=>selected.length > 0 || draftSelection || cleanupLocked);
+  let data=$derived(mailbox.data);
   let selected=$state<string[]>([]),busy=$state(false),status=$state('');
   const key=(message:{sender:string;messageId:string})=>'received/'+message.sender+'/'+message.messageId;
   const sentKey=(message:{kind:string;messageId:string})=>'sent/'+message.kind+'/'+message.messageId;
@@ -52,7 +58,9 @@
 </script>
 <svelte:head><title>Trash · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
 <div class="trash-list min-w-0 pb-28 min-[901px]:pb-0" class:has-selection={selectedMessages.length>0}>
-  <MailboxCleanup folder="Trash" trashEnabled={data.trashEnabled} empty={!data.messages.length&&!data.sent.messages.length&&!data.paged&&!data.sentPaged&&!data.drafts.drafts.length&&!data.draftPaged} />
+  <MailboxRefresh view={mailbox} locked={selected.length > 0 || draftSelection || cleanupLocked}>
+    {#snippet heading()}<MailboxCleanup onlockchange={active=>cleanupLocked=active} folder="Trash" trashEnabled={data.trashEnabled} empty={!data.messages.length&&!data.sent.messages.length&&!data.paged&&!data.sentPaged&&!data.drafts.drafts.length&&!data.draftPaged} />{/snippet}
+  </MailboxRefresh>
   {#if status}<Toast message={status} />{/if}
   {#if messages.length}
     {#if selectedMessages.length}
@@ -79,10 +87,10 @@
       {/each}
     </section>
   {:else if !data.drafts.drafts.length}<MailboxEmptyState icon="trash" title="Must be pickup day." />{/if}
-  {#if data.drafts.drafts.length}<section class="mt-6"><h2 class="text-sm text-muted">Drafts</h2><DraftList drafts={data.drafts.drafts} trash address={data.account.address}/></section>{/if}
-  {#if data.draftPaged||data.drafts.next}<nav class="mt-6 flex gap-3" aria-label="Trashed draft pages">{#if data.draftPaged}<a href="/trash">Newest drafts</a>{/if}{#if data.drafts.next}<a href={`/trash?draftAfter=${data.drafts.next}`}>Older drafts</a>{/if}</nav>{/if}
-  {#if data.sentPaged||data.sent.next}<nav class="mt-6 flex gap-3" aria-label="Trashed sent pages">{#if data.sentPaged}<a href="/trash">Newest sent messages</a>{/if}{#if data.sent.next}<a href={`/trash?sentAfter=${encodeURIComponent(data.sent.next)}`}>Older sent messages</a>{/if}</nav>{/if}
-  {#if data.paged||data.next}<nav class="mt-6 flex gap-3" aria-label="Trash pages">{#if data.paged}<a class="hail-button-secondary" href="/trash">Newest messages</a>{/if}{#if data.next}<a class="hail-button-secondary" href={`/trash?after=${encodeURIComponent(data.next)}`}>Older messages</a>{/if}</nav>{/if}
+  {#if data.drafts.drafts.length}<section class="mt-6"><h2 class="text-sm text-muted">Drafts</h2><DraftList onselection={active=>draftSelection=active} drafts={data.drafts.drafts} trash address={data.account.address}/></section>{/if}
+  {#if data.draftPaged||data.drafts.next}<nav class="mt-6 flex gap-3" aria-label="Trashed draft pages">{#if data.draftPaged}<a href="/trash">Newest drafts</a>{/if}{#if data.drafts.next}<button disabled={mailbox.busy||mailbox.pending||selected.length > 0} onclick={()=>mailbox.older("draftAfter",data.drafts.next)}>{mailbox.batches >= 4 ? "Continue to older history" : "Load older drafts"}</button>{/if}</nav>{/if}
+  {#if data.sentPaged||data.sent.next}<nav class="mt-6 flex gap-3" aria-label="Trashed sent pages">{#if data.sentPaged}<a href="/trash">Newest sent messages</a>{/if}{#if data.sent.next}<button disabled={mailbox.busy||mailbox.pending||selected.length > 0} onclick={()=>mailbox.older("sentAfter",data.sent.next)}>{mailbox.batches >= 4 ? "Continue to older history" : "Load older sent messages"}</button>{/if}</nav>{/if}
+  {#if data.paged||data.next}<nav class="mt-6 flex gap-3" aria-label="Trash pages">{#if data.paged}<a class="hail-button-secondary" href="/trash">Newest messages</a>{/if}{#if data.next}<button class="hail-button-secondary" disabled={mailbox.busy||mailbox.pending||selected.length > 0} onclick={()=>mailbox.older("after",data.next)}>{mailbox.batches >= 4 ? "Continue to older history" : "Load older"}</button>{/if}</nav>{/if}
 </div>
 
 <style lang="postcss">

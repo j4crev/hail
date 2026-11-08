@@ -4,9 +4,10 @@
   import {goto} from '$app/navigation';
   import Icon from '$lib/Icon.svelte';
   import {mailboxRequest} from '$lib/mailbox.js';
-  let {folder,trashEnabled=true,empty=false}: {folder:'Sent'|'Trash';trashEnabled?:boolean;empty?:boolean}=$props();
+  let {onlockchange=(_active:boolean)=>{},folder,trashEnabled=true,empty=false}: {onlockchange?:(active:boolean)=>void;folder:'Sent'|'Trash';trashEnabled?:boolean;empty?:boolean}=$props();
   let ready=$state(false),confirming=$state(false),busy=$state(false),error=$state('');
   let menu=$state<HTMLDetailsElement>(),confirmation=$state<HTMLElement>();
+  $effect(()=>onlockchange(confirming||busy));
   onMount(()=>{ready=true;});
   const permanent=$derived(folder==='Trash'||!trashEnabled);
   const label=$derived(folder==='Trash'?'Empty Trash':trashEnabled?'Move all to Trash':'Delete all');

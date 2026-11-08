@@ -6,7 +6,7 @@ vi.mock('$lib/server/canary.js',()=>({
   senderAvatars:async()=>new Map(),
 }));
 vi.mock('$lib/server/registration.js',()=>({registration:async()=>null}));
-import {load} from '../routes/+page.server.js';
+import {load} from './server/mailbox/feed.js';
 beforeEach(()=>{
   fixture.configured=true;
   fixture.request.mockReset().mockImplementation(async(path:string)=>path==='/message-preferences'?{startScreen:'feed'}:{messages:[],next:null});

@@ -4,7 +4,7 @@ vi.mock("$env/dynamic/private",()=>({env:{HAIL_WEB_CLIENT_PROVIDER:"https://prov
 import {isAccountPath,loginPath,returnPath} from "./auth-routing.js";
 import {handle} from "../hooks.server.js";
 import {load as layout} from "../routes/+layout.server.js";
-import {load as home} from "../routes/+page.server.js";
+import {load as home} from "./server/mailbox/feed.js";
 
 it("uses one sign-in destination for every anonymous private screen and action",async()=>{
   const cookies={get:()=>undefined},resolve=vi.fn();

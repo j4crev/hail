@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Attachments from "$lib/Attachments.svelte";
   import MessageBack from "$lib/MessageBack.svelte";
   import {page} from "$app/state";
@@ -7,11 +9,14 @@
   import IdentityDetails from "$lib/IdentityDetails.svelte";
   import DateTime from "$lib/DateTime.svelte";
   import RichText from "$lib/RichText.svelte";
-  let {data}=$props();
+  let {data:loaded}=$props();
+  const mailbox=mailboxView(()=>loaded,()=>page.url,()=>false,true);
+  let data=$derived(mailbox.data);
   const content = $derived(messageDisplayContent(data.message.blocks));
 </script>
 
 <svelte:head><title>{data.message.title} · Sent · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
+<MailboxRefresh floating={false} view={mailbox} locked={false} />
 <div class="mx-auto max-w-[800px]">
 <MessageBack href={data.trash?"/trash":"/sent"} label={data.trash?"Trash":"Sent messages"} />
 {#if content.title}<h1 class="reader-title">{content.title}</h1>{:else}<h1 class="sr-only">Sent message</h1>{/if}

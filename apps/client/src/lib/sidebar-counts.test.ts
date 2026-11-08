@@ -3,7 +3,7 @@ const fixture=vi.hoisted(()=>({request:vi.fn(),configured:true}));
 vi.mock('$env/dynamic/private',()=>({env:{}}));
 vi.mock('$lib/server/canary.js',()=>({isConfigured:()=>fixture.configured,canaryAccount:async()=>({account:{did:'did:plc:test'},client:{request:fixture.request}})}));
 import {load} from '../routes/+layout.server.js';
-const event=()=>({cookies:{},url:new URL('https://example.com/sent'),depends:vi.fn()});
+const event=()=>({cookies:{get:()=>"test-session"},url:new URL('https://example.com/sent'),depends:vi.fn()});
 beforeEach(()=>{fixture.configured=true;fixture.request.mockReset();});
 it('loads both totals on non-inbox pages and subscribes to read/cleanup invalidation',async()=>{
   fixture.request.mockResolvedValue({subscriptions:72,connections:9});

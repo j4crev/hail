@@ -1,15 +1,17 @@
+import {mailboxScope as scope} from "$lib/server/mailbox-scope.js";
 import {env} from "$env/dynamic/private";
 import {brandingFromEnvironment} from "$lib/branding.js";
 import {canaryAccount, isConfigured} from "$lib/server/canary.js";
 
-export async function load({cookies, url, depends}) {
+export async function load({cookies, url, depends, untrack = <T>(fn:()=>T)=>fn()}) {
   depends("hail:mailbox");
+  depends("hail:counts");
   let unreadCounts: {subscriptions: number; connections: number} | null = null;
   // Presentation only. Page loaders still validate the provider session.
   const hasAccountSession = isConfigured(cookies);
   let accountAvatar: {did: string; src: string} | null = null;
-  const focused = (url.pathname === "/" && url.searchParams.has("next")) ||
-    url.pathname.startsWith("/auth/") || url.pathname.startsWith("/signup");
+  const focused = untrack(() => (url.pathname === "/" && url.searchParams.has("next")) ||
+    url.pathname.startsWith("/auth/") || url.pathname.startsWith("/signup"));
   if (hasAccountSession && !focused) {
     try {
       const {account, client} = await canaryAccount(cookies, url);
@@ -20,5 +22,6 @@ export async function load({cookies, url, depends}) {
       // Optional navigation data must not block navigation or sign-in.
     }
   }
-  return {hasAccountSession, accountAvatar, unreadCounts, branding: brandingFromEnvironment(env)};
+  const mailboxScope = scope(cookies);
+  return {mailboxScope,hasAccountSession, accountAvatar, unreadCounts, branding: brandingFromEnvironment(env)};
 }

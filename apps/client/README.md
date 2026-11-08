@@ -418,3 +418,51 @@ Browser session lifetimes are controlled by the provider, not the GUI. Set
 see [browser session configuration](../server/README.md#browser-session-lifetimes)
 for validation and rollout behavior. Fresh-passkey windows remain 5 minutes for
 personal account security and 10 minutes for provider-admin changes.
+
+## Mailbox cache and recent history
+
+Feed, Inbox, Sent, Trash, Drafts and opened messages use a browser-memory cache
+partitioned by provider and session. It retains at most 16 query results, an
+estimated 8 MB of serialized content, and five minutes of cached results. It
+never persists mailbox content to local storage or a service worker. Fresh loads
+and refreshes authenticate through the existing provider session. The GUI-only
+`/mailbox-data` endpoint reuses the server loaders; it is not a provider API.
+HTTP responses remain `no-store`. Navigation data preloading is disabled inside
+the application to avoid a second cache outside mutation invalidation.
+
+Cached navigation renders immediately, then revalidates. Visible views refresh
+roughly every 30–35 seconds and on focus (with a 30-second throttle); failures
+back off to five minutes and leave a visible stale-data notice. Refresh is also
+available manually. Selections, scrolled lists, expanded history and readers
+hold updates behind an explicit button. Applying updates resets expanded history;
+reader refresh cannot interrupt an open reply. Unread counts refresh separately.
+
+Desktop folders place a compact refresh icon alongside their heading and a
+conditional “Updates available” pill below it. On mobile folders, pending updates
+(or a refresh failure) reveal a separate floating refresh control halfway between
+the main floating action and the navigation menu. Its 44px touch target contains
+a 40px circle; its vertical center matches the 56px main action. The bottom bar
+and primary actions retain their original positions. A brief hint explains the
+button when it appears; its accessible name remains after the hint disappears.
+Selection and cleanup confirmation suppress the floating refresh control.
+Drafts uses the same position without adding a permanent primary action. Readers
+retain inline refresh beside their separate reading controls.
+
+“Load older” appends cursor batches, deduplicating messages and conversation
+members. Trash retains independent received, sent and draft cursors. After four
+appended batches, or when combining batches would exceed the memory allowance,
+“Continue to older history” starts a fresh window. Existing cursor URLs still
+work. This is a live, best-effort view, not snapshot pagination: remote changes
+can move conversations across cursor boundaries. Refresh reconciles the current
+window; older history is not maintained as a synchronized replica.
+
+Same-origin mutations invalidate cache generations before and after requests,
+including failed or ambiguous requests. Late reads cannot repopulate an old
+generation. Tabs broadcast invalidations and logout without exchanging message
+content or credentials. A changed session forces a fresh document. List payloads
+omit rendered full bodies where only summaries are needed; provider payloads and
+cursor semantics are unchanged. There is no revision-token or delta protocol.
+
+Run `bun run --cwd apps/client test:mailbox` for the fictional-provider browser
+regression, and `bun run --cwd apps/client test` for cache race, expiry, isolation
+and history-merge tests.

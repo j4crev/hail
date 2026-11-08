@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {mailboxView} from "$lib/mailbox-view.svelte.js";
+  import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import {page} from "$app/state";
   import MailboxEmptyState from "$lib/MailboxEmptyState.svelte";
   import MessageListRow from "$lib/MessageListRow.svelte";
@@ -10,7 +12,9 @@
   import PasskeySignIn from "$lib/PasskeySignIn.svelte";
   import Icon from "$lib/Icon.svelte";
   import {showInboxHeaders, loadHeaderPreference} from "$lib/preferences.js";
-  let {data} = $props();
+  let {data:loaded}=$props();
+  const mailbox = mailboxView(()=>loaded, ()=>page.url, ()=>selected.length > 0);
+  let data=$derived(mailbox.data);
   let localDates = $state(false);
   const date = (value: string) => !localDates ? value : new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"}).format(new Date(value));
   onMount(() => { localDates = true; loadHeaderPreference(); });
@@ -58,9 +62,11 @@
     </a>
   </footer>
 {:else}
-  <header class="feed-heading">
+  <MailboxRefresh view={mailbox} locked={selected.length > 0}>
+  {#snippet heading()}<header class="feed-heading">
     <div><h1 class="hail-title">{data.view === 'connections' ? 'Inbox' : 'Feed'}</h1><p class="feed-description [margin:6px_0_0] text-[14px] text-muted">{data.view === 'connections' ? 'The latest from your connections' : 'The latest from your subscriptions'}</p></div>
-  </header>
+  </header>{/snippet}
+  </MailboxRefresh>
   <div class="feed-layout" class:has-selection={selectedMessages.length > 0}>
   {#if selectedMessages.length}
     <MessageActions messages={selectedMessages} bind:locked={selectionLocked} onclear={() => selected = []} onremoved={removed => { selected = selected.filter(key => !removed.some(message => messageKey(message) === key)); }} />
@@ -79,7 +85,7 @@
       {/each}
     {/if}
   </section>
-  {#if data.paged||data.next}<nav aria-label={data.view === 'connections' ? 'Inbox pages' : 'Feed pages'} class="mt-6 flex flex-wrap justify-center gap-3">{#if data.paged}<a class="hail-button-secondary" href={data.view==='connections'?'/?view=connections':'/?view=subscriptions'}>← Newest messages</a>{/if}{#if data.next}<a class="hail-button-secondary" href={`/?${data.view==='connections'?'view=connections&':'view=subscriptions&'}after=${encodeURIComponent(data.next)}`}>Older messages →</a>{/if}</nav>{/if}
+  {#if data.paged||data.next}<nav aria-label={data.view === 'connections' ? 'Inbox pages' : 'Feed pages'} class="mt-6 flex flex-wrap justify-center gap-3">{#if data.paged}<a class="hail-button-secondary" href={data.view==='connections'?'/?view=connections':'/?view=subscriptions'}>← Newest messages</a>{/if}{#if data.next}<button class="hail-button-secondary" disabled={mailbox.busy||mailbox.pending||selected.length > 0} onclick={()=>mailbox.older("after",data.next)}>{mailbox.batches >= 4 ? "Continue to older history" : "Load older"}</button>{/if}</nav>{/if}
   </div>
   {#if !selectedMessages.length}
     <a class="mobile-compose mobile-floating-action" href={data.view==='connections'?'/compose?audience=connections':'/compose'} aria-label={data.view==='connections'?'Message connections':'Publish to subscribers'} title={data.view==='connections'?'Message connections':'Publish to subscribers'}><Icon name="compose" size={24} /></a>
