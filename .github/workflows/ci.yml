@@ -111,7 +111,7 @@ jobs:
         env:
           CHROMIUM: google-chrome
         run: bun scripts/check-browser.ts
-      - name: Verify browser recovery, wizard, compose and conversations
+      - name: Verify browser recovery, wizard, compose, conversations and mailbox caching
         working-directory: apps/client
         env:
           CHROMIUM: google-chrome
@@ -123,6 +123,8 @@ jobs:
           bun scripts/check-browser-compose.ts
           bun scripts/check-browser-conversations.ts
           bun scripts/check-browser-conversations.ts --shared
+          bun scripts/check-browser-mailbox-cache.ts
+          bun scripts/check-browser-mailbox-refresh.ts
 
   server:
     needs: changes

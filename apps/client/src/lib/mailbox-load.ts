@@ -14,7 +14,7 @@ export async function readMailbox<T>(fetcher:typeof fetch, url:URL, scope?:strin
   const result = await response.json();
   if (result.redirect) {
     if (browser) mailboxCache.clear();
-    redirect(307, result.redirect);
+    redirect(result.status, result.redirect);
   }
   if (browser && scope && result.scope !== scope) {
     mailboxCache.clear();
@@ -32,13 +32,16 @@ export function mailboxLoad<T>(followMailboxInvalidation = true) {
     const {mailboxScope} = await (followMailboxInvalidation ? parent() : untrack(parent));
     const key = mailboxKey(mailboxScope ?? '', url);
     const read = () => readMailbox<T>(fetch, url, mailboxScope);
-    if (!browser || !mailboxScope) return {...await read(), mailboxKey:key};
+    if (!browser || !mailboxScope) return {...await read(), mailboxKey:key, mailboxCached:false};
     // Navigation may race a read/Trash action. Wait for that action and retry
     // discarded reads, rather than turning a correctly rejected stale response
     // into a route error. Network/authentication failures still propagate.
     for (;;) {
       await mailboxCache.idle();
-      try {return {...(mailboxCache.get<T>(key) ?? await mailboxCache.request(key,read)), mailboxKey:key};}
+      try {
+        const cached = mailboxCache.get<T>(key);
+        return {...(cached ?? await mailboxCache.request(key,read)), mailboxKey:key, mailboxCached:cached !== undefined};
+      }
       catch (cause) {if (!(cause instanceof StaleMailboxRead)) throw cause;}
     }
   }) satisfies Load;

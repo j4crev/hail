@@ -4,7 +4,8 @@ import {isAccountPath,loginPath} from "$lib/auth-routing.js";
 import {isConfigured} from "$lib/server/canary.js";
 
 export const handle: Handle = async ({ event, resolve }) => {
-  if (isAccountPath(event.url.pathname) && !isConfigured(event.cookies)) {
+  const connectionInbox = event.url.pathname === "/" && event.url.searchParams.get("view") === "connections" && !event.url.searchParams.has("next");
+  if ((isAccountPath(event.url.pathname) || connectionInbox) && !isConfigured(event.cookies)) {
     return new Response(null,{status:303,headers:{location:loginPath(event.url),"cache-control":"no-store","referrer-policy":"no-referrer"}});
   }
   const response = await (event.request.method === "GET" ? withAccountReads(() => resolve(event)) : resolve(event));

@@ -5,7 +5,7 @@ import {mailboxCache, StaleMailboxRead} from './mailbox-cache.js';
 import {readMailbox, mailboxKey} from './mailbox-load.js';
 import {appendMailbox} from './mailbox-history.js';
 
-export function mailboxView<T extends {mailboxKey?:string}>(source:()=>T, url:()=>URL, locked:()=>boolean = ()=>false, deferChanges = false) {
+export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean}>(source:()=>T, url:()=>URL, locked:()=>boolean = ()=>false, deferChanges = false) {
   let data = $state.raw<T>(untrack(source));
   let pending = $state.raw<T | null>(null);
   let busy = $state(false), failure = $state(''), batches = $state(0);
@@ -13,10 +13,10 @@ export function mailboxView<T extends {mailboxKey?:string}>(source:()=>T, url:()
   let mounted = false, lastCheck = 0, failures = 0, version = 0;
   $effect(() => {
     const next = source();
-    untrack(() => {data = next; recentFingerprint = fingerprint(next); historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++; if (mounted) queueMicrotask(()=>void refresh(true));});
+    untrack(() => {data = next; recentFingerprint = fingerprint(next); historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++; lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));});
   });
   // Operation IDs are fresh form defaults, not mailbox changes.
-  const fingerprint = (value:T) => JSON.stringify(value, (key,item)=>['newReplyId','newReplyUntil','newRevivalId'].includes(key)?undefined:item);
+  const fingerprint = (value:T) => JSON.stringify(value, (key,item)=>['newReplyId','newReplyUntil','newRevivalId','mailboxCached'].includes(key)?undefined:item);
   const scope = () => source().mailboxKey?.split(':')[0] ?? '';
   async function refresh(force = false, applyNow = false) {
     if (!mounted || busy || mailboxCache.mutations || document.visibilityState !== 'visible' || !scope()) return;
@@ -67,12 +67,15 @@ export function mailboxView<T extends {mailboxKey?:string}>(source:()=>T, url:()
   onMount(() => {
     mounted = true;
     const focus = () => {void refresh();};
-    const changed = () => {lastCheck = 0; void refresh(true);};
+    // Reader actions already update local state and explicitly invalidate counts.
+    // Revalidate reader metadata on the next tick, preserving thread selection
+    // and avoiding a second body download immediately after marking it read.
+    const changed = () => {lastCheck = 0; if (!deferChanges) void refresh(true);};
     window.addEventListener('focus',focus);
     window.addEventListener('hail:mailbox-changed',changed);
     document.addEventListener('visibilitychange',focus);
     const interval = setInterval(focus, 30_000 + Math.random()*5000);
-    void refresh(true);
+    if (source().mailboxCached) void refresh(true);
     return () => {mounted = false; version++; clearInterval(interval); window.removeEventListener('focus',focus); window.removeEventListener('hail:mailbox-changed',changed); document.removeEventListener('visibilitychange',focus);};
   });
   return {get data(){return data;},get pending(){return !!pending;},get busy(){return busy;},get failure(){return failure;},get batches(){return batches;},refresh,older,apply};

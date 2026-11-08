@@ -34,7 +34,7 @@ export const GET: import('./$types').RequestHandler = async event => {
     return json({data, counts, scope:mailboxScope(event.cookies)}, {headers:{'cache-control':'no-store'}});
   } catch (cause) {
     // Do not follow redirects as JSON, especially expired-session redirects.
-    if (isRedirect(cause)) return json({redirect:cause.location}, {headers:{'cache-control':'no-store'}});
+    if (isRedirect(cause)) return json({redirect:cause.location,status:cause.status}, {headers:{'cache-control':'no-store'}});
     throw cause;
   }
 };
