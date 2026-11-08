@@ -1,7 +1,7 @@
 # RACR Internet-Draft workspace
 
 This directory contains the separate first publication draft. It does not replace
-`spec/`, and nothing here has been submitted to the IETF Datatracker.
+`spec/`.
 
 **RACR Protocol — Recipient-Authorized Content Retrieval**, pronounced “racer,”
 is the underlying protocol for exchanging **hail** messages. **Hail** names the
@@ -69,7 +69,7 @@ Initial validation on 2026-11-02: xml2rfc 3.35.0 produced both renderings
 without warnings; idnits 3.3.0 passed with zero errors, warnings, or comments.
 Author metadata, internal reference targets, and the body CDDL definitions were
 also checked against the source specification. The plain-text rendering is 25
-pages. These results describe this local revision, not a submitted document.
+pages. These results describe that validation run.
 
 ## Before submission
 
