@@ -13,11 +13,11 @@ Normal tests read committed files; they do not generate their own expected bytes
 | `portable-history.json` | `MigrationTransferService.exportFenced` in the private-PLC transfer/return integration test; v7 with Grants, consent, accepted and delivered messages, body provenance, immutable statuses and retry obligations |
 | `managed-history.json` | `ManagedMigrationExportService.exportFenced` in the managed network orchestration integration test; v8 with public source role metadata, managed custody, Grants, detached body authorization and pending delivery |
 | `connection-history.json` | `collectConnectionHistory` after real local connection admission in the shared-conversation integration test; nonempty pair, proof, result and signing-evidence history |
-| `conversation-creator.json` | `collectConversationHistory` after shared sends and revival processing; immutable descriptor, creator membership and terminal shared/revival outboxes |
-| `conversation-renewed.json` | Same collector for a recipient renewed by the creator's signed revival |
+| `conversation-creator.json` | `collectConversationHistory` after shared sends; immutable descriptor, creator membership and terminal shared-message outboxes |
+| `conversation-active.json` | Same collector for an active recipient whose own reply renewed their participation |
 | `conversation-left.json` | Same collector for a recipient who left and disabled introductions; exact leave and opt-out state survive reconstruction |
 | `transfer-wire.json` | Real portable/managed signing functions, handover signing functions and wire wrapper; 32 fixed Ed25519/ES256 records, all handover signature roles, consent, activation and cancellation |
-| `connection-wire.json` | Real COSE codec; coherent invitation, confirmation, address bindings, reviewed coordinator snapshot and deterministic bundle, lifecycle/ack controls, conversation descriptor/revival, exact JSON request/response bodies and ingress rejection cases |
+| `connection-wire.json` | Real COSE codec; coherent invitation, confirmation, address bindings, reviewed coordinator snapshot and deterministic bundle, lifecycle/ack controls, conversation descriptor, exact JSON request/response bodies and ingress rejection cases |
 | `history-negative.json` | Shared mutation instructions for unknown/private fields, missing domains, wrong scalar types, foreign ownership and changed checkpoint digests |
 
 Snapshot fixtures retain exact manifest bytes in `manifestBase64`, source public

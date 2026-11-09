@@ -74,10 +74,6 @@ export const SIGNED_PROFILES: Readonly<
     type:"hail.conversation",contentType:"application/hail-conversation+cbor",
     signerField:"from",keyRole:"hail-messaging",maximumRepresentationBytes:16_384,
   },
-  "hail.conversation-revival": {
-    type:"hail.conversation-revival",contentType:"application/hail-conversation-revival+cbor",
-    signerField:"from",keyRole:"hail-messaging",maximumRepresentationBytes:16_384,
-  },
 };
 
 export function isSignedPayloadType(value: unknown): value is HailSignedPayloadType {

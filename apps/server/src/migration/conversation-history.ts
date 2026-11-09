@@ -14,9 +14,6 @@ export const CONVERSATION_COLUMNS={
   connection_conversation_preferences:'account_id connection_id epoch allow_introductions updated_at',
   conversation_descriptors:'creator_did conversation_id descriptor_hash descriptor_cose participants created_at admission_until signing_key signing_evidence',
   conversation_memberships:'account_id creator_did conversation_id state admitted_at expires_at last_activity_at left_at',
-  conversation_revival_receipts:'account_id creator_did conversation_id request_id request_hash expires_at outcome',
-  conversation_revival_batches:'account_id id creator_did conversation_id serving_generation created_at',
-  conversation_revival_targets:'account_id batch_id recipient_did request_id request_cose connection_id connection_epoch outcome expires_at next_attempt_at attempts',
   connection_message_batches:'account_id id sender_did serving_generation body_bytes manifest request_digest created_at expires_at cancelled_at sealed conversation_context',
   connection_message_targets:'account_id publication_id connection_id connection_epoch recipient_did message_id state attempts next_attempt_at',
 } as const;
@@ -34,8 +31,7 @@ const bytes=(v:unknown,max=262144)=>{if(typeof v!=='string'||!/^\\x(?:[0-9a-f]{2
 const identity=(r:Row)=>r.creator_did+'/'+r.conversation_id;
 const keys:Record<Table,string[]>={public_plc_resolution_evidence:['evidence_digest'],account_conversation_preferences:['account_id'],connection_conversation_preferences:['account_id','connection_id','epoch'],
   conversation_descriptors:['creator_did','conversation_id'],conversation_memberships:['account_id','creator_did','conversation_id'],
-  conversation_revival_receipts:['account_id','creator_did','request_id'],conversation_revival_batches:['account_id','id'],
-  conversation_revival_targets:['account_id','batch_id','recipient_did'],connection_message_batches:['account_id','id'],connection_message_targets:['account_id','publication_id','recipient_did']};
+  connection_message_batches:['account_id','id'],connection_message_targets:['account_id','publication_id','recipient_did']};
 export function validateConversationHistory(h:ConversationHistory,owner:ConnectionHistoryOwner,capturedAt:string){
   if(!h||h.type!=='hail.conversation-history'||h.version!==1||h.capturedAt!==capturedAt||!date(capturedAt)||
     Object.keys(h).sort().join(',')!=='accountId,capturedAt,did,sourceGeneration,sourceServiceBase,tables,type,version'||
@@ -66,15 +62,6 @@ export function validateConversationHistory(h:ConversationHistory,owner:Connecti
   const memberships=new Map(h.tables.conversation_memberships.map(r=>[identity(r),r]));
   if(memberships.size!==descriptors.size)return fail();
   for(const r of memberships.values())if(!descriptors.has(identity(r))||!['active','left'].includes(r.state)||(r.state==='left')!==(r.left_at!==null)||!date(r.admitted_at)||!date(r.expires_at))return fail();
-  for(const r of h.tables.conversation_revival_receipts)if(!memberships.has(identity(r))||!['renewed','active','left','denied'].includes(r.outcome)||bytes(r.request_hash,32).length!==32)return fail();
-  const revivals=new Map(h.tables.conversation_revival_batches.map(r=>[r.id,r]));
-  for(const r of revivals.values())if(r.creator_did!==owner.did||!memberships.has(identity(r)))return fail();
-  for(const r of h.tables.conversation_revival_targets){
-    const batch=revivals.get(r.batch_id),p=inspectSignedPayload('hail.conversation-revival',bytes(r.request_cose,16384)).payload;
-    if(!batch||!['renewed','active','left','denied','expired'].includes(r.outcome)||p.from!==owner.did||p.to!==r.recipient_did||p.request_id!==r.request_id||p.conversation_id!==batch.conversation_id||
-      Date.parse(r.expires_at)!==p.expires_at*1000||!same(p.descriptor_hash.value,bytes(descriptors.get(identity(batch))!.descriptor_hash,32))||
-      !descriptors.get(identity(batch))!.participants.includes(p.to)||(r.connection_id===null)!==(r.connection_epoch===null)||r.connection_epoch!==null&&!positive(r.connection_epoch))return fail();
-  }
   const batches=new Map(h.tables.connection_message_batches.map(r=>[r.id,r]));
   for(const r of batches.values()){
     const context=decodeDeterministic(bytes(r.conversation_context)) as any,audience=decodeDeterministic(bytes(r.manifest)) as any[];

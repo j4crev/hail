@@ -98,7 +98,6 @@ The term **complete signed representation bytes** means the exact complete tagge
 | `hail.connection-confirmation` | `application/hail-connection-confirmation+cbor` | `#hail-identity` |
 | `hail.connection-control` | `application/hail-connection-control+cbor` | `#hail-messaging` |
 | `hail.conversation` | `application/hail-conversation+cbor` | creator's `#hail-messaging` |
-| `hail.conversation-revival` | `application/hail-conversation-revival+cbor` | creator's `#hail-messaging` |
 
 The historical `hail.connection-grant` shape in the codec/CDDL is not the current
 coordinator-based connection admission mechanism. Its support is not required.
@@ -133,7 +132,7 @@ Hail uses SHA-256 but intentionally has more than one input domain:
 - A Grant revision digest hashes complete signed representation bytes and supplies both the next revision's `previous` byte string and the current strong ETag's base64url opaque value.
 - An Envelope payload digest hashes deterministic payload bytes, excluding the COSE wrapper. Replay handling and Delivery Status use this same digest.
 - A Body content digest hashes exact uncompressed deterministic body bytes.
-- A conversation descriptor hash and revival replay hash cover the complete COSE representation.
+- A conversation descriptor hash covers the complete COSE representation.
 - A connection proof hash covers the exact deterministic CBOR proof bundle; an acknowledgement hashes the complete received control COSE bytes.
 - Transfer handshake digests cover deterministic payload bytes, excluding detached signatures. Snapshot and checkpoint domains are defined in [transfer-formats.md](transfer-formats.md).
 

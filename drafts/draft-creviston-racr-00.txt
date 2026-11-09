@@ -955,11 +955,14 @@ Internet-Draft                    RACR                     November 2026
 
 
    *  Fixed-roster shared conversations use descriptors, per-recipient
-      Envelope version 4, Reply all, leave, expiry, and creator revival.
-      Envelope version 4 does not replace Grant-authorized Envelope
-      version 1.  Connection and conversation permission is rechecked
-      before retrieval and final delivery, unlike authorization fixed at
-      core Grant acceptance.
+      Envelope version 4, Reply all, leave, and individual participation
+      expiry.  The reference provider uses a 90-day timeout renewed only
+      by that participant replying, not by reading.  Leaving or expiry
+      preserves saved history; expired participation requires a new
+      conversation.  Envelope version 4 does not replace Grant-
+      authorized Envelope version 1.  Connection and conversation
+      permission is rechecked before retrieval and final delivery,
+      unlike authorization fixed at core Grant acceptance.
 
    *  Detached attachments support PNG, JPEG, WebP, PDF, TXT, and LOG
       files in all three body profiles.  The authenticated body binds
@@ -999,9 +1002,6 @@ Internet-Draft                    RACR                     November 2026
    content and metadata; a sender provider can inspect outgoing content
    and tokens.  Neither provider authentication nor local disk/key
    encryption provides end-to-end confidentiality.
-
-
-
 
 
 

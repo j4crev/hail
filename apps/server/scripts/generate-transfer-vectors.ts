@@ -117,7 +117,6 @@ const closed=await cose('closed-event',{...base,operation:'snapshot',connection_
 const closedCurrent=await cose('current-closed',{...base,operation:'snapshot',connection_id:id(12),epoch:2,state:'disconnected',request_id:id(13)},sender);
 const closeAck=await cose('closed-ack',{...base,from:peer,to:did,key_id:peer+'#hail-messaging',operation:'ack',connection_id:id(12),epoch:2,state:'disconnected',request_id:id(13),proof_hash:{algorithm:'sha-256',value:hash(closed)}},target);
 const descriptor=await cose('conversation',{type:'hail.conversation',version:1,from:did,conversation_id:id(14),membership_revision:1,participants:[did,peer,'did:plc:'+'c'.repeat(24)],created_at:now,admission_until:now+3600},sender);
-const revival=await cose('revival',{type:'hail.conversation-revival',version:1,from:did,to:peer,conversation_id:id(14),descriptor_hash:{algorithm:'sha-256',value:hash(descriptor)},request_id:id(15),issued_at:now+4000,expires_at:now+5000},sender);
 const b64=encodeBase64Url;
 const exchanges=[
  {operation:'invitations/review',request:{id:id(10),did,token:b64(token)},response:{type:'hail.connection-review',version:1,invitation:b64(inv),binding:b64(ib),federation:1}},
@@ -127,9 +126,8 @@ const exchanges=[
  {operation:'sync',request:{control:b64(event),bundle:b64(bundle),admission:b64(admitted)},response:{control:b64(acknowledged)}},
  {operation:'disconnect',request:{control:b64(disconnect)},response:{control:b64(closed),current:b64(closedCurrent)}},
  {operation:'sync',request:{control:b64(closed)},response:{control:b64(closeAck)}},
- {operation:'conversation-revival',request:{connectionId:id(12),cose:b64(revival),epoch:1},response:{requestId:id(15),outcome:'renewed'}},
 ];
 await writeFile(new URL('../../../spec/vectors/connection-wire.json',import.meta.url),JSON.stringify({format:'hail-connection-wire-v1',time:now,objects,bundleHex:hex(bundle),bundleDigestHex:hex(hash(bundle)),
   exchanges:exchanges.map(e=>({...e,method:'POST',contentType:'application/json',requestUtf8:JSON.stringify(e.request),responseStatus:200,responseUtf8:JSON.stringify(e.response)})),
   negative:[{id:'duplicate-key',operation:'state',body:'{"control":"a","control":"b"}',status:400},{id:'wrong-media',operation:'state',body:'{}',contentType:'text/plain',status:415},{id:'coded',operation:'state',body:'{}',contentEncoding:'gzip',status:415},{id:'credential',operation:'state',body:'{}',authorization:'Bearer fixture',status:403},{id:'unknown-operation',operation:'unknown',body:'{}',status:404}]},null,2)+'\n');
-console.log('Wrote connection, revival and transport rejection vectors');
+console.log('Wrote connection and transport rejection vectors');

@@ -89,7 +89,7 @@ export class AccountPublications {
       typeof input.publicationId!=='string'||!ID.test(input.publicationId)||typeof input.sender!=='string'||!/^did:plc:[a-z2-7]{24}$/.test(input.sender)||
       typeof input.messageId!=='string'||!ID.test(input.messageId))throw new UserGrantError(400,'Invalid shared reply');
     const identity=conversationIdentity(input),state=await conversationState(this.sql,session,identity);
-    if(!state||state.state!=='active')throw new UserGrantError(409,'Rejoin this conversation before replying');
+    if(!state||state.state!=='active')throw new UserGrantError(409,'Participation is inactive; rejoin before expiry or start a new conversation');
     const parent=(await this.sql<{conversation_message_id:string}[]>`SELECT e.conversation_message_id FROM received_envelopes e JOIN delivered_messages d
       ON d.recipient_did=e.recipient_did AND d.sender_did=e.sender_did AND d.message_id=e.message_id
       WHERE e.local_account_id=${session.account_id} AND e.sender_did=${input.sender} AND e.message_id=${input.messageId} AND d.trashed_at IS NULL
@@ -126,7 +126,7 @@ export class AccountPublications {
       for(const t of targets)await tx`INSERT INTO connection_message_targets(account_id,publication_id,connection_id,connection_epoch,recipient_did,message_id)
         VALUES(${session.account_id},${id},${t.connectionId},${t.epoch},${t.recipientDid},${uuidV7()})`;
       await tx`UPDATE connection_message_batches SET sealed=true WHERE account_id=${session.account_id} AND id=${id}`;
-      await changeConversationMembership(tx as SQL,session,context,'open');
+      if(!context.introduction)await changeConversationMembership(tx as SQL,session,context,'reply');
     });
     return (await this.status(session,id,'connections'))!;
   }

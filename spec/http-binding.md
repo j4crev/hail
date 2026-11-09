@@ -108,7 +108,6 @@ All paths below are relative to the authenticated service base unless stated.
 | --- | --- | --- |
 | Review connection invitation | POST `connections/invitations/review` | [Connection wire](connection-wire.md#invitation-review) |
 | Establish/synchronize/disconnect connection | POST `connections/{state,admit,commit,disconnect,sync}` | [Connection wire](connection-wire.md#lifecycle-messages) |
-| Revive expired shared participation | POST `connections/conversation-revival` | [Revival wire](connection-wire.md#conversation-revival) |
 | Prepare/freeze/abort/commit/complete peer handover | POST `connections/{handover,handover-freeze,handover-abort,handover-commit,handover-complete}` | [Transfer formats](transfer-formats.md#connection-handover-records) |
 | Portable and managed transfer | POST `transfers/*` and fixed origin `/.well-known/hail/transfers/*` | [Transfer inventory](transfer-formats.md#http-operation-inventory) |
 | Stage and orchestrate connection transfer | POST `transfers/connection-handovers`, `transfers/connection-progress/{freeze,transition}`, `transfers/connection-source/{freeze,abort,release,retire}`, `transfers/connection-cancellations` | [Connection portability](connection-portability.md) |

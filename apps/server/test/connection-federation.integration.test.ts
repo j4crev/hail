@@ -439,11 +439,8 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       expect(await one.messaging.read(c.session,b.did,toCarol)).toMatchObject({sharedConversation:{...identity,state:'active'}});
       await first.service.conversationMembership(c.session,{...identity,action:'leave'});
       await second.db.sql`UPDATE conversation_memberships SET expires_at=clock_timestamp()-interval '1 second' WHERE account_id=${b.id}`;
-      const operationId=uuidV7();await first.service.conversationRevival(a.session,{conversationId:root,operationId});
-      for(let n=0;n<3;n++)await withFreshServingGenerations(first.db.sql,()=>first.service.workConversationRevival());
-      const revived=await first.service.conversationRevival(a.session,{conversationId:root,operationId});
-      expect(revived.targets.find(t=>t.recipient===b.did)?.outcome).toBe('renewed');
-      expect(revived.targets.find(t=>t.recipient===c.did)?.outcome).toBe('left');
+      await expect(two.publications.replyConversation(b.session,{publicationId:uuidV7(),...identity,sender:a.did,messageId:bobRoot,text:'Expired sender'})).rejects.toThrow('inactive');
+      expect(await two.messaging.read(b.session,a.did,bobRoot)).toMatchObject({sharedConversation:{state:'expired'}});
       const owner={accountId:b.id,did:b.did,sourceGeneration:1,sourceServiceBase:second.origin+'/hail'},capturedAt=new Date().toISOString();
       const history=await collectConnectionHistory(second.db.sql,owner,capturedAt),conversations=await collectConversationHistory(second.db.sql,owner,capturedAt);
       await verifyConnectionHistoryAuthority(history,resolver,new Date(),conversations);

@@ -274,7 +274,7 @@
           <t>Envelope version 3 carries a signed parent for threaded direct replies, with either reply-capability or connection authorization. Reply creation in the specification snapshot <xref target="HAIL-SPEC" /> uses Envelope version 3; historical unthreaded reply forms are not a mandatory compatibility baseline.</t>
         </li>
         <li>
-          <t>Fixed-roster shared conversations use descriptors, per-recipient Envelope version 4, Reply all, leave, expiry, and creator revival. Envelope version 4 does not replace Grant-authorized Envelope version 1. Connection and conversation permission is rechecked before retrieval and final delivery, unlike authorization fixed at core Grant acceptance.</t>
+          <t>Fixed-roster shared conversations use descriptors, per-recipient Envelope version 4, Reply all, leave, and individual participation expiry. The reference provider uses a 90-day timeout renewed only by that participant replying, not by reading. Leaving or expiry preserves saved history; expired participation requires a new conversation. Envelope version 4 does not replace Grant-authorized Envelope version 1. Connection and conversation permission is rechecked before retrieval and final delivery, unlike authorization fixed at core Grant acceptance.</t>
         </li>
         <li>
           <t>Detached attachments support PNG, JPEG, WebP, PDF, TXT, and LOG files in all three body profiles. The authenticated body binds each file's name, media type, size, and digest. The envelope body-access token authorizes retrieval of the declared files. Recipients MUST verify and durably retain every declared file before committing <tt>delivered</tt>. The complete format and lifecycle rules are defined in <xref target="HAIL-ATTACHMENTS" />.</t>

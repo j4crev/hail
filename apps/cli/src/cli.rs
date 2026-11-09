@@ -46,12 +46,6 @@ const COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Inspect local participation without renewal.",
     ),
     (
-        "conversation open",
-        "<creator-did> <conversation-id>",
-        "",
-        "Explicitly record activity; only active participation is renewed.",
-    ),
-    (
         "conversation leave",
         "<creator-did> <conversation-id>",
         "",
@@ -61,13 +55,7 @@ const COMMANDS: &[(&str, &str, &str, &str)] = &[
         "conversation rejoin",
         "<creator-did> <conversation-id>",
         "",
-        "Explicitly rejoin a conversation you left; expiry requires creator revival.",
-    ),
-    (
-        "conversation revive",
-        "<conversation-id>",
-        "state",
-        "Creator-only revival of expired participants; retain state for retries/status.",
+        "Rejoin unexpired participation you left; expiry requires a new conversation.",
     ),
     (
         "conversation preferences show",
@@ -696,7 +684,6 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, Error> {
             "connection status" => "state",
             "conversation start" => "connection file state",
             "conversation reply-all" => "file state",
-            "conversation revive" => "state",
             "conversation preferences set" => "allow",
             "send" => "grant file state",
             "reply" | "connection send" => "file state",
@@ -795,7 +782,6 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, Error> {
                 | "conversation messages"
                 | "conversation reply-all"
                 | "conversation inspect"
-                | "conversation open"
                 | "conversation leave"
                 | "conversation rejoin"
         ) && !DID.is_match(&positionals[0])
@@ -807,13 +793,12 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, Error> {
             "conversation messages"
                 | "conversation reply-all"
                 | "conversation inspect"
-                | "conversation open"
                 | "conversation leave"
                 | "conversation rejoin"
         ) && !crate::contract::ID.is_match(&positionals[1])
             || matches!(
                 command.as_str(),
-                "conversation status" | "conversation cancel" | "conversation revive" | "sent show"
+                "conversation status" | "conversation cancel" | "sent show"
             ) && !crate::contract::ID.is_match(&positionals[0])
         {
             return Err(Error::usage("Invalid message/conversation/batch ID"));

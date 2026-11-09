@@ -209,7 +209,7 @@ setInterval(async()=>{
 let connectionRunning=false;
 if(connections?.federation)setInterval(async()=>{
   if(connectionRunning)return;connectionRunning=true;
-  try{await withFreshServingGenerations(database.sql,()=>connections.federation!.workOne());await withFreshServingGenerations(database.sql,()=>connections.workConversationRevival());}
+  try{await withFreshServingGenerations(database.sql,()=>connections.federation!.workOne());}
   catch(error){console.error(JSON.stringify({level:"error",message:"connection federation worker failed",error:error instanceof Error?error.message:"unknown error"}));}
   finally{connectionRunning=false;}
 },1_000);

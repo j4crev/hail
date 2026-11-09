@@ -2,7 +2,7 @@
 import {createHash,createPrivateKey,createPublicKey,sign} from "node:crypto";
 import {writeFile} from "node:fs/promises";
 import {encodePayload,encodeDeterministic,signPayload,toDiagnosticJson,
-  type HailConversation,type HailConversationRevival,type HailValue,type HailEnvelope} from "../src/index.js";
+  type HailConversation,type HailValue,type HailEnvelope} from "../src/index.js";
 import {envelope as baseEnvelope} from '../test/fixtures.js';
 
 const seed=Buffer.alloc(32,43),privateKey=createPrivateKey({format:"der",type:"pkcs8",key:Buffer.concat([Buffer.from("302e020100300506032b657004220420","hex"),seed])});
@@ -13,18 +13,15 @@ const hex=(v:Uint8Array)=>Buffer.from(v).toString("hex"),hash=(v:Uint8Array)=>cr
 const descriptor:HailConversation={type:"hail.conversation",version:1,conversation_id:"01954144-8097-7a9d-a7a8-ef29a823eaf1",
   from:did(0),membership_revision:1,participants:[did(0),did(1),did(2)].sort(),created_at:1793443200,admission_until:1793443200+604800};
 const signedDescriptor=await signPayload(descriptor.type,descriptor,signer);
-const revival:HailConversationRevival={type:"hail.conversation-revival",version:1,conversation_id:descriptor.conversation_id,
-  descriptor_hash:{algorithm:"sha-256",value:hash(signedDescriptor)},from:descriptor.from,to:did(1),
-  request_id:"01954144-8097-7a9d-a7a8-ef29a823eaf2",issued_at:1856601600,expires_at:1856601600+86400};
 const positive=[];
 const introduction:HailEnvelope={...baseEnvelope,version:4,from:descriptor.from,to:did(1),
-  authorization:{type:'conversation',creator:descriptor.from,conversation_id:descriptor.conversation_id,membership_revision:1,descriptor_hash:revival.descriptor_hash},
-  conversation_message_id:descriptor.conversation_id,conversation_introduction:{descriptor:signedDescriptor,connection_id:revival.request_id,epoch:1},
+  authorization:{type:'conversation',creator:descriptor.from,conversation_id:descriptor.conversation_id,membership_revision:1,descriptor_hash:{algorithm:"sha-256",value:hash(signedDescriptor)}},
+  conversation_message_id:descriptor.conversation_id,conversation_introduction:{descriptor:signedDescriptor,connection_id:"01954144-8097-7a9d-a7a8-ef29a823eaf2",epoch:1},
   reply:{allowed:false}};
 delete introduction.category;
 const {conversation_introduction:ignored,...withoutIntroduction}=introduction;
-const groupReply:HailEnvelope={...withoutIntroduction,conversation_message_id:revival.request_id,in_reply_to:{sender:did(2),message_id:descriptor.conversation_id}};
-for(const [id,payload] of [["conversation-three",descriptor],["conversation-maximum",{...descriptor,participants:Array.from({length:101},(_,i)=>did(i)).sort()}],["conversation-revival",revival],
+const groupReply:HailEnvelope={...withoutIntroduction,conversation_message_id:"01954144-8097-7a9d-a7a8-ef29a823eaf2",in_reply_to:{sender:did(2),message_id:descriptor.conversation_id}};
+for(const [id,payload] of [["conversation-three",descriptor],["conversation-maximum",{...descriptor,participants:Array.from({length:101},(_,i)=>did(i)).sort()}],
   ['conversation-introduction',introduction],['conversation-reply-all',groupReply]] as const){
   const bytes=encodePayload(payload.type,payload),cose=await signPayload(payload.type,payload,signer);
   positive.push({id,type:payload.type,diagnostic:toDiagnosticJson(payload.type,payload,false),payload_hex:hex(bytes),payload_sha256_hex:hex(hash(bytes)),cose_sign1_hex:hex(cose),representation_sha256_hex:hex(hash(cose))});
@@ -44,12 +41,6 @@ const negative_payload=[
   ["extra-authority",{...descriptor,authorization:{type:"connection"}}],
   ["unknown-version",{...descriptor,version:2}],
   ["invalid-id",{...descriptor,conversation_id:"anything"}],
-  ["revival-self",{...revival,to:revival.from}],
-  ["revival-hash",{...revival,descriptor_hash:{algorithm:"sha-256",value:new Uint8Array(31)}}],
-  ["revival-long",{...revival,expires_at:revival.expires_at+1}],
-  ["revival-zero",{...revival,expires_at:revival.issued_at}],
-  ["revival-request-id",{...revival,request_id:"anything"}],
-  ["revival-new-roster",{...revival,participants:descriptor.participants}],
   ['conversation-legacy-envelope',{...introduction,version:3}],
   ['conversation-wrong-introducer',{...introduction,from:did(2)}],
   ['conversation-introduction-parent',{...introduction,in_reply_to:groupReply.in_reply_to}],

@@ -1,8 +1,8 @@
 import {createHash,createPrivateKey,createPublicKey,sign,verify} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {expect,it} from "vitest";
-import {decodePayload,encodePayload,fromDiagnosticJson,signPayload,verifySignedPayload,inspectSignedPayload,validateConversationRevivalBinding,
-  type DiagnosticJson,type HailConversation,type HailConversationRevival,type HailSignedPayloadType} from "../src/index.js";
+import {decodePayload,encodePayload,fromDiagnosticJson,signPayload,verifySignedPayload,inspectSignedPayload,
+  type DiagnosticJson,type HailSignedPayloadType} from "../src/index.js";
 
 const vectors=JSON.parse(readFileSync(new URL("../vectors/conversations-v1.json",import.meta.url),"utf8")) as {
   test_keys:{key_id:string;seed_hex:string;public_key_hex:string}[];
@@ -24,36 +24,11 @@ for(const vector of vectors.positive)it(`round-trips and verifies shared convers
   expect(signed).toEqual(bytes(vector.cose_sign1_hex));expect(hash(signed)).toBe(vector.representation_sha256_hex);
   expect((await verifySignedPayload(vector.type,signed,verifier)).payload).toEqual(payload);
   if(vector.type!=='hail.envelope')expect(()=>inspectSignedPayload("hail.envelope",signed)).toThrow();
-  expect(()=>inspectSignedPayload(vector.type==="hail.conversation"?"hail.conversation-revival":"hail.conversation",signed)).toThrow();
+  expect(()=>inspectSignedPayload(vector.type==="hail.conversation"?"hail.envelope":"hail.conversation",signed)).toThrow();
   const corrupt=Uint8Array.from(signed);corrupt[corrupt.length-1]!^=1;
   await expect(verifySignedPayload(vector.type,corrupt,verifier)).rejects.toThrow();
   await expect(signPayload(vector.type,payload,{...signer,keyId:key.key_id.replace("#hail-messaging","#hail-identity")})).rejects.toThrow();
 });
 for(const vector of vectors.negative_payload)it(`rejects invalid conversation: ${vector.id}`,()=>{
   expect(()=>decodePayload(vector.type,bytes(vector.hex))).toThrow();
-});
-it("binds revival to the creator, exact signed descriptor, conversation and participant",async()=>{
-  const descriptor=await verifySignedPayload("hail.conversation",bytes(vectors.positive[0]!.cose_sign1_hex),verifier);
-  const revival=await verifySignedPayload("hail.conversation-revival",bytes(vectors.positive[2]!.cose_sign1_hex),verifier);
-  expect(()=>validateConversationRevivalBinding(descriptor,revival)).not.toThrow();
-  const changes:Partial<HailConversationRevival>[]=[
-    {descriptor_hash:{algorithm:"sha-256",value:bytes(hash(descriptor.payloadBytes))}},
-    {conversation_id:revival.payload.request_id},{to:"did:plc:"+"z".repeat(24)},
-    {issued_at:descriptor.payload.created_at-1,expires_at:descriptor.payload.created_at+3600},
-  ];
-  for(const change of changes){
-    const signed=await signPayload("hail.conversation-revival",{...revival.payload,...change},signer);
-    const verified=await verifySignedPayload("hail.conversation-revival",signed,verifier);
-    expect(()=>validateConversationRevivalBinding(descriptor,verified)).toThrow();
-  }
-  // A valid signature by another roster member still cannot revive the creator's conversation.
-  const impostor={...revival.payload,from:descriptor.payload.participants[2]!};
-  const kid=impostor.from+"#hail-messaging";
-  const signed=await signPayload("hail.conversation-revival",impostor,{...signer,keyId:kid});
-  const verified=await verifySignedPayload("hail.conversation-revival",signed,{async verify(data,signature,keyId){return keyId===kid&&verify(null,data,publicKey,signature);}});
-  expect(()=>validateConversationRevivalBinding(descriptor,verified)).toThrow();
-  const changed:HailConversation={...descriptor.payload,admission_until:descriptor.payload.admission_until-1};
-  const changedVerified=await verifySignedPayload("hail.conversation",await signPayload("hail.conversation",changed,signer),verifier);
-  expect(()=>validateConversationRevivalBinding(changedVerified,revival)).toThrow();
-  expect(()=>encodePayload("hail.conversation",{...descriptor.payload,created_at:0.5})).toThrow();
 });

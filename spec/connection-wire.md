@@ -82,36 +82,10 @@ adoption of an active sync requires retained local consent and a current
 coordinator probe. The handshake and epoch constraints in the federation spec
 remain mandatory even when every signature is valid.
 
-## Conversation revival
-
-POST `connections/conversation-revival` has exactly:
-
-```text
-{"connectionId": UUIDv7, "cose": base64url(signed revival), "epoch": positive integer}
-```
-
-The signed revival is at most 16384 decoded bytes. Its `to` DID routes the request;
-its `from` is the original creator. The connection fields identify the exact current
-creator-to-recipient permission used for readmission. The receiver verifies current
-creator/service authority and coordinator state, historical descriptor linkage,
-recipient policy, freshness and replay state before changing a lease.
-
-Success is `{"requestId": UUIDv7, "outcome": O}`, where O is `renewed`, `active`,
-`left` or `denied`. The request ID MUST equal the signed request's `request_id`.
-The response is authenticated by the resolved HTTPS destination; it is not a new
-signed delivery capability. Only `renewed` extends a lease. Exact retries reuse
-the retained outcome; conflicting signed bytes under the same creator/request ID
-fail. Unknown or cleaned-up conversations cannot be recreated by revival.
-
-The reference outbox retries failed exchanges with bounded exponential backoff
-until the signed request's expiry, then records local `expired`. `expired` is not
-a receiver success outcome. Receiver clock tolerance is 300 seconds; it does not
-require the sender to continue retries beyond its own deadline.
-
 ## Errors and disclosure
 
 These endpoints use a generic JSON error rather than the envelope-submission
-problem/status protocol. Lifecycle and revival errors contain
+problem/status protocol. Lifecycle errors contain
 `{"error":"Connection exchange not accepted"}`; review errors contain
 `{"error":"Connection invitation unavailable"}`. HTTP statuses are:
 
@@ -121,7 +95,7 @@ problem/status protocol. Lifecycle and revival errors contain
 | 403 | Forbidden transport credentials or authority |
 | 404 | Unknown operation, unavailable invitation/account/conversation |
 | 409 | Conflicting intent, stale epoch or state preventing the operation |
-| 410 | Expired or invalid admission/revival time window |
+| 410 | Expired or invalid admission time window |
 | 413 | Request exceeds byte limit |
 | 415 | Unsupported media type or content coding |
 | 429 | Rate limit |

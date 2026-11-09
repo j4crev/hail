@@ -1,7 +1,7 @@
 # Shared conversation control objects
 
 Status: Draft implementation. Both codecs, provider admission and durable grants,
-version 4 delivery, the Reply all client, leave/expiry/revival, and authenticated
+version 4 delivery, the Reply all client, leave/expiry, and authenticated
 portable conversation checkpoints are implemented. A signed descriptor alone
 never authorizes delivery. Existing envelope versions retain their meaning.
 
@@ -30,8 +30,8 @@ extend those leases through this descriptor.
 
 `admission_until` bounds initial introduction processing and replay retention. It
 does **not** expire an admitted recipient's conversation grant. That grant has its
-own local lease, with a provider policy of 24 calendar months from admission or qualifying
-recipient activity. Codec validation is clock-independent so archived descriptors
+own local lease, with a provider policy of 90 days from admission or a new
+Reply all batch. Codec validation is clock-independent so archived descriptors
 remain decodable after their initial admission window.
 
 The descriptor is bound to each initial delivery through envelope version 4. Before admission, a recipient provider must verify that binding,
@@ -44,51 +44,6 @@ from a valid descriptor signature, membership or knowledge of the conversation I
 The immutable descriptor identity is `(from, conversation_id)`. Reusing that pair
 with different signed bytes is a conflict, not an update. Retrying the exact
 descriptor must not extend leases, recreate deleted grants, or override a leave.
-
-## Creator-only revival request
-
-`hail.conversation-revival` version 1 requests readmission of **one** expired
-recipient. It uses the creator's `#hail-messaging` key, deterministic Hail CBOR,
-tagged COSE_Sign1, content type `application/hail-conversation-revival+cbor` and a
-16384-byte signed-size limit. Its closed payload contains:
-
-- `type`: `hail.conversation-revival`.
-- `version`: integer 1.
-- `conversation_id`: the original descriptor's UUIDv7.
-- `descriptor_hash`: a SHA-256 digest of the **complete original signed descriptor
-  representation**, including its COSE wrapper, not just the payload bytes.
-- `from`: original creator DID and expected signer.
-- `to`: a distinct recipient DID from the original roster.
-- `request_id`: fresh random UUIDv7 for this recipient's revival operation.
-- `issued_at`: nonnegative integer UTC Unix seconds, no earlier than the original
-  descriptor's `created_at`.
-- `expires_at`: UTC Unix seconds, strictly after `issued_at` and at most 86400
-  seconds (24 hours) later.
-
-After verifying both signatures, receivers must check that the request binds the
-creator, conversation ID, exact descriptor hash and recipient roster. Both codecs
-provide a revival-binding validator for these cross-object checks. It does not
-evaluate wall-clock freshness, replay state or delivery permission. A valid
-signature by another roster member is insufficient. Historical descriptor
-verification and current creator signing authority must remain distinct, so key
-rotation does not require rewriting the original descriptor.
-
-Provider revival behavior:
-
-- Require a currently qualifying creator-to-recipient connection and current
-  introduction preferences. Automatic policy admission needs no Join prompt.
-- Renew only inactivity-expired participation. Active leases keep their existing
-  clock; manually left participation requires explicit recipient rejoining.
-- Check request validity against the receiver's clock. Allow at most 300 seconds of clock tolerance, as for initial admission.
-- Persist `(from, request_id)` and the exact signed request digest with the outcome
-  atomically. An exact retry returns that outcome without extending the lease
-  again; conflicting bytes under that key are rejected.
-- Retain replay evidence through request expiry plus 300 seconds. Retain compact
-  leave evidence while saved envelopes or outbox history refer to it. Unknown or
-  cleaned-up state cannot be recreated from an old descriptor or revival request.
-
-Creator unavailability cannot transfer revival authority to another participant.
-They can propose a new conversation under ordinary introduction policy instead.
 
 ## Envelope version 4 and delivery
 
@@ -125,50 +80,51 @@ indeterminate at the deadline; there is no downgrade to private copies.
 
 ## Recipient lease and controls
 
-The current provider policy grants 24 calendar months from admission. Opening
-an active conversation or sending Reply all renews the local participant's lease;
-activity writes coalesce within one hour. Incoming delivery, background work,
-bulk mark-read, archiving and reading expired history do not renew it.
+The reference provider grants each participant 90 days (7,776,000 seconds)
+from admission. Creating a new Reply all batch while participation is active
+renews only the sender's lease to 90 days from that action. An exact batch retry
+does not renew it again. Replies do not extend other participants' deadlines.
+Opening or reading messages, incoming delivery, background work, bulk mark-read,
+and archiving MUST NOT renew participation. There is no group-wide activity timer.
 
-Leave immediately revokes incoming and outgoing shared authority while retaining
-readable history. Explicit Rejoin applies only to a manually left conversation.
-Inactivity-expired participation requires the original creator's signed revival;
-another participant cannot revive it. The creator can renew its own expired
-participation as part of that action. A creator who left must explicitly rejoin.
+Leave immediately revokes incoming and outgoing shared authority. Explicit Rejoin
+applies only to manually left participation whose existing deadline has not
+passed, and preserves that deadline. Leaving and rejoining MUST NOT circumvent
+expiry. Expired participation cannot be renewed by any participant, including
+the creator; continuing requires a new conversation under current introduction
+policy. There is no revival object, endpoint, or creator privilege.
 
-`/hail/connections/conversation-revival` carries the signed request and the exact
-current connection ID/epoch over the existing safe provider transport. The
-recipient verifies current signer/provider/coordinator authority and applies its
-current introduction preferences. Outcomes are renewed, active, left or denied.
-Only renewed extends a lease. Receipts bind request ID to exact signed bytes and
-outcome atomically; replay cannot extend a lease again. The creator's durable
-outbox retries for 24 hours and reports each outcome separately. One new revival
-batch per conversation per 24 hours prevents unbounded repeated requests; the
-same operation ID always retrieves the retained result. A fresh UI operation
-within that window returns the existing batch so a page reload can recover status. Provider responses do
-not themselves grant the sender any new authority.
-
-The exact revival HTTP request, response and error shapes are defined in
-[connection-wire.md](connection-wire.md#conversation-revival).
+Leaving and expiry MUST NOT trash or delete messages or remove them from the
+Inbox. Saved history remains readable until the owner chooses to remove it.
+Message delivery deadlines and descriptor admission deadlines do not expire
+already delivered history. User-directed deletion and Trash retention are
+separate mailbox policies.
 
 ## Storage and account portability
 
-Migrations 0092–0096 store preferences, immutable deduplicated descriptors,
-compact memberships, replay receipts, v4 envelope metadata and immutable outboxes.
-The maintenance loop removes expired replay receipts in bounded batches. It may
-remove left/expired permission only after the descriptor admission window plus
-clock tolerance and when no envelopes, outbox or replay records reference it.
-Unreferenced descriptors can then be deleted. Saved protocol history retains its
-small permission record even when body content has been deleted; this preserves
-leave and revival semantics for long-lived threads. This is not a claim of
-bounded total account storage: history/outbox archival limits remain separate.
+The reference provider stores preferences, immutable deduplicated descriptors,
+compact memberships, v4 envelope metadata and immutable message outboxes.
+Maintenance may remove left/expired permission only after the descriptor's
+admission window plus clock tolerance and when no saved envelopes or outboxes
+reference it. Unreferenced descriptors can then be deleted. Cleanup never
+deletes saved mailbox messages merely because participation ended.
+
+Migration 0107 removes the obsolete revival tables and cutover triggers, including
+pending requests. It changes the membership default to 90 days and caps existing
+deadlines at the earlier of their current expiry or 90 days after the last
+recorded activity (admission if absent). Historical activity included opens; that
+recorded instant is used only as the upgrade anchor. New reads never extend it.
+No messages, bodies, or descriptors are deleted by this upgrade. Back up before
+upgrading: discarded revival records require restoring that backup to roll back.
+Historical migrations remain immutable for deployed database checksums.
 
 Portable snapshots version 7 and managed snapshots version 8 include a separately
 versioned `hail.conversation-history` checkpoint and digest. It carries explicit
 default/connection overrides, descriptors and historical signing evidence,
-active/expired/left membership, replay records, and terminal shared/revival
-outboxes. Connection history uses its separate v3 checkpoint domain. Pending
-revival must drain before fencing; pending sends retain the existing drain rule.
+active/expired/left membership and terminal shared-message outboxes. Connection
+history uses its separate v3 checkpoint domain. Pending sends retain the existing
+drain rule. The current alpha checkpoint excludes obsolete revival records; old
+checkpoints containing those tables are rejected and must be re-exported.
 Imports validate exact ownership, signed descriptor linkage, roster and intent
 hashes, current canonical PLC history and historical signing keys before activation.
 Imports preserve expiry timestamps rather than issuing fresh leases. On return,
@@ -182,8 +138,8 @@ Apply migrations before deploying the server/client. Providers and transfer CLIs
 must understand envelope v4 and snapshot v7/v8 respectively. Earlier snapshot versions are outside the current alpha contract. Unsupported peers cannot accept shared delivery; recipients remain
 unconfirmed and the sender sees bounded per-recipient results. Never silently
 broaden connection/subscription permissions or reinterpret historical private
-copies as shared messages. Rollback scripts refuse once the corresponding
-conversation data exists; rollback runs in descending migration order, inside an explicit transaction.
+copies as shared messages. Migration 0107 requires backup restoration for rollback; earlier rollback scripts
+refuse once corresponding conversation data exists.
 
 Reply all also accepts an account’s own sent shared message as its source.
 Private replies still require a direct connection. Shared and private threads
@@ -191,10 +147,10 @@ remain separate, and Reply all is offered only on shared source messages; privat
 history is never automatically quoted into the group.
 
 `packages/hail-codec-ts/vectors/conversations-v1.json` contains immutable fixtures
-for TypeScript and Go, including descriptors, revivals and v4 envelopes. Test keys
+for TypeScript and Go, including descriptors and v4 envelopes. Test keys
 are public fixtures and must never be used by an account. Database tests exercise
 same-provider and separate-provider test scenarios, policy denial, introduction
-races, leave/expiry/revival, portable consent and rollback guards. These exercise
+races, leave/expiry, portable consent and rollback guards. These exercise
 the reference implementation, not an independently developed provider. Operational
 release evidence is tracked separately in
 [production readiness](../agents/production-readiness.md).

@@ -445,7 +445,7 @@ spellings remain intact; another implementation can map those logical collection
 to its own storage without changing the signed manifest.
 
 [Fixed conformance vectors](vectors/README.md) include actual synthetic exports,
-nonempty checkpoint states, transfer/handover signatures and connection/revival
+nonempty checkpoint states, transfer/handover signatures and connection
 exchanges, verified by the reference TypeScript validators and an independent Go
 consumer. These establish representation interoperability, not certification of
 an unrelated provider's live authority, recovery or migration implementation.

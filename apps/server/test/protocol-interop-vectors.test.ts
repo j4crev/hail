@@ -70,7 +70,7 @@ for(const kind of ['portable','managed'] as const){it('imports the fixed actual 
  const altered=structuredClone(m);altered.conversationCheckpointDigest='A'.repeat(43);
  expect(()=>(kind==='portable'?validateTransferManifest:validateManagedTransferManifest)(new TextEncoder().encode(JSON.stringify(altered)))).toThrow();
  });}
-for(const id of ['connection-history','conversation-creator','conversation-renewed','conversation-left'])it('preserves nonempty '+id+' records and rejects wrong ownership',async()=>{
+for(const id of ['connection-history','conversation-creator','conversation-active','conversation-left'])it('preserves nonempty '+id+' records and rejects wrong ownership',async()=>{
  const v=await fixture(id),h=v.history,owner={accountId:h.accountId,did:h.did,sourceGeneration:h.sourceGeneration,sourceServiceBase:h.sourceServiceBase};
  if(id==='connection-history'){
   const raw=new TextEncoder().encode(JSON.stringify(h));expect(validateConnectionHistory(raw,owner)).toEqual(h);
@@ -93,7 +93,8 @@ it('verifies frozen connection proofs with the codec and exercises the real ingr
  // The double isolates only the ingress contract; real state/authority is covered by integration tests.
  let received:any;let response:any;
  const app=new Hono();registerConnectionRoutes(app,{federation:{async handle(_step:string,input:any){received=input;return response;}},
-  async exportInvitation(input:any){received=input;return response;},async receiveConversationRevival(input:any){received=input;return response;}} as unknown as AccountConnections,{} as AccountApiRepository,'https://provider.example.com');
+  async exportInvitation(input:any){received=input;return response;}} as unknown as AccountConnections,{} as AccountApiRepository,'https://provider.example.com');
+ expect((await app.request('/hail/connections/conversation-revival',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status).toBe(404);
  for(const e of v.exchanges){response=e.response;const result=await app.request('/hail/connections/'+e.operation,{method:e.method,headers:{'Content-Type':e.contentType},body:e.requestUtf8});
   expect(result.status).toBe(e.responseStatus);expect(received).toEqual(e.request);expect(await result.json()).toEqual(e.response);
  }
