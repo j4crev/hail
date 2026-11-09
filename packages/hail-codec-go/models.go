@@ -11,7 +11,6 @@ const (
 	ConnectionGrantType        = "hail.connection-grant"
 	ConnectionControlType      = "hail.connection-control"
 	ConversationType           = "hail.conversation"
-	ConversationRevivalType    = "hail.conversation-revival"
 	EnvelopeType               = "hail.envelope"
 	DeliveryStatusType         = "hail.delivery-status"
 	BodySPT1Type               = "hail.body.spt-1"
@@ -425,10 +424,6 @@ func clonePayload(payload Payload) Payload {
 	case *Conversation:
 		cloned := *value
 		cloned.Participants = append([]string(nil), value.Participants...)
-		return &cloned
-	case *ConversationRevival:
-		cloned := *value
-		cloned.DescriptorHash.Value = bytes.Clone(value.DescriptorHash.Value)
 		return &cloned
 	case *DeliveryStatus:
 		cloned := *value

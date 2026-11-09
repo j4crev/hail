@@ -598,22 +598,17 @@ including each shared delivery copy. To reply-all to your own message, pass your
 own DID and that copy's message ID. Batch and conversation IDs are not substitutes
 for the source delivery ID.
 
-Reading, listing, polling, and bulk mark-read do not renew participation. Use an
-explicit open when you want to record activity:
+Reading, listing, polling, and bulk mark-read do not renew participation. Only sending Reply all renews your own 90-day timeout:
 
 ```sh
 racr conversation inspect "$CREATOR_DID" "$CONVERSATION_ID"
-racr conversation open "$CREATOR_DID" "$CONVERSATION_ID"
 racr conversation leave "$CREATOR_DID" "$CONVERSATION_ID"
 racr conversation rejoin "$CREATOR_DID" "$CONVERSATION_ID"
-racr conversation revive "$CONVERSATION_ID" --state revival.json
 ```
 
-Open renews only active participation; sending reply-all also records activity.
-Leave revokes incoming/outgoing shared permission while retaining history. Rejoin
-works only for participation you manually left. Inactivity expiry requires the
-original creator's revival. Run `revive` as that creator and reuse its state file
-to retrieve progress; outcomes are reported separately for each recipient.
+Leave revokes incoming/outgoing shared permission while retaining Inbox history.
+Rejoin works only before the existing deadline, which it does not extend. After
+expiry, start a new conversation through current connections.
 
 Introduction policy uses `account:read` to inspect and `account:write` to edit:
 

@@ -398,15 +398,6 @@ function validateConversation(payload:HailRecord):void {
   if(until<=created||until-created>604800)fail("admission window must be positive and at most 7 days","$.admission_until");
 }
 
-function validateConversationRevival(payload:HailRecord):void {
-  exactKeys(payload,["type","version","conversation_id","descriptor_hash","from","to","request_id","issued_at","expires_at"],[],"$");
-  uuid(payload.conversation_id,"$.conversation_id");
-  uuid(payload.request_id,"$.request_id");
-  digest(payload.descriptor_hash,"$.descriptor_hash");
-  if(did(payload.from,"$.from")===did(payload.to,"$.to"))fail("revival requires a distinct recipient","$.to");
-  const issued=integer(payload.issued_at,"$.issued_at"),expires=integer(payload.expires_at,"$.expires_at");
-  if(expires<=issued||expires-issued>86400)fail("revival window must be positive and at most 24 hours","$.expires_at");
-}
 
 function validateConnectionControl(payload:HailRecord):void {
   exactKeys(payload,["type","version","operation","from","to","request_id","connection_id","epoch","state","proof_hash","issued_at","expires_at","key_id"],[],"$");
@@ -837,8 +828,6 @@ export function validatePayload<T extends HailPayloadType>(
       validateConnectionControl(payload);break;
     case "hail.conversation":
       validateConversation(payload);break;
-    case "hail.conversation-revival":
-      validateConversationRevival(payload);break;
     case "hail.envelope":
       validateEnvelope(payload);
       break;

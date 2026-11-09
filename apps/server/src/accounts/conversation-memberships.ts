@@ -1,7 +1,6 @@
 import {createHash} from "node:crypto";
-import {createWebCryptoVerifier,verifySignedPayload,validateConversationRevivalBinding,type VerifiedHailObject,type HailConversation,type HailConversationRevival} from "@racrproto/codec";
+import type {VerifiedHailObject,HailConversation} from "@racrproto/codec";
 import type {SQL} from "bun";
-import {ed25519PublicKeyFromDidKey} from "../identity/did-key.js";
 import type {PlcResolutionEvidence} from "../plc/resolver.js";
 import type {AccountApiSession} from "./repository.js";
 import {ConnectionError} from "./connection-error.js";
@@ -60,13 +59,13 @@ export async function lockOwner(tx:SQL,owner:Owner){
 }
 
 export async function conversationState(tx:SQL,owner:Owner,identity:ConversationIdentity){
-  const row=(await tx<{state:string;expires_at:Date;participants:string[];descriptor_hash:Uint8Array;can_revive:boolean}[]>`
+  const row=(await tx<{state:string;expires_at:Date;participants:string[];descriptor_hash:Uint8Array}[]>`
     SELECT CASE WHEN m.state='left' THEN 'left' WHEN m.expires_at<=clock_timestamp() THEN 'expired' ELSE 'active' END AS state,
-      m.expires_at,d.participants,d.descriptor_hash,m.creator_did=${owner.did} AS can_revive
+      m.expires_at,d.participants,d.descriptor_hash
     FROM conversation_memberships m JOIN conversation_descriptors d USING(creator_did,conversation_id)
     WHERE m.account_id=${owner.account_id} AND m.creator_did=${identity.creator} AND m.conversation_id=${identity.conversationId}`)[0];
   return row?{...identity,state:row.state as "active"|"expired"|"left",expiresAt:row.expires_at.toISOString(),participants:row.participants,
-    canRevive:row.can_revive,descriptorHash:row.descriptor_hash}:null;
+    descriptorHash:row.descriptor_hash}:null;
 }
 
 export async function conversationMessageAllowed(tx:SQL,ownerDid:string,senderDid:string,identity:ConversationIdentity,descriptorHash:Uint8Array,lock=false){
@@ -82,76 +81,47 @@ export async function conversationMessageAllowed(tx:SQL,ownerDid:string,senderDi
   return rows.length>0;
 }
 
-export async function changeConversationMembership(tx:SQL,owner:Owner,identity:ConversationIdentity,action:"open"|"leave"|"rejoin"|"revive"){
+// Leaving and expiry revoke authority without removing saved mailbox history.
+export async function changeConversationMembership(tx:SQL,owner:Owner,identity:ConversationIdentity,action:"reply"|"leave"|"rejoin"){
   await lockOwner(tx,owner);
   const current=await conversationState(tx,owner,identity);
   if(!current)throw new ConnectionError(404,"Conversation unavailable.");
-  if(action==="rejoin"&&current.state!=="left")throw new ConnectionError(409,"Only a conversation you left can be rejoined. Expired participation requires creator revival.");
-  if(action==="revive"&&(owner.did!==identity.creator||current.state!=="expired"))throw new ConnectionError(403,"Only the creator can revive expired participation.");
+  const now=await clock(tx);
+  if(action==="rejoin"&&(current.state!=="left"||Date.parse(current.expiresAt)<=now.getTime()))
+    throw new ConnectionError(409,"Only unexpired participation you left can be rejoined. Start a new conversation after expiry.");
+  if(action==="reply"&&current.state!=="active")
+    throw new ConnectionError(409,"Participation is inactive. Start a new conversation after expiry.");
   if(action==="leave")await tx`UPDATE conversation_memberships SET state='left',left_at=COALESCE(left_at,clock_timestamp())
     WHERE account_id=${owner.account_id} AND creator_did=${identity.creator} AND conversation_id=${identity.conversationId}`;
-  else if(action==="rejoin"||action==="revive"||current.state==="active"){
-    // Opening expired history cannot renew permission. Explicit rejoin can;
-    // ordinary incoming delivery and bulk mark-read never call this method.
-    await tx`UPDATE conversation_memberships SET state='active',left_at=NULL,last_activity_at=clock_timestamp(),expires_at=clock_timestamp()+interval '24 months'
-      WHERE account_id=${owner.account_id} AND creator_did=${identity.creator} AND conversation_id=${identity.conversationId}
-        AND (${action} IN ('rejoin','revive') OR last_activity_at IS NULL OR last_activity_at<clock_timestamp()-interval '1 hour')`;
+  else {
+    const changed=action==="rejoin"
+      ?await tx`UPDATE conversation_memberships SET state='active',left_at=NULL
+        WHERE account_id=${owner.account_id} AND creator_did=${identity.creator} AND conversation_id=${identity.conversationId}
+          AND state='left' AND expires_at>clock_timestamp() RETURNING account_id`
+      :await tx`UPDATE conversation_memberships SET last_activity_at=clock_timestamp(),expires_at=clock_timestamp()+interval '90 days'
+        WHERE account_id=${owner.account_id} AND creator_did=${identity.creator} AND conversation_id=${identity.conversationId}
+          AND state='active' AND expires_at>clock_timestamp() RETURNING account_id`;
+    if(!changed.length)throw new ConnectionError(409,"Participation expired. Start a new conversation.");
   }
   return conversationState(tx,owner,identity);
 }
 
-export async function reviveConversation(tx:SQL,owner:Owner,request:VerifiedHailObject<HailConversationRevival>,connection:ConnectionMessageAuthorization){
-  const r=request.payload,identity={creator:r.from,conversationId:r.conversation_id};
-  if(request.type!=="hail.conversation-revival"||r.to!==owner.did)throw new ConnectionError(403);
-  // Acquire pair locks in canonical account order before the local grant lock.
-  const connected=await connectionMessageAllowed(tx,owner.did,r.from,connection,true);
-  await lockOwner(tx,owner);
-  const d=(await tx<{descriptor_cose:Uint8Array;signing_key:string}[]>`SELECT d.descriptor_cose,d.signing_key
-    FROM conversation_descriptors d JOIN conversation_memberships m USING(creator_did,conversation_id)
-    WHERE m.account_id=${owner.account_id} AND d.creator_did=${r.from} AND d.conversation_id=${r.conversation_id}`)[0];
-  if(!d)throw new ConnectionError(404,"Unknown conversation cannot be revived.");
-  const verified=await verifySignedPayload("hail.conversation",new Uint8Array(d.descriptor_cose),createWebCryptoVerifier(async()=>ed25519PublicKeyFromDidKey(d.signing_key)));
-  validateConversationRevivalBinding(verified,request);
-  const digest=hash(request.representationBytes);
-  const prior=(await tx<{request_hash:Uint8Array;outcome:string}[]>`SELECT request_hash,outcome FROM conversation_revival_receipts
-    WHERE account_id=${owner.account_id} AND creator_did=${r.from} AND request_id=${r.request_id}`)[0];
-  if(prior){if(!same(prior.request_hash,digest))throw new ConnectionError(409,"Revival request ID conflict.");return {outcome:prior.outcome};}
-  const now=(await clock(tx)).getTime()/1000;
-  if(r.issued_at>now+300||r.expires_at+300<now)throw new ConnectionError(410,"Revival request expired or is not yet valid.");
-  const state=(await conversationState(tx,owner,identity))!;
-  const permitted=connected&&await conversationIntroductionAllowed(tx,owner.account_id,connection.connection_id,connection.epoch);
-  const outcome=state.state==="left"?"left":state.state==="active"?"active":permitted?"renewed":"denied";
-  if(outcome==="renewed")await tx`UPDATE conversation_memberships SET expires_at=clock_timestamp()+interval '24 months',last_activity_at=NULL
-    WHERE account_id=${owner.account_id} AND creator_did=${r.from} AND conversation_id=${r.conversation_id}`;
-  await tx`INSERT INTO conversation_revival_receipts(account_id,creator_did,conversation_id,request_id,request_hash,expires_at,outcome)
-    VALUES(${owner.account_id},${r.from},${r.conversation_id},${r.request_id},${digest},${new Date((r.expires_at+300)*1000)},${outcome})`;
-  return {outcome};
-}
-
-// Replay receipts are useful only through the signed request window (including
-// clock tolerance). Never prune permission while saved envelopes/outbox reference
-// it: those compact rows make old readable conversations explicitly revivable.
+// Compact permission rows remain while saved envelopes/outboxes reference them.
+// Cleanup never deletes delivered messages or bodies.
 export async function pruneConversationState(sql:SQL){
   const owners=await sql<{account_id:string;did:string}[]>`SELECT DISTINCT m.account_id,a.did FROM conversation_memberships m
     JOIN provider_accounts a ON a.id=m.account_id WHERE a.onboarding_state='active' AND a.closed_at IS NULL
       AND NOT EXISTS(SELECT 1 FROM provider_migration_fences f WHERE f.account_id=a.id)
-      AND (EXISTS(SELECT 1 FROM conversation_revival_receipts r WHERE r.account_id=m.account_id AND r.expires_at<clock_timestamp()) OR
-        ((m.expires_at<clock_timestamp() OR m.state='left')
+      AND ((m.expires_at<clock_timestamp() OR m.state='left')
           AND EXISTS(SELECT 1 FROM conversation_descriptors d WHERE d.creator_did=m.creator_did AND d.conversation_id=m.conversation_id AND d.admission_until<clock_timestamp()-interval '5 minutes')
-          AND NOT EXISTS(SELECT 1 FROM conversation_revival_receipts r WHERE r.account_id=m.account_id AND r.creator_did=m.creator_did AND r.conversation_id=m.conversation_id)
-          AND NOT EXISTS(SELECT 1 FROM conversation_revival_batches b WHERE b.account_id=m.account_id AND b.creator_did=m.creator_did AND b.conversation_id=m.conversation_id)
           AND NOT EXISTS(SELECT 1 FROM sent_envelopes e WHERE e.sender_account_id=m.account_id AND e.conversation_creator=m.creator_did AND e.conversation_id=m.conversation_id)
           AND NOT EXISTS(SELECT 1 FROM received_envelopes e WHERE e.local_account_id=m.account_id AND e.conversation_creator=m.creator_did AND e.conversation_id=m.conversation_id)
-          AND NOT EXISTS(SELECT 1 FROM connection_message_batches b WHERE b.account_id=m.account_id AND b.conversation_context IS NOT NULL))) LIMIT 20`;
+          AND NOT EXISTS(SELECT 1 FROM connection_message_batches b WHERE b.account_id=m.account_id AND b.conversation_context IS NOT NULL)) LIMIT 20`;
   for(const owner of owners)await sql.begin(async tx=>{
     await lockOwner(tx,owner);
-    await tx`DELETE FROM conversation_revival_receipts WHERE (account_id,creator_did,request_id) IN(
-      SELECT account_id,creator_did,request_id FROM conversation_revival_receipts WHERE account_id=${owner.account_id} AND expires_at<clock_timestamp() LIMIT 500)`;
     await tx`DELETE FROM conversation_memberships m USING conversation_descriptors d
       WHERE m.account_id=${owner.account_id} AND m.creator_did=d.creator_did AND m.conversation_id=d.conversation_id
         AND (m.state='left' OR m.expires_at<clock_timestamp()) AND d.admission_until<clock_timestamp()-interval '5 minutes'
-        AND NOT EXISTS(SELECT 1 FROM conversation_revival_receipts r WHERE r.account_id=m.account_id AND r.creator_did=m.creator_did AND r.conversation_id=m.conversation_id)
-        AND NOT EXISTS(SELECT 1 FROM conversation_revival_batches b WHERE b.account_id=m.account_id AND b.creator_did=m.creator_did AND b.conversation_id=m.conversation_id)
         AND NOT EXISTS(SELECT 1 FROM sent_envelopes e WHERE e.sender_account_id=m.account_id AND e.conversation_creator=m.creator_did AND e.conversation_id=m.conversation_id)
         AND NOT EXISTS(SELECT 1 FROM received_envelopes e WHERE e.local_account_id=m.account_id AND e.conversation_creator=m.creator_did AND e.conversation_id=m.conversation_id)
         AND NOT EXISTS(SELECT 1 FROM connection_message_batches b WHERE b.account_id=m.account_id AND b.conversation_context IS NOT NULL)`;

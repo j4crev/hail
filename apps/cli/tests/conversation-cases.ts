@@ -28,6 +28,8 @@ export async function conversationCases(binary:string,directory:string,provider:
  await run(['conversation','start','--connection',id,'--connection',second,'--file',file,'--state',state],1);assert.equal(writes.length,2);
  scenario='wrong-id';assert.equal((await run(args,1)).error.code,'RESPONSE_ERROR');
  for(const invalid of [
+  ['conversation','open',did,id],
+  ['conversation','revive',id,'--state',state],
   ['conversation','start','--connection',id,'--file',file,'--state',state],
   ['conversation','start','--connection',id,'--connection',id,'--file',file,'--state',state],
   ['conversation','reply-all','bad',id,'--file',file,'--state',state],

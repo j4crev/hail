@@ -18,12 +18,11 @@ export function registerConnectionRoutes(app:Hono,connections:AccountConnections
       if(source.take(clientAddress(c.req.raw),120)!==null)throw new ConnectionError(429);
       if(c.req.header("Authorization")||c.req.header("Cookie")||c.req.header("Origin"))throw new ConnectionError(403);
       if(c.req.header("Content-Type")!=="application/json"||c.req.header("Content-Encoding"))throw new ConnectionError(415);
-      const step=c.req.param("step");if(!["state","admit","commit","disconnect","sync","handover","handover-freeze","handover-abort","handover-commit","handover-complete","conversation-revival"].includes(step))throw new ConnectionError(404);
+      const step=c.req.param("step");if(!["state","admit","commit","disconnect","sync","handover","handover-freeze","handover-abort","handover-commit","handover-complete"].includes(step))throw new ConnectionError(404);
       const bytes=await accountRequestBytes(c.req.raw,131072);if(!bytes)throw new ConnectionError(413);
       let input:Record<string,unknown>;
       try{input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;
         if(!input||typeof input!=="object"||Array.isArray(input))throw new Error();}catch{throw new ConnectionError(400);}
-      if(step==='conversation-revival')return c.json(await connections.receiveConversationRevival(input));
       return c.json(await connections.federation!.handle(step as "state"|"admit"|"commit"|"disconnect"|"sync"|"handover"|"handover-freeze"|"handover-abort"|"handover-commit"|"handover-complete",input));
     }catch(error){return new Response(JSON.stringify({error:"Connection exchange not accepted"}),{status:error instanceof ConnectionError?error.status:503,
       headers:{"Content-Type":"application/json","Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});}
@@ -45,7 +44,7 @@ export function registerConnectionRoutes(app:Hono,connections:AccountConnections
   app.all("/api/v1/account/connections/:step?",async c=>{
     c.header("Cache-Control","no-store");c.header("Referrer-Policy","no-referrer");c.header("Vary","Cookie");
     const apiStep=c.req.param("step");
-    if(["cli-conversation-preferences","cli-conversation-membership","cli-conversation-revive","cli-invitations","cli-revoke-invitation","cli-list","cli-remove","cli-prepare","cli-commit","cli-status"].includes(apiStep??"")){
+    if(["cli-conversation-preferences","cli-conversation-membership","cli-invitations","cli-revoke-invitation","cli-list","cli-remove","cli-prepare","cli-commit","cli-status"].includes(apiStep??"")){
       c.header("Vary","Authorization");
       try{
         if(source.take(clientAddress(c.req.raw),60)!==null)throw new ConnectionError(429);
@@ -71,8 +70,7 @@ export function registerConnectionRoutes(app:Hono,connections:AccountConnections
           try{input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;
             if(!input||typeof input!=="object"||Array.isArray(input))throw new Error();}catch{throw new ConnectionError(400);}
           return await withServingGeneration(session.account_id,session.serving_generation??1,async()=>c.json(
-            preferences?await connections.conversationPreferences(session,input):apiStep==="cli-conversation-membership"
-              ?await connections.conversationMembership(session,input):await connections.conversationRevival(session,input)));
+            preferences?await connections.conversationPreferences(session,input):await connections.conversationMembership(session,input)));
         }
         if(apiStep==="cli-prepare"||apiStep==="cli-commit"){
           if(c.req.method!=="POST")throw new ConnectionError(405);
@@ -128,7 +126,6 @@ export function registerConnectionRoutes(app:Hono,connections:AccountConnections
         if(step==="seen")return c.json(await connections.seen(session,input));
         if(step==="conversation-preferences")return c.json(await connections.conversationPreferences(session,input));
         if(step==='conversation-membership')return c.json(await connections.conversationMembership(session,input));
-        if(step==='conversation-revive')return c.json(await connections.conversationRevival(session,input));
         if(step==="review")return c.json(await connections.review(session,input));
         if(step==="prepare")return c.json(await connections.prepare(session,input));
         if(step==="commit"){

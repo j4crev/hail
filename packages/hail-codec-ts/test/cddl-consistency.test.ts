@@ -313,7 +313,6 @@ const CDDL_RULES = {
   "hail.connection-grant": "hail-connection-grant",
   "hail.connection-control": "hail-connection-control",
   "hail.conversation": "hail-conversation",
-  "hail.conversation-revival": "hail-conversation-revival",
   "hail.envelope": "hail-envelope",
   "hail.delivery-status": "hail-delivery-status",
   "hail.body.spt-1": "hail-body-spt-1",
@@ -323,7 +322,6 @@ const CDDL_RULES = {
 
 const REQUIRED_KEYS = {
   "hail.conversation": ["type","version","conversation_id","from","membership_revision","participants","created_at","admission_until"],
-  "hail.conversation-revival": ["type","version","conversation_id","descriptor_hash","from","to","request_id","issued_at","expires_at"],
   "hail.connection-control": ["type","version","operation","from","to","request_id","connection_id","epoch","state","proof_hash","issued_at","expires_at","key_id"],
   "hail.connection-invitation": ["type","version","invitation_id","from","token_hash","issued_at","expires_at","key_id"],
   "hail.connection-confirmation": ["type","version","confirmation_id","from","to","invitation_id","invitation_hash","issued_at","expires_at","key_id"],

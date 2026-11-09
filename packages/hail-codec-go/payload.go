@@ -75,8 +75,6 @@ func DecodePayload(payloadType string, data []byte) (Payload, error) {
 		out = &ConnectionControl{}
 	case ConversationType:
 		out = &Conversation{}
-	case ConversationRevivalType:
-		out = &ConversationRevival{}
 	case EnvelopeType:
 		out = &Envelope{}
 	case DeliveryStatusType:
@@ -159,13 +157,6 @@ func payloadValue(payload Payload) (map[any]any, string, error) {
 			return nil, "", errors.New("nil conversation")
 		}
 		return conversationValue(value), ConversationType, nil
-	case ConversationRevival:
-		return conversationRevivalValue(&value), ConversationRevivalType, nil
-	case *ConversationRevival:
-		if value == nil {
-			return nil, "", errors.New("nil conversation revival")
-		}
-		return conversationRevivalValue(value), ConversationRevivalType, nil
 	case *Envelope:
 		if value == nil {
 			return nil, "", errors.New("nil envelope payload")
@@ -642,8 +633,6 @@ func validatePayloadMap(kind string, m map[any]any) error {
 		return validateConnectionControl(m)
 	case ConversationType:
 		return validateConversation(m)
-	case ConversationRevivalType:
-		return validateConversationRevival(m)
 	case EnvelopeType:
 		return validateEnvelope(m)
 	case DeliveryStatusType:

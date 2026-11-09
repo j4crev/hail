@@ -130,7 +130,7 @@ if(sharedMode){
   await evaluate(`${button('Leave conversation')}.click()`);
   await wait(async()=>evaluate(`Boolean(${button('Rejoin conversation')})`));
   assert(await evaluate(`${button('Reply all')}.disabled`));
-  assert(await evaluate(`!${button('Revive expired participation')}`),'Left participation must rejoin instead of revive');
+  assert(await evaluate(`!${button('Revive expired participation')}`),'Left participation has no revival action');
   await evaluate(`document.querySelector('[aria-label="More message actions"]').click()`);
   await evaluate(`${button('Rejoin conversation')}.click()`);
   await wait(async()=>evaluate(`Boolean(${button('Leave conversation')})`));
@@ -138,12 +138,10 @@ if(sharedMode){
   await navigate(`/conversation/${encodeURIComponent(maya.sender)}/${maya.messageId}`,'Saturday at the market?');
   await wait(async()=>evaluate(`document.body.textContent.includes('Your participation expired')`));
   assert(await evaluate(`!${button('Rejoin conversation')}`));
-  await evaluate(`document.querySelector('[aria-label="More message actions"]').click()`);
-  await evaluate(`${button('Revive expired participation')}.click()`);
-  await wait(async()=>evaluate(`document.querySelector('[aria-label="Revival status"]')?.textContent.includes('renewed')`));
-  await wait(async()=>evaluate(`${button('Reply all')}.disabled===false`));
-  assert(await evaluate(`${button('Reply all')}.disabled===false`));
-  assert(await evaluate(`!${button('Revive expired participation')}`),'Successful revival removes the action');
+  assert(await evaluate(`!${button('Revive expired participation')}`),'Expired participation has no revival action');
+  assert(await evaluate(`${button('Reply all')}.disabled`));
+  // Reset synthetic state for the independent sent-message checks.
+  await fetch(origin+'/api/v1/account/fixture-active',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   assert(await evaluate(`document.documentElement.scrollWidth<=innerWidth`));
   const own=(await(await fetch(origin+'/api/v1/account/sent')).json()).messages[0];
   await navigate(`/conversation/${encodeURIComponent(own.sender)}/${own.messageId}`,'Saturday at the market?');
@@ -157,6 +155,6 @@ if(sharedMode){
   await wait(async()=>evaluate(`document.querySelectorAll('.recipient-chip').length===2`));
   assert(await evaluate(`!document.querySelector('input[name="delivery"]')`));
   assert(await evaluate(`document.querySelector('.recipient-suggestions').hidden`));
-  console.log('PASS: shared default, non-connection Reply all, leave/rejoin, creator revival and mobile layout');
+  console.log('PASS: shared default, non-connection Reply all, leave/rejoin, expiry with readable history and mobile layout');
 }
 }finally{socket?.close();chrome.kill();fixture.kill();await Promise.all([chrome.exited,fixture.exited]);await rm(work,{recursive:true,force:true});}

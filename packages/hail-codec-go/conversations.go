@@ -6,28 +6,6 @@ import (
 	"errors"
 )
 
-// ValidateConversationRevivalBinding checks signed context, not delivery authority.
-// Freshness, connection policy, leave/lease state and durable replay checks remain
-// the receiver's responsibility.
-func ValidateConversationRevivalBinding(descriptor, request *VerifiedObject) error {
-	if descriptor == nil || request == nil || descriptor.data == nil || request.data == nil ||
-		descriptor.Type() != ConversationType || request.Type() != ConversationRevivalType {
-		return errors.New("verified conversation and revival required")
-	}
-	conversation := descriptor.data.payload.(*Conversation)
-	revival := request.data.payload.(*ConversationRevival)
-	hash := sha256.Sum256(descriptor.data.representationBytes)
-	member := false
-	for _, did := range conversation.Participants {
-		member = member || did == revival.To
-	}
-	if revival.From != conversation.From || revival.ConversationID != conversation.ConversationID || !member ||
-		revival.IssuedAt < conversation.CreatedAt || !bytes.Equal(revival.DescriptorHash.Value, hash[:]) {
-		return errors.New("revival must bind the original creator, roster and exact signed descriptor")
-	}
-	return nil
-}
-
 // Conversation is a fixed roster proposal, not a delivery capability.
 type Conversation struct {
 	Type               string   `cbor:"type"`
@@ -41,20 +19,6 @@ type Conversation struct {
 }
 
 func (Conversation) PayloadType() string { return ConversationType }
-
-type ConversationRevival struct {
-	Type           string `cbor:"type"`
-	Version        int64  `cbor:"version"`
-	ConversationID string `cbor:"conversation_id"`
-	DescriptorHash Digest `cbor:"descriptor_hash"`
-	From           string `cbor:"from"`
-	To             string `cbor:"to"`
-	RequestID      string `cbor:"request_id"`
-	IssuedAt       int64  `cbor:"issued_at"`
-	ExpiresAt      int64  `cbor:"expires_at"`
-}
-
-func (ConversationRevival) PayloadType() string { return ConversationRevivalType }
 
 type ConversationIntroduction struct {
 	Descriptor   []byte `cbor:"descriptor"`
@@ -147,10 +111,6 @@ func conversationValue(v *Conversation) map[any]any {
 	return map[any]any{"type": v.Type, "version": v.Version, "conversation_id": v.ConversationID, "from": v.From,
 		"membership_revision": v.MembershipRevision, "participants": members, "created_at": v.CreatedAt, "admission_until": v.AdmissionUntil}
 }
-func conversationRevivalValue(v *ConversationRevival) map[any]any {
-	return map[any]any{"type": v.Type, "version": v.Version, "conversation_id": v.ConversationID, "descriptor_hash": digestValue(v.DescriptorHash),
-		"from": v.From, "to": v.To, "request_id": v.RequestID, "issued_at": v.IssuedAt, "expires_at": v.ExpiresAt}
-}
 func validateConversation(m map[any]any) error {
 	if e := exact(m, []string{"type", "version", "conversation_id", "from", "membership_revision", "participants", "created_at", "admission_until"}, nil, "$"); e != nil {
 		return e
@@ -187,32 +147,6 @@ func validateConversation(m map[any]any) error {
 		return errors.New("creator must be a participant")
 	}
 	return conversationWindow(m, "created_at", "admission_until", 604800)
-}
-func validateConversationRevival(m map[any]any) error {
-	if e := exact(m, []string{"type", "version", "conversation_id", "descriptor_hash", "from", "to", "request_id", "issued_at", "expires_at"}, nil, "$"); e != nil {
-		return e
-	}
-	if e := uuid(m["conversation_id"], "$.conversation_id"); e != nil {
-		return e
-	}
-	if e := uuid(m["request_id"], "$.request_id"); e != nil {
-		return e
-	}
-	if e := digest(m["descriptor_hash"], "$.descriptor_hash"); e != nil {
-		return e
-	}
-	from, e := did(m["from"], "$.from")
-	if e != nil {
-		return e
-	}
-	to, e := did(m["to"], "$.to")
-	if e != nil {
-		return e
-	}
-	if from == to {
-		return errors.New("revival requires a distinct recipient")
-	}
-	return conversationWindow(m, "issued_at", "expires_at", 86400)
 }
 func conversationWindow(m map[any]any, start, end string, maximum int64) error {
 	issued, e := intValue(m[start], "$."+start, 0)

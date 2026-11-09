@@ -16,7 +16,7 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
     untrack(() => {data = next; recentFingerprint = fingerprint(next); historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++; lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));});
   });
   // Operation IDs are fresh form defaults, not mailbox changes.
-  const fingerprint = (value:T) => JSON.stringify(value, (key,item)=>['newReplyId','newReplyUntil','newRevivalId','mailboxCached'].includes(key)?undefined:item);
+  const fingerprint = (value:T) => JSON.stringify(value, (key,item)=>['newReplyId','newReplyUntil','mailboxCached'].includes(key)?undefined:item);
   const scope = () => source().mailboxKey?.split(':')[0] ?? '';
   async function refresh(force = false, applyNow = false) {
     if (!mounted || busy || mailboxCache.mutations || document.visibilityState !== 'visible' || !scope()) return;

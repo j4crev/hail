@@ -169,18 +169,6 @@ export interface HailConversation {
   admission_until:number;
 }
 
-/** Recipient-specific renewal request signed by the original creator. */
-export interface HailConversationRevival {
-  type:"hail.conversation-revival";
-  version:1;
-  conversation_id:string;
-  descriptor_hash:HailDigest;
-  from:string;
-  to:string;
-  request_id:string;
-  issued_at:number;
-  expires_at:number;
-}
 
 export type HailEnvelopeAuthorization =
   | { type: "grant"; grant_id: string }
@@ -356,7 +344,6 @@ export interface HailPayloadByType {
   "hail.connection-grant": HailConnectionGrant;
   "hail.connection-control": HailConnectionControl;
   "hail.conversation": HailConversation;
-  "hail.conversation-revival": HailConversationRevival;
   "hail.envelope": HailEnvelope;
   "hail.delivery-status": HailDeliveryStatus;
   "hail.body.spt-1": HailSptBody;

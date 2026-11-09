@@ -32,7 +32,6 @@ var signedProfiles = map[string]signedProfile{
 	ConnectionGrantType:        {"application/hail-connection-grant+cbor", "hail-identity", 16384},
 	ConnectionControlType:      {"application/hail-connection-control+cbor", "hail-messaging", 16384},
 	ConversationType:           {"application/hail-conversation+cbor", "hail-messaging", 16384},
-	ConversationRevivalType:    {"application/hail-conversation-revival+cbor", "hail-messaging", 16384},
 	EnvelopeType:               {"application/hail-envelope+cbor", "hail-messaging", 16384},
 	DeliveryStatusType:         {"application/hail-delivery-status+cbor", "hail-messaging", 16384},
 }
@@ -139,13 +138,6 @@ func expectedKeyID(kind string, payload Payload) (string, error) {
 	case *Conversation:
 		if value == nil {
 			return "", errors.New("nil conversation")
-		}
-		signer = value.From
-	case ConversationRevival:
-		signer = value.From
-	case *ConversationRevival:
-		if value == nil {
-			return "", errors.New("nil conversation revival")
 		}
 		signer = value.From
 	case ConnectionInvitation:

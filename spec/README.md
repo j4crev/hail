@@ -42,7 +42,7 @@ Historical implementation/rollout notes do not override the current profile belo
 | Bodies and assets | All providers support `spt-1` plain text, `spt-2` rich text with bounded alignment and CTA links, and `spt-3` rich text with up to eight bundled PNG images; asset manifest v1; optional PNG/JPEG/WebP/PDF/TXT/LOG attachment declarations (25 MiB/message); [bodies](bodies.md), [assets](assets.md), [attachments](attachments.md) |
 | Delivery results | Delivery Status v1; [delivery state](delivery-state.md), [HTTP binding](http-binding.md) |
 | Connections | Invitation, confirmation and control v1; [consent](connection-auth.md), [federation](connection-federation.md), [wire binding](connection-wire.md) |
-| Shared conversations | Descriptor/revival v1, Envelope v4; [shared conversations](shared-conversations.md) |
+| Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
 | Custody | [Account onboarding](account-onboarding.md), [managed custody](managed-custody.md); [reduced-assurance alpha](alpha-onboarding.md) is an explicitly weaker deployment profile |
 | Transfer | Handshake v1, portable snapshot v7, managed snapshot v8, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
 
@@ -118,7 +118,7 @@ Completed specification/conformance artifacts:
 - [Storage-independent logical history schema](account-history.md), including the
   current portable/managed field differences and retained checkpoint domains.
 - [Cross-language conformance vectors](vectors/README.md) for actual synthetic
-  exports, conversation/connection checkpoints, lifecycle/revival wire objects,
+  exports, conversation/connection checkpoints, lifecycle wire objects,
   transfer/handover signatures, and malformed/tampered representations.
 
 An initial Internet-Draft may document the current design and explicitly identify

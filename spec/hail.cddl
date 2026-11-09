@@ -18,7 +18,6 @@ start =
   hail-connection-confirmation /
   hail-connection-control /
   hail-conversation /
-  hail-conversation-revival /
   hail-envelope /
   hail-delivery-status /
   hail-body-spt-1 /
@@ -53,17 +52,6 @@ hail-conversation = {
   "admission_until": timestamp
 }
 
-hail-conversation-revival = {
-  "type": "hail.conversation-revival",
-  "version": 1,
-  "conversation_id": uuidv7,
-  "descriptor_hash": digest,
-  "from": did,
-  "to": did,
-  "request_id": uuidv7,
-  "issued_at": timestamp,
-  "expires_at": timestamp
-}
 
 hail-address-binding = {
   "version": 2,

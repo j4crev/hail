@@ -421,7 +421,7 @@ func TestAccountHistoryInteroperability(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"connection-history", "conversation-creator", "conversation-renewed", "conversation-left"} {
+	for _, name := range []string{"connection-history", "conversation-creator", "conversation-active", "conversation-left"} {
 		t.Run(name, func(t *testing.T) {
 			v := interopFile(t, "vectors/"+name+".json")
 			h := v["history"].(map[string]any)
@@ -553,7 +553,7 @@ func TestConnectionWireInteroperability(t *testing.T) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		expected := map[string]string{"state": "control", "admit": "bundle,control,token", "commit": "admission,bundle,control", "disconnect": "control", "invitations/review": "did,id,token", "conversation-revival": "connectionId,cose,epoch"}
+		expected := map[string]string{"state": "control", "admit": "bundle,control,token", "commit": "admission,bundle,control", "disconnect": "control", "invitations/review": "did,id,token"}
 		want := expected[e["operation"].(string)]
 		if e["operation"] == "sync" {
 			want = "control"

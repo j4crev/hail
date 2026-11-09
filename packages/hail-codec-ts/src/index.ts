@@ -29,7 +29,6 @@ export type {
   HailConnectionGrant,
   HailConnectionControl,
   HailConversation,
-  HailConversationRevival,
   HailCancellationReason,
   HailDeliveryState,
   HailDeliveryReason,
@@ -59,7 +58,6 @@ export type {
   HailSptTextBlock,
 } from "./models.js";
 export { decodePayload, encodePayload } from "./payload.js";
-export {validateConversationRevivalBinding} from "./conversations.js";
 export {
   COSE_ED25519_ALGORITHM,
   isSignedPayloadType,

@@ -259,7 +259,7 @@ logical conversation message, not a per-recipient delivery ID. A message cannot
 name itself as its parent (same sender and logical ID). A parent never supplies
 permission. The sender and recipient enforce their own active membership; the
 recipient rechecks before body retrieval and final delivery. Full admission,
-leave, expiry, revival and portable-state rules are in
+leave, expiry and portable-state rules are in
 [shared-conversations.md](shared-conversations.md).
 
 ### Grant Authorization

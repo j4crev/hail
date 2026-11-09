@@ -40,24 +40,6 @@
   });
   let replyInput=$state<HTMLTextAreaElement>();
   let replyAll=$state(false),membershipSaving=$state(false);
-  let revival=$state<{operationId:string;targets:{recipient:string;outcome:string}[]}|null>(null);
-  async function revive(){
-    const shared=message?.sharedConversation;if(!shared?.canRevive||shared.state!=='expired')return;
-    membershipSaving=true;error='';
-    try{revival=await connectionRequest('conversation-revive',{operationId:revival?.operationId??data.newRevivalId,conversationId:shared.conversationId});await invalidateAll();}
-    catch(e){error=e instanceof Error?e.message:'Unable to revive this conversation.';}
-    finally{membershipSaving=false;}
-  }
-  let openedConversation='';
-  $effect(()=>{
-    const shared=data.message.sharedConversation,key=shared?shared.creator+'/'+shared.conversationId:'';
-    if(key&&key!==openedConversation){revival=null;openedConversation=key;void recordOpen(data.message);}
-  });
-  async function recordOpen(value:MessageView|SentMessageView){
-    const s=value.sharedConversation;if(!s||s.state!=='active')return;
-    try{await connectionRequest('conversation-membership',{action:'open',creator:s.creator,conversationId:s.conversationId});}
-    catch{error='Unable to record conversation activity. Reopen it to try again.';}
-  }
   async function membership(action:'leave'|'rejoin'){
     const s=message?.sharedConversation;if(!s)return;
     membershipSaving=true;error='';
@@ -69,8 +51,7 @@
     const shared=message?.sharedConversation;if(!shared)return [];
     const actions=[];
     if(shared.state==='active')actions.push({label:'Leave conversation',icon:'logout',run:()=>{void membership('leave');}});
-    if(shared.state==='left')actions.push({label:'Rejoin conversation',icon:'plus',run:()=>{void membership('rejoin');}});
-    if(shared.canRevive&&shared.state==='expired')actions.push({label:'Revive expired participation',icon:'chat',run:()=>{void revive();}});
+    if(shared.state==='left'&&Date.parse(shared.expiresAt)>Date.now())actions.push({label:'Rejoin conversation',icon:'plus',run:()=>{void membership('rejoin');}});
     return actions;
   });
   let request=0;
@@ -106,7 +87,6 @@
       heading?.querySelector<HTMLElement>('.expanded-header')?.focus({preventScroll:true});
       if(heading && (heading.getBoundingClientRect().top<80||heading.getBoundingClientRect().top>window.innerHeight-100))heading.scrollIntoView({block:'start'});
       await markRead(row,value);
-      await recordOpen(value);
     }catch{error='Unable to open this message. Try again.';}
     finally{if(token===request)pending=false;}
   }
@@ -179,8 +159,7 @@
       </header>
       <div class="expanded-body">
         {#if message.sharedConversation?.state==='left'}<p class="text-sm text-muted">You left this conversation. Saved messages remain readable.</p>
-        {:else if message.sharedConversation?.state==='expired'}<p class="text-sm text-muted">Your participation expired through inactivity.</p>{/if}
-        {#if revival}<ul class="text-sm" aria-label="Revival status">{#each revival.targets as target}<li class="break-words">{message.sharedConversation?.participantAddresses?.[target.recipient]??target.recipient}: {target.outcome}</li>{/each}</ul>{/if}
+        {:else if message.sharedConversation?.state==='expired'}<p class="text-sm text-muted">Your participation expired after 90 days without replying. Saved messages remain readable. Start a new conversation to continue.</p>{/if}
         <div class="reading-body"><QuotedMessage blocks={content.blocks} header={message.header} /><Attachments files={message.attachments} sender={message.sender} messageId={message.messageId} /></div>
         {#if !row.sent && !message.connection?.active}<p class="text-sm text-muted">{message.sharedConversation?'Private replies require a connection to this person.':'This connection is no longer active. Saved messages remain readable.'}</p>{/if}
         {#if replyOpen && (replyAll?message.sharedConversation?.state==='active':!row.sent&&message.connection?.active)}

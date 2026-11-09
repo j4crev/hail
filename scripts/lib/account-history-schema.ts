@@ -88,7 +88,6 @@ export async function accountHistorySchema(sql:SQL):Promise<Schema>{
       const fields=Object.fromEntries(selected.map(c=>[c.column_name,columnSchema(c,source!==name)]));
       if(name==='provider_accounts'){fields.onboarding_state={const:'active'};fields.activation_verification_mode={const:'public'};}
       if(name==='account_keys')fields.role={enum:domain==='portable'?['plc-rotation','hail-messaging']:['plc-rotation','hail-identity','hail-messaging']};
-      if(name==='conversation_revival_targets')fields.outcome={enum:['renewed','active','left','denied','expired']};
       if(name==='connection_message_targets')fields.state={enum:['submitted','blocked','cancelled','expired','indeterminate']};
       if(name==='connection_message_batches')fields.sealed={const:true};
       if(name==='conversation_descriptors')fields.participants={type:'array',items:did,minItems:3,maxItems:101};

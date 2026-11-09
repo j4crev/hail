@@ -451,14 +451,6 @@ racr conversation messages <sender-did> <message-id> [--offset <value>]
 
 Options: [`--offset`](#options).
 
-### `conversation open`
-
-Explicitly record activity; only active participation is renewed.
-
-```text
-racr conversation open <creator-did> <conversation-id>
-```
-
 ### `conversation preferences set`
 
 Set --allow true/false globally, or true/false/default for an exact --connection and --epoch.
@@ -479,7 +471,7 @@ racr conversation preferences show
 
 ### `conversation rejoin`
 
-Explicitly rejoin a conversation you left; expiry requires creator revival.
+Rejoin unexpired participation you left; expiry requires a new conversation.
 
 ```text
 racr conversation rejoin <creator-did> <conversation-id>
@@ -502,16 +494,6 @@ Apply the selected account action; requires the corresponding write scope.
 ```text
 racr conversation restore <peer-did>
 ```
-
-### `conversation revive`
-
-Creator-only revival of expired participants; retain state for retries/status.
-
-```text
-racr conversation revive <conversation-id> --state <value>
-```
-
-Options: [`--state`](#options).
 
 ### `conversation show`
 

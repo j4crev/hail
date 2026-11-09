@@ -57,7 +57,7 @@ for(const [hours,sender,text] of [[0.8,senders[3],'I can bring a picnic blanket.
 for(let index=0;index<Math.min(100,Number(process.env.HAIL_DESIGN_EXTRA_REPLIES)||0);index++){
   messages.push({...firstConnection,sender:maya.did,senderAddress:maya.address,messageId:uuidV7(),deliveredAt:date(0.15-index/1000),body:body('Saturday at the market?',`Another detail for Saturday (${index+1}).`),isRead:false});
 }
-const sharedConversation={creator:did,conversationId:uuidV7(),messageId:uuidV7(),state:'active',expiresAt:new Date(started+730*86400000).toISOString(),participants:[did,senders[3].did,maya.did],participantAddresses:{[senders[3].did]:senders[3].address,[maya.did]:maya.address},canRevive:true};
+const sharedConversation={creator:did,conversationId:uuidV7(),messageId:uuidV7(),state:'active',expiresAt:new Date(started+90*86400000).toISOString(),participants:[did,senders[3].did,maya.did],participantAddresses:{[senders[3].did]:senders[3].address,[maya.did]:maya.address}};
 if(sharedMode){
   for(const m of messages.filter(m=>m.kind==='connection'&&m.messageId!==messages[4].messageId)){
     Object.assign(m,{sharedConversation});
@@ -126,14 +126,11 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
   }
   if(sharedMode&&path==='/api/v1/account/connections/conversation-membership'){
     if(input.action==='leave')sharedConversation.state='left';
-    if(input.action==='rejoin'){if(sharedConversation.state!=='left')return json({},409);sharedConversation.state='active';}
+    if(input.action==='rejoin'){if(sharedConversation.state!=='left'||Date.parse(sharedConversation.expiresAt)<=Date.now())return json({},409);sharedConversation.state='active';}
     return json(sharedConversation);
   }
-  if(sharedMode&&path==='/api/v1/account/connections/conversation-revive'){
-    sharedConversation.state='active';
-    return json({operationId:input.operationId,targets:[{recipient:maya.did,outcome:'renewed'},{recipient:senders[3].did,outcome:'active'}]});
-  }
-  if(sharedMode&&path==='/api/v1/account/fixture-expire'){sharedConversation.state='expired';return json({});}
+  if(sharedMode&&path==='/api/v1/account/fixture-active'){sharedConversation.state='active';sharedConversation.expiresAt=new Date(Date.now()+90*86400000).toISOString();return json({});}
+  if(sharedMode&&path==='/api/v1/account/fixture-expire'){sharedConversation.state='expired';sharedConversation.expiresAt=new Date(0).toISOString();return json({});}
   const action = path.match(/^\/api\/v1\/account\/inbox\/([^/]+)\/([^/]+)\/(mark-read|mark-unread|delete)$/);
   if(action && request.method==='POST') {
     const m = messages.find(m=>m.sender===action[1]&&m.messageId===action[2]);if(!m)return json({},404);

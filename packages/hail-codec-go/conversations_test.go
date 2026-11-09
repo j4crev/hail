@@ -65,11 +65,6 @@ func TestConversationVectors(t *testing.T) {
 				if result.Payload().(*Conversation).Participants[0] == "changed" {
 					t.Fatal("roster aliases verified object")
 				}
-			case *ConversationRevival:
-				detached.DescriptorHash.Value[0] ^= 1
-				if bytes.Equal(detached.DescriptorHash.Value, result.Payload().(*ConversationRevival).DescriptorHash.Value) {
-					t.Fatal("hash aliases verified object")
-				}
 			}
 		})
 	}
@@ -79,47 +74,5 @@ func TestConversationVectors(t *testing.T) {
 				t.Fatal("invalid conversation accepted")
 			}
 		})
-	}
-	descriptor, request := verified["conversation-three"], verified["conversation-revival"]
-	if descriptor == nil || request == nil {
-		t.Fatal("missing verified fixtures")
-	}
-	if err := ValidateConversationRevivalBinding(descriptor, request); err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateConversationRevivalBinding(verified["conversation-maximum"], request); err == nil {
-		t.Fatal("changed roster accepted")
-	}
-	if err := ValidateConversationRevivalBinding(&VerifiedObject{}, request); err == nil {
-		t.Fatal("unverified descriptor accepted")
-	}
-	for _, mutate := range []func(*ConversationRevival){
-		func(r *ConversationRevival) { r.From = descriptor.Payload().(*Conversation).Participants[2] },
-		func(r *ConversationRevival) { r.To = "did:plc:zzzzzzzzzzzzzzzzzzzzzzzz" },
-		func(r *ConversationRevival) { r.ConversationID = r.RequestID },
-		func(r *ConversationRevival) {
-			h := sha256.Sum256(descriptor.PayloadBytes())
-			r.DescriptorHash.Value = h[:]
-		},
-		func(r *ConversationRevival) {
-			r.IssuedAt = descriptor.Payload().(*Conversation).CreatedAt - 1
-			r.ExpiresAt = r.IssuedAt + 3600
-		},
-	} {
-		changed := request.Payload().(*ConversationRevival)
-		mutate(changed)
-		signed, err := SignPayload(changed, privateKey)
-		if err != nil {
-			t.Fatal(err)
-		}
-		checked, err := VerifySignedPayload(ConversationRevivalType, signed, VerifierFunc(func(kid string, data, sig []byte) bool {
-			return kid == changed.From+"#hail-messaging" && ed25519.Verify(fromHex(t, key.PublicKeyHex), data, sig)
-		}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := ValidateConversationRevivalBinding(descriptor, checked); err == nil {
-			t.Fatal("invalid revival binding accepted")
-		}
 	}
 }

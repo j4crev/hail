@@ -182,7 +182,7 @@ identity from the authenticated account API. The provider alone determines the
 roster and enforces local and recipient membership. No direct peer connections
 are created. Existing `send`, `reply`, and `connection send` retain their meaning.
 
-Start/reply-all/revive require `--state`. Private version-1
+Start/reply-all require `--state`. Private version-1
 `racr.conversation-operation` files bind the account, provider, command, input,
 endpoint, and exact request. Requests are persisted before submission. Retries
 reuse the operation ID and never regenerate signatures, expand audiences, or fall
@@ -193,9 +193,7 @@ overhead; the CLI rejects oversized input locally. Submission requires account i
 Batch responses retain `publicationId`, `kind`, `total`, `counts`, `delivery`,
 `targets`, and `state`. `finished` describes batch processing, not successful
 recipient delivery. `conversation status` is a read of retained per-recipient
-results. `conversation cancel` stops pending work only. Revival responses expose
-`operationId`, `conversationId`, and recipient `outcome` values. A new revival
-operation within the provider cooldown may return the existing batch's ID.
+results. `conversation cancel` stops pending work only.
 
 New credential-only `/connections/cli-conversation-*` routes reject browser
 cookies and Origin headers. They share the existing account transaction and
@@ -208,11 +206,12 @@ changing identity-signing consent rules:
 | `/connections/cli-conversation-preferences` | GET | `account:read` |
 | `/connections/cli-conversation-preferences` | POST `{allowIntroductions: boolean}` or `{connectionId, epoch, override: boolean/null}` | `account:write` |
 | `/connections/cli-conversation-membership` | POST `{creator, conversationId, action: "inspect"}` | `messages:read` |
-| `/connections/cli-conversation-membership` | POST with action `open`, `leave`, or `rejoin` | `messages:write` |
-| `/connections/cli-conversation-revive` | POST `{conversationId, operationId}` | `messages:write` |
+| `/connections/cli-conversation-membership` | POST with action `leave` or `rejoin` | `messages:write` |
 
-Read commands never renew leases. Explicit open only renews active participation;
-rejoin is limited to manually left membership. Revival is creator-only and cannot
-undo a manual leave. Global/per-connection preference semantics remain unchanged.
+Read commands never renew the 90-day participation timeout. Only a new reply-all
+batch renews the sender's active participation. Rejoin preserves the existing
+deadline and is limited to unexpired, manually left membership. Expiry requires
+a new conversation. Leave and expiry retain Inbox history.
+Global/per-connection preference semantics remain unchanged.
 Capabilities advertise `sharedConversations` and `conversationControls` separately.
 No new database migration or Rust signed-object format is required.

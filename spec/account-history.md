@@ -140,9 +140,7 @@ digest; do not merge it into or change the connection-v3 digest domain.
 | --- | --- |
 | `account_conversation_preferences`, `connection_conversation_preferences` | Explicit global/per-connection introduction overrides; absence retains the default, not an invented explicit override |
 | `conversation_descriptors` | Immutable signed descriptor, exact representation hash, roster, timestamps and historical signing evidence |
-| `conversation_memberships` | Admission, expiry, last activity and manual leave state |
-| `conversation_revival_receipts` | Creator/request-ID replay key, exact signed request hash, replay retention deadline and retained outcome |
-| `conversation_revival_batches`, `conversation_revival_targets` | Creator-owned operation identity and terminal signed per-recipient revival results |
+| `conversation_memberships` | Admission, expiry, last reply activity and manual leave state |
 | `connection_message_batches`, `connection_message_targets` | Sealed shared-message intent, body, complete roster audience and terminal per-recipient delivery results |
 | `public_plc_resolution_evidence` | Exactly the descriptor signing-evidence bundles referenced by this checkpoint |
 
@@ -192,11 +190,11 @@ Schema validity is necessary but not sufficient. Before staging and activation:
    history; a nullified branch or missing authority evidence is rejected. A valid
    archived key does not become today's authority.
 8. Preserve terminal connection IDs, coordinator epochs and complete local consent.
-   Require drained admissions/disconnects/replication and terminal message/revival
+   Require drained admissions/disconnects/replication and terminal message
    batches before export. Peer handover is required before a new provider may
    activate nonempty connection history. A snapshot alone cannot move location pins.
-9. Preserve leave, replay outcomes and lease timestamps atomically with import.
-   Validate exact signed revival binding and immutable shared-message intent.
+9. Preserve leave and lease timestamps atomically with import.
+   Validate immutable shared-message intent.
    Never derive permission from possession of a descriptor or conversation ID.
 10. Activate only after the fenced source snapshot, owner PLC cutover, destination
     import, peer handover and observation gates all agree. Repeated import must
@@ -246,7 +244,7 @@ amend the protocol: review the projection/schema and vectors in the same change.
 
 [Conformance vectors](vectors/README.md) include fixed actual synthetic exports,
 nonempty collected checkpoints, complete signed transfer/handover records and
-connection/revival HTTP bodies. TypeScript exercises the real server validators;
+connection HTTP bodies. TypeScript exercises the real server validators;
 Go independently decodes, hashes, verifies signatures and validates record shapes
 without importing the server implementation. This establishes cross-language
 format evidence, not a claim of a second independently deployed Hail provider.
