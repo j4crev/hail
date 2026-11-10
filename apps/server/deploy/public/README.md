@@ -170,6 +170,27 @@ and their slash-delimited subpaths. Federation clients cannot complete interacti
 Access or browser challenges. Keep managed WAF/DDoS protection; Free-plan Bot Fight
 Mode cannot be selectively bypassed for these API paths.
 
+Browser Integrity Check is a separate Cloudflare setting and can return error
+1010 to otherwise valid CLI/federation clients. In the `haili.app` website dashboard,
+use **Rules → Overview → Create rule → Configuration Rule**, set **Browser
+Integrity Check: Off**, and match:
+
+```text
+(http.host eq "svr.haili.app") or
+(http.host eq "haili.app" and (
+  http.request.uri.path in {"/api" "/hail" "/.well-known" "/health"} or
+  starts_with(http.request.uri.path, "/api/") or
+  starts_with(http.request.uri.path, "/hail/") or
+  starts_with(http.request.uri.path, "/.well-known/") or
+  starts_with(http.request.uri.path, "/health/")
+))
+```
+
+Keep unrelated WAF protections enabled. Preserve exceptions for discovery and
+health on the native/browser domain when adding the separate provider hostname.
+Verify these paths using a non-browser client signature as well as the browser;
+HTTP 403 with `error code: 1010` is an edge-policy failure, not provider readiness.
+
 Only the host connector may reach the origin listener. Caddy trusts
 `CF-Connecting-IP` there and overwrites `X-Hail-Trusted-Client-IP`; never expose
 8080 publicly or forward caller-supplied trusted-client headers. Preserve actual

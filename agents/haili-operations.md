@@ -9,72 +9,65 @@ the live provider. A Git push alone does not deploy. Public registration is the
 current intended policy; preserve it during application rollouts.
 
 
-## Planned fresh split-origin installation
+## Hostinger split-origin installation (2026-11-10 UTC)
 
-The operator has chosen a fresh provider installation for the origin split,
-rather than migrating existing accounts. Use the
-[new-provider guide](../apps/server/deploy/standalone/README.md) with
-`svr.haili.app` (provider/media), `haili.app` (browser/passkeys), and native address
-domain `haili.app`. Retain host-only browser cookies and scoped media tickets.
-The operator has authorized an agent to perform the fresh installation on the
-replacement Hostinger server and archive/reset the dedicated test monitor
-(2026-11-09). Follow
-the new-provider guide, correcting verified gaps as installation proceeds. This
-authorization does not broaden SSH/sudo access or permit deleting recovery material.
-Record actual installation evidence before claiming production has been replaced.
+Production hostname routes now use `haili-hostinger` (`100.99.115.0`, public IP
+`2.25.253.153`) with `tag:haili-provider`. The API/media origin is
+`https://svr.haili.app`; browser/passkeys and native account addresses use
+`haili.app`. Host-only cookies and scoped media tickets remain enabled. Do not
+route or deploy new application releases to the old Hetzner `haili-provider` node.
 
-Archive the old provider state and recovery material before replacement. New
-accounts have new DIDs; public PLC history and remote recipients' data are not
-erased. The dedicated old test monitor can start with an empty database using
-[the archive/reset procedure](../apps/plc-monitor/deploy/public/reset-test-monitor.md),
-which preserves its old database and signing key. External alert-receiver state
-is separate. The installed Haili wrappers and database/ingress overlays do not
-automatically manage a new standalone Compose project; review operational tooling
-and ingress deliberately during installation, without broadening privileges.
+The fresh installation follows the [new-provider guide](../apps/server/deploy/standalone/README.md),
+with Haili's `deploy/public` site profile at `/opt/hail`, PostgreSQL 18 overlay,
+and immutable release overlay. The generic guide remains independent of
+Cloudflare; this site's connector reaches Caddy at `http://127.0.0.1:8080` with
+each hostname preserved. Initial setup uses the fresh-install Compose commands;
+routine wrapper deployment requires an existing healthy provider/GUI and backup.
 
-### Hostinger replacement in progress (2026-11-10 UTC)
+Installed release: `3202fb74c79a81eebd50f5d3b9c3e5156a635206`, publication run
+`42748266990`. Exact images were verified and deployed through the installed
+operations wrapper after first boot. Local and public origin routing passed.
+PostgreSQL/Caddy uptime survived the wrapper rollout, and a working initial
+release is retained for rollback. Subsequent documentation-only commits do not
+require publishing different application images.
 
-The replacement host is `haili-hostinger`, public IP `2.25.253.153`, Tailscale
-`100.99.115.0`, with `tag:haili-provider`. The existing workspace host-key pin is
-under the public IP; use `HostKeyAlias=2.25.253.153` for private SSH. Key-based
-`hailops` login is verified. Public TCP 22/80/443 is blocked on IPv4 and IPv6;
-private administration and the new Cloudflare connector remain healthy. Root key
-SSH is temporarily retained on the private network for installation and must be
-disabled after operations tooling and console recovery are verified.
+`admin@haili.app` is active with DID `did:plc:o3kveknoc4xnwwnaw7zetv2n`. The owner
+completed passkey enrollment and login; operator access is granted. Public
+registration was restored through the registration-policy service with its audit
+entry. Recovery material stays on the operator workstation, backed up encrypted
+off-host; private owner material was never sent to either service.
 
-The old `hailproto.app`/`hailproto.dev` proof-of-concept stack is archived and
-stopped (13 containers, restart disabled). All four database dumps restored with
-identical table row counts. Its encrypted off-host archive passed checksum and
-authenticated decryption checks. Original volumes, images and recovery material
-remain retained; do not prune them as part of this installation.
+The dedicated monitor retains its signing key. Its old 15-identity database is
+archived as `monitor_retired_20261110_033435` with connections disabled. The new
+`monitor` database is pinned to `https://svr.haili.app`, has the new administrator
+enrolled, and passed polling, enrollment-alert delivery and attestation checks.
+Heartbeat scheduling resumed. Final pre-reset encrypted backup
+`monitor-20261110T033251Z-2765cd08.tar.gpg` passed off-host checksum, decryption and
+full PostgreSQL 18 restore. External alert-receiver state and public PLC history
+were not reset.
 
-Use `/opt/hail` and the `deploy/public` site profile on this new host so the
-reviewed Haili operations and backup tools retain their expected service names.
-Follow the generic guide's secret generation, discovery, signup and administrator
-ceremony, substituting this profile only for its direct-ingress Compose commands.
-Use the PostgreSQL 18 overlay and immutable release overlay on every command.
-Initial setup follows the site's **fresh installation** commands; routine
-`hail-provider-ops deploy` requires an already running provider/GUI pair and a
-working backup, so it cannot bootstrap an empty host.
+The old Hostinger `hailproto.app`/`hailproto.dev` stack is archived and stopped
+(13 containers, restart disabled). All four dumps restored with matching table
+row counts; the encrypted off-host archive passed checksum and authenticated
+decryption checks. Original volumes, images and keys remain retained.
 
-Keep both public hostname routes on their current targets until replacement
-readiness, backup restoration and monitor configuration are verified. The new
-connector token permits connector operation, not DNS or tunnel configuration
-changes. Both new routes must preserve their own Host header and target the
-loopback Caddy listener at `http://127.0.0.1:8080`.
+The new provider's post-bootstrap backup `haili-20261110T034050Z.tar.gpg` passed
+off-host restoration and application-schema/driver checks. All three retained
+operational private keys decrypted and matched their public keys. The latest
+pre-cutover Hetzner backup is `haili-20261110T032106Z.tar.gpg`; preserve its volumes
+and recovery material when shutting that old host down.
 
-The new provider/GUI are now installed at commit
-`3202fb74c79a81eebd50f5d3b9c3e5156a635206` from publication run `42748266990`.
-The installed deployment wrapper completed successfully, retaining a verified
-working initial release. Local hostname routing and readiness passed. The first
-new encrypted provider backup passed off-host download/hash verification,
-authenticated decryption and full PostgreSQL 18 restoration. The new administrator
-recovery vault is prepared and backed up encrypted off-host, but its identity is
-not published. The operator must complete the browser passkey ceremony.
+### Remaining cutover checks
 
-Do not treat the replacement as complete yet: first administrator enrollment,
-dedicated-monitor reset/provider pin, public cutover, final SSH lockdown and
-retirement of the Hetzner deployment remain separate verification steps.
+Confirm the Hostinger root console works before disabling temporary private root
+SSH. Routine `hailops` sudo is already restricted to `hail-provider-ops`. Public
+SSH/web ingress is blocked on IPv4 and IPv6; private SSH and the tunnel survived
+the kernel-update reboot. Retire the old Hetzner host and activate the new backup
+timer without leaving two active provider backup schedules. The Cloudflare
+Browser Integrity Check exception is verified for the provider and native-domain
+discovery/health paths: default non-browser requests return successful readiness
+and WebFinger responses. Until the host tasks above are verified, do not report
+the security/retirement handoff as complete.
 
 ## Pre-launch development policy — developers and agents
 
@@ -128,8 +121,10 @@ These select the PostgreSQL 18 storage independently of application releases.
 Preserve overlays on every Compose operation and restore. Retained older volumes
 are not rollback targets after either application has accepted new writes.
 
-- SSH allows only the named `hailops` account with public-key authentication;
-  root, passwords, keyboard-interactive authentication and X11 are disabled.
+- Final SSH policy allows only the named `hailops` account with public-key
+  authentication; root, passwords, keyboard-interactive authentication and X11
+  must be disabled. Temporary private root access remains pending the console
+  recovery check above.
 - Passwordless sudo for `hailops` is limited to the root-owned provider/monitor operations wrapper.
   Root recovery uses the VPS console, not remote root SSH.
 - Provider secrets and R2 credentials are root-owned mode `0600`. Database
@@ -156,28 +151,28 @@ Routine access must retain wrapper-only sudo and key-only SSH authentication.
 
 ### Connect to the provider
 
-The production provider is the Tailscale node `haili-provider`. Use the `hailops`
+The production provider is the Tailscale node `haili-hostinger`. Use the `hailops`
 account; `hailops` by itself is not necessarily an SSH host alias on a developer
 workspace. Resolve the provider's current Tailscale IP from `tailscale status` and
 check the existing host-key pin before connecting:
 
 ```bash
 tailscale status
-provider_ip=100.89.223.70 # replace with the current haili-provider address
-ssh-keygen -F "$provider_ip"
+provider_ip=100.99.115.0 # replace with the current haili-hostinger address
+host_key_alias=2.25.253.153 # existing verified workspace pin
+ssh-keygen -F "$host_key_alias"
 ```
 
-The current operator workspace stores the provider host key under its Tailscale
-IP, so connect using that IP as `HostKeyAlias` while addressing the node by its
-MagicDNS name:
+The current operator workspace stores the Hostinger host key under its public
+IP. Use that existing pin as `HostKeyAlias` while connecting over Tailscale:
 
 ```bash
-ssh -o BatchMode=yes -o "HostKeyAlias=$provider_ip" \
-  hailops@haili-provider \
+ssh -o BatchMode=yes -o "HostKeyAlias=$host_key_alias" \
+  hailops@haili-hostinger \
   'sudo -n /usr/local/sbin/hail-provider-ops status'
 ```
 
-Set `provider_ip` to the address shown for `haili-provider` in `tailscale status`.
+Set `provider_ip` to the address shown for `haili-hostinger` in `tailscale status`.
 Do not bypass host-key checking when the pin is missing or mismatched; confirm
 the node identity and establish the pin through the reviewed operator process
 first.
@@ -189,7 +184,7 @@ than generating keys or starting a replacement agent:
 ss -xl | rg '\.ssh/agent/'
 export SSH_AUTH_SOCK=/path/to/existing/agent/socket
 ssh-add -l
-ssh -o BatchMode=yes -o "HostKeyAlias=$provider_ip" hailops@haili-provider \
+ssh -o BatchMode=yes -o "HostKeyAlias=$host_key_alias" hailops@haili-hostinger \
   'sudo -n /usr/local/sbin/hail-provider-ops status'
 ```
 

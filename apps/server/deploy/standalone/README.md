@@ -506,8 +506,9 @@ repeat the checkpoint-copy command. Only the public checkpoint enters it.
 
 #### 5c. Same monitor console: create the attestation file
 
-Wait for the running monitor to poll successfully and deliver its enrollment
-alert. An **attestation** is the monitor's signed JSON confirmation of those
+The reference worker polls every four minutes. To run its normal poll immediately
+after enrollment, use `docker exec "$monitor_container" bun src/cli/poll.ts`.
+Require a successful poll and delivery of its enrollment alert before continuing. An **attestation** is the monitor's signed JSON confirmation of those
 checks; it is not the checkpoint you uploaded. Save it rather than copying
 terminal output by hand:
 
