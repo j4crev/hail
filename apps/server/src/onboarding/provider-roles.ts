@@ -17,9 +17,9 @@ export async function providerRoleAccountId(sql: SQL, address: string, recoveryK
   return role.account_id;
 }
 
-export async function authorizeProviderRole(sql: SQL, addressInput: string, recoveryKey: string, origin: string): Promise<string> {
+export async function authorizeProviderRole(sql: SQL, addressInput: string, recoveryKey: string, origin: string,nativeDomain=new URL(origin).hostname): Promise<string> {
   const address = canonicalizeHailAddress(addressInput);
-  if (address.split("@")[1] !== new URL(origin).hostname) throw new Error("Role address must belong to this provider");
+  if (address.split("@")[1] !== nativeDomain) throw new Error("Role address must belong to this provider");
   if (![P256_JWT_ALG, SECP256K1_JWT_ALG].includes(parseDidKey(recoveryKey).jwtAlg)) {
     throw new Error("Use the owner's recovery public did:key, not an identity or private key");
   }

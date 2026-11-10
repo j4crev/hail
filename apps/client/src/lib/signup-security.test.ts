@@ -28,7 +28,7 @@ it("keeps invited signup off by default and exposes only public pins, never serv
     SIGNUP_MONITOR_PUBLIC_KEY:"did:key:z6MkTest",SIGNUP_MONITOR_TOKEN:"private-service-secret",ALPHA_SIGNUP_INVITE_KEY:"private-invitation-key"});
   try{
     const value=await signupLoad({setHeaders,fetch:async()=>Response.json({mode:"invite",signupAvailable:true})} as never);
-    expect(value).toEqual({signupMode:"invite",policy:{provider:"https://provider.example",monitorOrigin:"https://monitor.example",monitorKey:"did:key:z6MkTest"}});
+    expect(value).toEqual({signupMode:"invite",policy:{provider:"https://provider.example",addressDomain:"provider.example",monitorOrigin:"https://monitor.example",monitorKey:"did:key:z6MkTest"}});
     expect(JSON.stringify(value)).not.toContain("private-");
     const response=await handle({event:{request:{method:"GET"},url:new URL("https://provider.example/signup")},resolve:async()=>new Response("signup",{headers:{"content-security-policy":"script-src 'nonce-test'"}})} as never);
     expect(response.headers.get("content-security-policy")).toContain("script-src 'nonce-test', connect-src 'self'; form-action 'none'; frame-ancestors 'none'");

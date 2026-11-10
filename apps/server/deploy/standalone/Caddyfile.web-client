@@ -1,0 +1,25 @@
+{
+	admin off
+}
+
+{$PROVIDER_DOMAIN} {
+	reverse_proxy provider:3000 {
+		header_up X-Hail-Trusted-Client-IP {remote_host}
+	}
+}
+
+{$WEB_CLIENT_DOMAIN} {
+	@metadata path /.well-known/webfinger /health/ready /health/live
+	handle @metadata {
+		reverse_proxy provider:3000 {
+			header_up -Cookie
+			header_up -Authorization
+			header_up X-Hail-Trusted-Client-IP {remote_host}
+		}
+	}
+	handle {
+		reverse_proxy web-client:3000 {
+			header_up X-Hail-Trusted-Client-IP {remote_host}
+		}
+	}
+}

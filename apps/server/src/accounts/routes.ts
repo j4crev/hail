@@ -1,3 +1,4 @@
+import {MediaTickets,isMediaPath} from './media-tickets.js';
 import { CustomDomainAuthorityError } from "./custom-domain-authority.js";
 import { decodeBase64Url, encodeBase64Url, encodeDeterministic, fromDiagnosticJson, HailCodecError, inspectSignedPayload, toDiagnosticJson, type DiagnosticJson } from "@racrproto/codec";
 import type { Context, Hono } from "hono";
@@ -56,8 +57,24 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
   transfer?:AccountTransfer,custodyTransition?:SameProviderCustodyTransition,managedTransfer?:ManagedAccountTransfer,
   profiles?:SenderProfileService,profileVerifier?:Pick<SenderProfileVerifier,"verify">,sessionOrigin?:string,publications?:AccountPublications,
   avatarProfiles?:SenderProfileStore & VerifiedSenderProfileStore): void {
+  const mediaTickets=new MediaTickets();
+  app.get('/api/v1/media/:ticket',async context=>{
+    context.header('Cache-Control','private, no-store');
+    context.header('Referrer-Policy','no-referrer');
+    const ticket=mediaTickets.read(context.req.param('ticket'));
+    if(!ticket||new URL(context.req.url).search)return context.json({error:'Media unavailable'},404);
+    const headers=new Headers({'X-Hail-Trusted-Client-IP':clientAddress(context.req.raw)});
+    if(ticket.authorization)headers.set('Authorization',ticket.authorization);
+    if(ticket.cookie)headers.set('Cookie',ticket.cookie);
+    // Re-run normal session, scope, account-generation and resource authorization.
+    const response=await app.request(new Request(new URL(ticket.path,provider),{headers}));
+    const output=new Headers(response.headers);
+    output.delete('Set-Cookie');output.set('Cache-Control','private, no-store');
+    output.set('Referrer-Policy','no-referrer');output.set('Content-Security-Policy',"sandbox; default-src 'none'");
+    return new Response(response.body,{status:response.status,headers:output});
+  });
   let attachmentUploadsInFlight=0;
-  const ingress=new FixedWindowRateLimit(),anonymous=new FixedWindowRateLimit(),authenticated=new FixedWindowRateLimit();
+  const ingress=new FixedWindowRateLimit(),anonymous=new FixedWindowRateLimit(),authenticated=new FixedWindowRateLimit(),mediaIssuance=new FixedWindowRateLimit();
   const handle = async (context: Context, grantId: string | null, action?: string):Promise<Response> => {
     let batchRequestId:string|undefined;
     context.header("Cache-Control", "no-store");
@@ -76,11 +93,23 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
       const session = await accounts.authenticate(context.req.header("Authorization"),getCookie(context,"hail_session"));
       if (!session) {const retry=anonymous.take(client,120);if(retry!==null){context.header("Retry-After",String(retry));return problem(429);}
         context.header("WWW-Authenticate", 'Bearer realm="racr-account"'); return problem(401,await accounts.authenticationFailure?.(context.req.header("Authorization"))); }
-      const retry=authenticated.take(session.account_id,120);if(retry!==null){context.header("Retry-After",String(retry));return problem(429);}
+      const retry=(action==='media-ticket'?mediaIssuance:authenticated).take(session.account_id,120);if(retry!==null){context.header("Retry-After",String(retry));return problem(429);}
       if(getCookie(context,"hail_session")&&context.req.method!=="GET"&&context.req.method!=="HEAD"&&
         context.req.header("Origin")!==sessionOrigin)return problem(403);
       return await withServingGeneration<Response>(session.account_id,session.serving_generation??1,async():Promise<Response>=>{
       const query = new URL(context.req.url).searchParams;
+      if(action==='media-ticket'){
+        if(context.req.method!=='POST')return problem(405);
+        if(!session.scopes.includes('messages:read'))return problem(403,'MISSING_SCOPE');
+        if(context.req.header('Content-Type')!=='application/json'||query.size)return problem(400);
+        const bytes=await accountRequestBytes(context.req.raw,2048,5000);if(!bytes)return problem(413);
+        let input:unknown;try{input=parseJsonWithoutDuplicateKeys(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{return problem(400);}
+        if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==1||!('path' in input)||typeof input.path!=='string'||!isMediaPath(input.path))return problem(400);
+        const token=mediaTickets.issue(input.path,{authorization:context.req.header('Authorization'),
+          ...(getCookie(context,'hail_session')?{cookie:`hail_session=${getCookie(context,'hail_session')}`}:{})});
+        if(!token)return problem(503);
+        return context.json({url:`${provider}/api/v1/media/${token}`,expiresIn:60});
+      }
       if(action==='attachment-upload'||action==='attachment-download'){
         const upload=action==='attachment-upload';
         if(!session.scopes.includes(upload?'messages:write':'messages:read'))return problem(403,'MISSING_SCOPE');
@@ -585,6 +614,7 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
   app.all("/api/v1/account/connection-addresses/:did",context=>handle(context,context.req.param("did"),"connection-address"));
   app.all("/api/v1/account/binding",context=>handle(context,null,"binding"));
   app.all("/api/v1/account/profile",context=>handle(context,null,"profile"));
+  app.all("/api/v1/account/media-ticket",context=>handle(context,null,"media-ticket"));
   app.all("/api/v1/account/senders/:sender/avatar/image",context=>handle(context,context.req.param("sender"),"sender-avatar-image"));
   app.all("/api/v1/account/senders/:sender/avatar",context=>handle(context,context.req.param("sender"),"sender-avatar"));
   app.all("/api/v1/account/senders/:sender/profile",context=>handle(context,context.req.param("sender"),"sender-profile"));

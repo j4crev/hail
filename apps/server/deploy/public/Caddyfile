@@ -2,19 +2,42 @@
 	admin off
 }
 
-# Host port 8080 is published only on loopback, for the local cloudflared service.
-# There is no direct public HTTP/HTTPS listener.
+# Both Cloudflare hostnames reach this loopback-only listener. Browser cookies
+# belong to WEB_CLIENT_DOMAIN; user media is served only on PROVIDER_DOMAIN.
 :8080 {
-	@origin {
+	@provider {
 		host {$PROVIDER_DOMAIN}
 		header CF-Connecting-IP *
 	}
-	handle @origin {
+	handle @provider {
 		@http header X-Forwarded-Proto http
 		redir @http https://{$PROVIDER_DOMAIN}{uri} 308
 		reverse_proxy provider:3000 {
 			header_up X-Hail-Trusted-Client-IP {http.request.header.CF-Connecting-IP}
 			header_up X-Forwarded-Proto https
+		}
+	}
+	@client {
+		host {$WEB_CLIENT_DOMAIN}
+		header CF-Connecting-IP *
+	}
+	handle @client {
+		@http header X-Forwarded-Proto http
+		redir @http https://{$WEB_CLIENT_DOMAIN}{uri} 308
+		# Address discovery remains reachable at the native address domain.
+		@metadata path /.well-known/webfinger /health/ready /health/live
+		handle @metadata {
+			reverse_proxy provider:3000 {
+				header_up -Cookie
+				header_up -Authorization
+				header_up X-Hail-Trusted-Client-IP {http.request.header.CF-Connecting-IP}
+			}
+		}
+		handle {
+			reverse_proxy gui:3000 {
+				header_up X-Hail-Trusted-Client-IP {http.request.header.CF-Connecting-IP}
+				header_up X-Forwarded-Proto https
+			}
 		}
 	}
 	handle {

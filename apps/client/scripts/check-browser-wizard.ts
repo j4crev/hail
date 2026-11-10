@@ -84,6 +84,11 @@ const server=Bun.serve({hostname:"::",port:0,async fetch(request){
   const path=new URL(request.url).pathname;
   assert(!request.url.includes(fixtureAdmissionToken),"Connection token leaked into an HTTP URL");
   assert(!request.headers.get("Referer")?.includes(fixtureAdmissionToken),"Connection token leaked into referrer");
+  if(path.startsWith('/media/avatars/')){
+    await avatarGate;
+    if(missingAvatars)return new Response(null,{status:404});
+    return new Response(Uint8Array.from(headerPng),{headers:{'Content-Type':'image/png','Cache-Control':'no-store'}});
+  }
   if(!path.startsWith("/api/")){
     try{return await guiProxy.fetch(request);}
     catch{return new Response("GUI starting",{status:503});}
@@ -725,9 +730,9 @@ try{
   assert.equal(requests.filter(r=>r.path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${incomingId}/mark-read`).length,1,'Message is marked read once');
   assert(await evaluate(`!document.querySelector('nav[aria-label="Main navigation"] a[href="/?view=subscriptions"] [aria-label$="unread messages"]')`),'Feed count clears after reading the last unread message');
   assert.equal(requests.filter(r=>r.path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${incomingId}`).length,1,'Message body loads once');
-  assert(await evaluate(`!!document.querySelector('article header img[src*="/avatar/image"]')`),'Reader renders while photo request is pending');
+  assert(await evaluate(`!!document.querySelector('article header img[src*="/media/avatars/"]')`),'Reader renders while photo request is pending');
   releaseAvatars();
-  await wait(async()=>evaluate(`document.querySelector('article header img[src*="/avatar/image"]')?.naturalWidth>0`),'photo loads independently after reader is usable');
+  await wait(async()=>evaluate(`document.querySelector('article header img[src*="/media/avatars/"]')?.naturalWidth>0`),'photo loads independently after reader is usable');
   assert.equal(await evaluate(`!!document.querySelector('#message-reply')`),false,"Reply form starts collapsed");
   assert(await evaluate(`document.querySelector('.identity-details code').textContent===${JSON.stringify(peerDid)} && document.querySelector('.identity-details code').checkVisibility()`),'DID is directly visible');
   assert(await evaluate(`!document.querySelector('.identity-details summary, .identity-details button')`),'DID needs no expansion or copy control');
@@ -745,7 +750,7 @@ try{
   assert.equal(replyPosts,1);
   missingAvatars=true;
   await cdp("Page.navigate",{url:origin+messagePath});await wait(()=>has("This reply invitation has expired or was already used"),"consumed one-time reply");
-  await wait(async()=>evaluate(`!document.querySelector('article header img[src*="/avatar/image"]')`),'missing photo falls back to initials');
+  await wait(async()=>evaluate(`!document.querySelector('article header img[src*="/media/avatars/"]')`),'missing photo falls back to initials');
   assert(!browserErrors.some(error=>/Content Security Policy|Refused to execute|hydration/i.test(error)),"Avatar fallback works under CSP");
   missingAvatars=false;
   assert.equal(replyPosts,1);

@@ -15,7 +15,7 @@ const equal=(a:Uint8Array,b:Uint8Array)=>a.length===b.length&&timingSafeEqual(a,
 
 export class StandaloneDomains {
   private readonly host:string;
-  constructor(private readonly sql:SQL,private readonly origin:string,private readonly txt=lookupTxt,private readonly discover:ProviderDiscovery=discoverProvider){this.host=new URL(origin).hostname;}
+  constructor(private readonly sql:SQL,private readonly origin:string,private readonly txt=lookupTxt,private readonly discover:ProviderDiscovery=discoverProvider,private readonly nativeDomain=new URL(origin).hostname){this.host=new URL(origin).hostname;}
   private async publicOnly(tx:SQL){
     const settings=(await tx`SELECT mode FROM provider_registration_settings WHERE singleton=true FOR UPDATE`)[0];
     if(settings?.mode!=="public")throw new CustomDomainError(403,"Standalone domain signup requires public registration.");
@@ -57,7 +57,7 @@ export class StandaloneDomains {
     const parts=input.split("@");if(parts.length!==2)throw new CustomDomainError(400,"Enter a username and domain.");
     const domain=canonicalDomain(parts[1]!);let address:string;
     try{address=canonicalizeHailAddress(`${parts[0]}@${domain}`);}catch{throw new CustomDomainError(400,"Enter a valid username and domain.");}
-    if(domain===this.host)throw new CustomDomainError(400,"Use ordinary signup for the provider's domain.");
+    if(domain===this.nativeDomain)throw new CustomDomainError(400,"Use ordinary signup for the provider's domain.");
     const token=`haild_${randomBytes(32).toString("base64url")}`,challenge=randomBytes(32).toString("base64url");
     return this.sql.begin(async tx=>{
       await this.publicOnly(tx); // Also serializes anonymous quota and cleanup.

@@ -40,7 +40,7 @@
     if(location.hash)history.replaceState(null,"",location.pathname);
     const address=params.get("address"),authorization=params.get("addressAuthorization");
     if(address||authorization){
-      if(address&&authorization&&validSignupAddress(address,data.policy.provider,authorization)){
+      if(address&&authorization&&validSignupAddress(address,data.policy.provider,authorization,data.policy.addressDomain)){
         customAddress=address;addressAuthorization=authorization;invitation="";
         if(cached)message="An unfinished setup is already saved. Continue it before starting this account.";
       }else{screen="resume";message="This custom-address setup link is invalid. Return to Custom domains to start again.";}
@@ -93,7 +93,7 @@
     try{saved=JSON.parse(sessionStorage.getItem(domainStorage)??"null");}catch{return;}
     if(!saved)return;
     if(!/^haild_[A-Za-z0-9_-]{43}$/.test(saved.token)||!/^hail-domain-verify=[A-Za-z0-9_-]{43}$/.test(saved.verificationValue)||
-      !validSignupAddress(saved.address,data.policy.provider,saved.token)||!Number.isFinite(Date.parse(saved.expiresAt))||Date.parse(saved.expiresAt)<=Date.now()){
+      !validSignupAddress(saved.address,data.policy.provider,saved.token,data.policy.addressDomain)||!Number.isFinite(Date.parse(saved.expiresAt))||Date.parse(saved.expiresAt)<=Date.now()){
       sessionStorage.removeItem(domainStorage);return;
     }
     domainChoice="custom";[local,domain]=saved.address.split("@");email=typeof saved.email==="string"?saved.email:"";
@@ -113,7 +113,7 @@
     await checkAddress();
   }
   async function checkAddress(){
-    const result=await request("/api/v1/signup/check-address",{address:customAddress||`${local}@${new URL(data.policy.provider).hostname}`,invitation,...(addressAuthorization?{addressAuthorization}:{})},setupToken());
+    const result=await request("/api/v1/signup/check-address",{address:customAddress||`${local}@${data.policy.addressDomain}`,invitation,...(addressAuthorization?{addressAuthorization}:{})},setupToken());
     if(result.available!==true){message="That address is already taken. Please choose another.";return false;}
     go("protection");return true;
   }
@@ -157,7 +157,7 @@
       if(current!==epoch)return;
       secret=encodeBase64Url(generated.recoverySecret);key=await pendingKey(secret);
       pending={type:"hail.pending-signup",version:2,policy:data.policy,signupId:crypto.randomUUID(),
-        address:customAddress||`${local}@${new URL(data.policy.provider).hostname}`,...(addressAuthorization?{addressAuthorization}:{}),email,token:setupToken(),enrollmentToken:setupToken(),invitation,
+        address:customAddress||`${local}@${data.policy.addressDomain}`,...(addressAuthorization?{addressAuthorization}:{}),email,token:setupToken(),enrollmentToken:setupToken(),invitation,
         vault:generated.vault,operation:null,did:null};
       // Preserve original intent before making any provider request.
       await persist();await prepareAndSign(generated.recoverySecret);
@@ -223,7 +223,7 @@
     const restored=fromPackage?await openRecoveryPackage(text,secretText,data.policy):
       {key:await pendingKey(secretText),pending:await openPending(text,await pendingKey(secretText),data.policy)};
     if(current!==epoch)throw new Error("Setup page closed");
-    pending=restored.pending;if(pending.address.split("@")[1]!==new URL(data.policy.provider).hostname)domainChoice="custom";key=restored.key;await persist();summary=null;
+    pending=restored.pending;if(pending.address.split("@")[1]!==data.policy.addressDomain)domainChoice="custom";key=restored.key;await persist();summary=null;
     try{summary=checkSummary(await request(`/api/v1/signup/${pending.signupId}`,undefined,pending.token),pending);}
     catch(error){if(!(error instanceof SignupRequestError&&[401,404].includes(error.status)))throw error;}
     // An older unsigned file may predate a successful publication. Recover the
@@ -258,8 +258,8 @@
           {:else}<div class="address-field">
             <div class="address-input">
               <label class="username-field">Your Hail address<input bind:value={local} required pattern={'[a-z0-9][a-z0-9._\\-]{0,63}'} maxlength="64" autocomplete="username" /></label>
-              {#if data.signupMode==="public"}<label class="domain-choice"><span class="sr-only">Address domain</span><select aria-label="Address domain" disabled={busy} bind:value={domainChoice} onchange={changeDomain}><option value="native">@{new URL(data.policy.provider).hostname}</option><option value="custom">Use a custom domain…</option></select></label>
-              {:else}<span>@{new URL(data.policy.provider).hostname}</span>{/if}
+              {#if data.signupMode==="public"}<label class="domain-choice"><span class="sr-only">Address domain</span><select aria-label="Address domain" disabled={busy} bind:value={domainChoice} onchange={changeDomain}><option value="native">@{data.policy.addressDomain}</option><option value="custom">Use a custom domain…</option></select></label>
+              {:else}<span>@{data.policy.addressDomain}</span>{/if}
             </div>
             {#if needsDns}<label>Domain name<input bind:value={domain} required maxlength="253" placeholder="example.com" /></label>{/if}
           </div>{/if}

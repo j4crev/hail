@@ -11,5 +11,5 @@ export const load=async({setHeaders,fetch}:Pick<RequestEvent,"setHeaders"|"fetch
   setHeaders({"cache-control":"no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"});
   const settings=await registration(fetch);
   if(!settings?.signupAvailable)error(503,"Signup is unavailable");
-  return {signupMode:settings.mode,policy:{provider,monitorOrigin,monitorKey}};
+  return {signupMode:settings.mode,policy:{provider,addressDomain:env.HAIL_NATIVE_ADDRESS_DOMAIN||new URL(provider).hostname,monitorOrigin,monitorKey}};
 };

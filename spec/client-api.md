@@ -174,3 +174,73 @@ Full message bodies remain available through existing account endpoints; the GUI
 may project compact list summaries before transmitting them to its browser.
 Provider authorization remains authoritative for every read and mutation. See
 [web-client behavior](../apps/client/README.md#mailbox-cache-and-recent-history).
+
+## Reference-provider browser media and origin separation
+
+This section specifies the reference provider's optional browser extension, not
+mandatory federation behavior. The account API origin, browser/passkey origin,
+and native account domain are separate configuration roles. Account records and
+CLI credential files identify the API origin. Native address domains differing
+from the API hostname use the existing `_hail-provider` DNS delegation format;
+this configuration does not grant authority over arbitrary custom domains.
+
+The authorization URL returned to a CLI remains on the selected API origin.
+That browser-only entry point may redirect to the configured browser origin,
+preserving request/state and the browser-held code fragment. API clients still
+reject redirects; the browser follows the navigation. Passkey RP ID and expected
+origin remain the browser's configured values.
+
+`POST /api/v1/account/media-ticket` accepts exactly a JSON object with `path`.
+It requires normal account authentication, `messages:read`, and the usual
+cookie/Origin CSRF check. The path is restricted to `/api/v1/account/senders/{did}/avatar/image` or
+`/api/v1/account/attachments/{sender}/{messageId}/{digest}`, including an optional single attachment `index`
+(0–19). The DID is canonical `did:plc` (colons may be percent-encoded); attachment
+sender is a DID or `sent-message`, `sent-connections`, or `sent-category`, messageId
+is a UUID, and digest is a 43-character unpadded base64url SHA-256 digest.
+Arbitrary URLs, other API paths and extra query parameters are rejected.
+Issuance does not assert that the resource exists; access is checked at redemption.
+Malformed input returns 400, unsupported methods 405, and missing read scope 403.
+The reference implementation limits the issuance body to 2048 bytes (413 otherwise).
+The response is `{ "url": "https://PROVIDER/api/v1/media/TOKEN", "expiresIn": 60 }`.
+TOKEN is an opaque, cryptographically random 32-byte unpadded base64url capability.
+Neither session tokens nor API credentials appear in the URL or response.
+
+`GET /api/v1/media/TOKEN` accepts no query parameters. A valid ticket can be reused
+within its 60-second lifetime for its one bound resource only. Redemption repeats
+normal authentication, scope, serving-generation and resource authorization;
+revoked/expired sessions or lost access are not bypassed. Unknown/expired tickets
+return 404; ordinary authentication/resource failures retain their normal status.
+Successful responses retain the resource's fixed content type, `nosniff`, and
+attachment download disposition where applicable, plus `Cache-Control: private,
+no-store`, `Referrer-Policy: no-referrer`, and `Content-Security-Policy: sandbox;
+default-src 'none'`. No session cookie is issued on redemption.
+
+Reference policy bounds outstanding tickets to 4096 per provider process. Full
+capacity returns 503; tickets are process-local and disappear on restart. This
+implementation assumes one provider process; a replicated deployment needs a
+shared bounded capability store or equivalent routing before enabling this
+extension. Treat URLs as private bearer capabilities: redact them from access
+logs/telemetry and never cache them at a CDN. Expiry does not revoke a download
+already in progress. Tickets add no authority beyond the issuing account.
+
+The browser origin must not proxy uploaded bytes. Its API bridge permits only
+JSON responses and blocks the media-ticket, media-redemption, attachment-download
+and avatar-image endpoints. Browser avatar/attachment routes return redirects to
+provider capabilities, with no-store/no-referrer headers. Host-only application
+cookies are never shared using a parent-domain cookie. CORS is not opened to the
+media origin; server-to-server JSON bridging preserves the actual browser Origin
+and incoming Authorization header, including scoped signup credentials. It must
+not substitute a trusted Origin for a request supplied by another origin.
+
+Conformance cases: an altered path/query cannot select another file; expiry,
+revocation and scope loss deny redemption; media/HTML/SVG response bodies cannot
+pass through the browser JSON bridge; provider-origin credential metadata is
+independent of the passkey origin. Executable vectors live in
+`apps/server/test/media-tickets.test.ts`, `apps/client/src/lib/media-origin.test.ts`,
+and the built-client HTTP boundary test `apps/client/scripts/check-origin-separation.ts`.
+
+Unresolved interoperability decision: the current provider-transfer profile ties
+destination native domains to service hostnames and rejects delegated-domain
+source addresses. Separating the native address domain does not relax those
+checks or define a new transfer protocol. Such transfers remain unavailable until
+that profile, schemas and conformance vectors are updated together.

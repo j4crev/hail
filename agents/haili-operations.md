@@ -9,6 +9,25 @@ the live provider. A Git push alone does not deploy. Public registration is the
 current intended policy; preserve it during application rollouts.
 
 
+## Planned fresh split-origin installation
+
+The operator has chosen a fresh provider installation for the origin split,
+rather than migrating existing accounts. Use the
+[new-provider guide](../apps/server/deploy/standalone/README.md) with
+`svr.haili.app` (provider/media), `haili.app` (browser/passkeys), and native address
+domain `haili.app`. Retain host-only browser cookies and scoped media tickets.
+The operator will perform the reinstall; this source change does not authorize
+an agent to remove production data or claim production has been migrated.
+
+Archive the old provider state and recovery material before replacement. New
+accounts have new DIDs; public PLC history and remote recipients' data are not
+erased. The dedicated old test monitor can start with an empty database using
+[the archive/reset procedure](../apps/plc-monitor/deploy/public/reset-test-monitor.md),
+which preserves its old database and signing key. External alert-receiver state
+is separate. The installed Haili wrappers and database/ingress overlays do not
+automatically manage a new standalone Compose project; review operational tooling
+and ingress deliberately during installation, without broadening privileges.
+
 ## Pre-launch development policy — developers and agents
 
 **Build the intended system, not compatibility layers for our test data.** Hail

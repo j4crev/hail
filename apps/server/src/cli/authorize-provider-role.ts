@@ -9,6 +9,6 @@ if (!address || !recoveryKey || extra !== undefined) {
 const config = loadConfig(), db = new ProviderDatabase(config.databaseUrl);
 try {
   await db.migrate();
-  const accountId = await authorizeProviderRole(db.sql, address, recoveryKey, config.publicOrigin);
+  const accountId = await authorizeProviderRole(db.sql, address, recoveryKey, config.publicOrigin,config.nativeAddressDomain);
   console.info(JSON.stringify({ address, accountId, next: "Complete normal public onboarding using this recovery key; no account or credential has been created" }));
 } finally { await db.close(); }

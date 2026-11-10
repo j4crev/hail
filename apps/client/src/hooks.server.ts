@@ -1,7 +1,7 @@
 import {withAccountReads} from "$lib/server/account-reads.js";
 import type { Handle } from "@sveltejs/kit";
 import {isAccountPath,loginPath} from "$lib/auth-routing.js";
-import {isConfigured} from "$lib/server/canary.js";
+import {PROVIDER,isConfigured} from "$lib/server/canary.js";
 import {env as publicEnv} from '$env/dynamic/public';
 import {sequence} from '@sveltejs/kit/hooks';
 import {sentryHandle,handleErrorWithSentry} from '@sentry/sveltekit';
@@ -14,6 +14,12 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
   }
   const response = await (event.request.method === "GET" ? withAccountReads(() => resolve(event)) : resolve(event));
   const ingestOrigin=sentryOrigin(publicEnv.PUBLIC_SENTRY_DSN);
+  const initialCsp=response.headers.get('content-security-policy');
+  if(initialCsp&&PROVIDER){
+    const mediaOrigin=new URL(PROVIDER).origin;
+    response.headers.set('content-security-policy',initialCsp.replace(/(^|;)\s*img-src\s+([^;]+)/g,
+      (_directive,separator,sources)=>`${separator} img-src ${sources} ${mediaOrigin}`));
+  }
   const csp=response.headers.get('content-security-policy');
   if(ingestOrigin && csp) response.headers.set('content-security-policy',sentryCsp(csp,ingestOrigin));
   response.headers.set("cache-control","no-store");

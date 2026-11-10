@@ -12,6 +12,7 @@ export interface AppConfig {
   port: number;
   providerId: string;
   publicOrigin: string;
+  nativeAddressDomain?: string;
   hailServiceBase: string;
   plcDirectoryUrl: string;
   databaseUrl: string;
@@ -160,6 +161,9 @@ export function loadConfig(environment: Environment = Bun.env): AppConfig {
     environment.POC_SELF_SERVICE_RETURN!=="true")) {
     throw new Error("Private-PLC managed transfer requires account access, transfer/return gates, and a non-public PLC profile");
   }
+  const nativeAddressDomain=environment.NATIVE_ADDRESS_DOMAIN?.trim()||publicOriginUrl.hostname;
+  if(nativeAddressDomain.length>253||!nativeAddressDomain.split(".").every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))||new URL(`https://${nativeAddressDomain}`).hostname!==nativeAddressDomain)
+    throw new Error("NATIVE_ADDRESS_DOMAIN must be a canonical DNS hostname");
   const passkeyGate=environment.PASSKEY_AUTH?.trim();
   if(passkeyGate!==undefined&&passkeyGate!=="true"&&passkeyGate!=="false")throw new Error("PASSKEY_AUTH must be true or false");
   let passkeys:AppConfig["passkeys"];
@@ -228,6 +232,7 @@ export function loadConfig(environment: Environment = Bun.env): AppConfig {
     ...(publicPlcAuthority ? { publicPlcAuthority } : {}),
     ...(plcReaderDiagnosticDid?{plcReaderDiagnosticDid}:{}),
     ...(passkeys?{passkeys}:{}),
+    nativeAddressDomain,
     ...(webClientOrigin?{webClientOrigin}:{}),
     ...(signupEmail?{signupEmail}:{}),
     ...(signupMonitor?{signupMonitor}:{}),

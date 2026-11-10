@@ -25,7 +25,8 @@ with tempfile.TemporaryDirectory(prefix=project) as temporary:
     environment = directory / 'fixture.env'
     environment.write_text('\n'.join([
         f'HAIL_PROVIDER_IMAGE={args.provider_image}', f'HAIL_WEB_CLIENT_IMAGE={args.client_image}',
-        'PROVIDER_DOMAIN=independent.example.com', 'PROVIDER_ID=independent',
+        'PROVIDER_DOMAIN=svr.independent.example.com', 'WEB_CLIENT_DOMAIN=independent.example.com',
+        'NATIVE_ADDRESS_DOMAIN=independent.example.com', 'PROVIDER_ID=independent',
         'PLC_PROVIDER_OPERATORS=["independent-operator"]',
         'DB_PASSWORD=disposable-test-only', 'KEY_ENCRYPTION_KEY=' + 'A' * 43,
         'HAIL_WEB_CLIENT_NAME=Independent Test', 'HAIL_WEB_CLIENT_LOGO_PATH=/brand/logo.svg',
@@ -40,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix=project) as temporary:
     provider_override.write_text(json.dumps({'services': {'provider': {'ports': ['127.0.0.1::3000']}}}))
     client_override = directory / 'client.json'
     client_override.write_text(json.dumps({'services': {'web-client': {
+        'ports':['127.0.0.1::3000'],
         'volumes': [f'{brand}:/workspace/hail/apps/client/build/client/brand:ro']
     }}}))
     base = ['docker', 'compose', '--project-name', project, '--env-file', str(environment), '-f', str(profile / 'compose.yaml')]
@@ -49,8 +51,8 @@ with tempfile.TemporaryDirectory(prefix=project) as temporary:
     def run(command, capture=False):
         return subprocess.run(command, check=True, text=True, stdout=subprocess.PIPE if capture else None).stdout
 
-    def request(path):
-        port = run(server + ['port', 'provider', '3000'], True).strip()
+    def request(path, service='provider'):
+        port = run(client + ['port', service, '3000'], True).strip()
         try:
             with urllib.request.urlopen('http://' + port + path, timeout=10) as response:
                 return response.status, response.read().decode()
@@ -70,12 +72,17 @@ with tempfile.TemporaryDirectory(prefix=project) as temporary:
             'test ! -d /workspace/hail/apps/client && test -f src/cli/create-signup-invitation.ts'])
         print('PASS: provider-only migrations, readiness and API/page boundaries', flush=True)
         run(client + ['up', '-d', '--no-build', '--wait', '--wait-timeout', '120', 'db', 'web-client', 'provider'])
-        status, html = request('/')
+        rendered = json.loads(run(client + ['config', '--format', 'json'], True))
+        assert 'WEB_CLIENT_ORIGIN' not in rendered['services']['provider']['environment']
+        assert rendered['services']['provider']['environment']['PASSKEY_ORIGIN'] == 'https://independent.example.com'
+        assert rendered['services']['provider']['environment']['NATIVE_ADDRESS_DOMAIN'] == 'independent.example.com'
+        assert request('/')[0] == 404
+        status, html = request('/', 'web-client')
         assert status == 200, (status, html[:300])
         assert 'Independent Test' in html and 'Haili' not in html
         assert '/brand/logo.svg' in html and '/brand/favicon.svg' in html
-        assert request('/brand/logo.svg')[0] == 200
-        assert request('/brand/favicon.svg')[0] == 200
+        assert request('/brand/logo.svg', 'web-client')[0] == 200
+        assert request('/brand/favicon.svg', 'web-client')[0] == 200
         assert request('/api/unknown')[0] == 404
         assert request('/health/ready')[0] == 200
         print('PASS: optional independent client, runtime branding and mounted assets', flush=True)

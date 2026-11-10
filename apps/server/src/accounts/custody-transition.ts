@@ -96,12 +96,12 @@ function parsedState(value:DocumentData|string):DocumentData {
 export class SameProviderCustodyTransition {
   constructor(private readonly sql:SQL,private readonly plc:PlcDirectoryClient,private readonly resolver:HailDidResolver,
     private readonly encryptor:KeyEncryptor,private readonly serviceBase:string,private readonly verifier:AddressVerificationService,
-    private readonly now:()=>Date=()=>new Date(),private readonly discover:ProviderDiscovery=discoverProvider) {}
+    private readonly now:()=>Date=()=>new Date(),private readonly discover:ProviderDiscovery=discoverProvider,private readonly nativeDomain=new URL(serviceBase).hostname) {}
 
   private async domainAuthority(tx:SQL,accountId:string) {
     const account=(await tx<{canonical_address:string}[]>`SELECT canonical_address FROM provider_accounts WHERE id=${accountId}`)[0];
     if(!account)throw new Error("Account does not exist");
-    await requireCustomDomainAuthority(tx,accountId,account.canonical_address,new URL(this.serviceBase).origin,this.discover);
+    await requireCustomDomainAuthority(tx,accountId,account.canonical_address,new URL(this.serviceBase).origin,this.discover,this.nativeDomain);
   }
 
   async reviewOwner(accountId:string,newIdentityKey:string,reviewedAt?:number):Promise<OwnerCustodyReview> {

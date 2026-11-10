@@ -18,7 +18,7 @@ interface Row {id:string;cose:Uint8Array;representation_digest:Uint8Array;select
 const equal=(a:Uint8Array,b:Uint8Array)=>Buffer.from(a).equals(Buffer.from(b));
 export class AccountBinding {
   constructor(private readonly sql:SQL,private readonly resolver:HailDidResolver,private readonly encryptor:KeyEncryptor,private readonly origin:string,
-    private readonly verifier:AddressVerificationService,private readonly discover:ProviderDiscovery=discoverProvider){}
+    private readonly verifier:AddressVerificationService,private readonly discover:ProviderDiscovery=discoverProvider,private readonly nativeDomain=new URL(origin).hostname){}
   async show(session:AccountApiSession) {
     const rows=await this.sql<Row[]>`SELECT id,cose,representation_digest,selected_at,published_at,issued_at FROM address_bindings
       WHERE account_id=${session.account_id} AND canonical_address=${session.canonical_address} AND did=${session.did}
@@ -38,7 +38,7 @@ export class AccountBinding {
     const credential=await tx`SELECT id FROM account_api_credentials WHERE id=${session.credential_id} AND account_id=${session.account_id}
       AND revoked_at IS NULL AND expires_at>clock_timestamp() AND scopes ? 'account:write' FOR SHARE`;
     if(!credential.length)throw new BindingError(403,"Current credential cannot publish an address");
-    await requireCustomDomainAuthority(tx,session.account_id,session.canonical_address,this.origin,this.discover);
+    await requireCustomDomainAuthority(tx,session.account_id,session.canonical_address,this.origin,this.discover,this.nativeDomain);
     const current=await this.resolver.resolve(session.did);
     const keys=await tx<{role:string;public_key:string}[]>`SELECT role,public_key FROM account_keys WHERE account_id=${session.account_id}`;
     if(current.did!==session.did||current.serviceBase!==`${this.origin}/hail`||current.identityDidKey!==key||

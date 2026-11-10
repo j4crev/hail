@@ -55,13 +55,15 @@ it.skipIf(!process.env.DATABASE_URL)("public owner/managed onboarding seals owne
     new KeyEncryptor(encodeBase64Url(randomBytes(32))), "https://plc.directory", base, verifier);
   try {
     await db.migrate();
-    for (const { custody, alpha } of [{ custody: "owner-controlled", alpha: false },
-      { custody: "managed", alpha: false }, { custody: "managed", alpha: true }] as const) {
+    for (const { custody, alpha,split } of [{ custody: "owner-controlled", alpha: false,split:false },
+      { custody: "managed", alpha: false,split:false }, { custody: "managed", alpha: true,split:false },
+      { custody: "managed", alpha: true,split:true }] as const) {
       const owner = await P256Keypair.create(), identity = await publicEdKey(), monitor = await publicEdKey();
-      const address = `${custody}-${randomUUID()}@local.example.com`;
+      const nativeDomain=split?"mail.example.com":"local.example.com";
+      const address = `${custody}-${randomUUID()}@${nativeDomain}`;
       const current = alpha ? new PublicOnboarding(db.sql, plc, resolver,
         new KeyEncryptor(encodeBase64Url(randomBytes(32))), "https://plc.directory", base, verifier,
-        { profile: "reduced-assurance-alpha-v1", monitorOrigin: "https://monitor.example.com", monitorPublicKey: monitor.didKey }) : service;
+        { profile: "reduced-assurance-alpha-v1", monitorOrigin: "https://monitor.example.com", monitorPublicKey: monitor.didKey },nativeDomain) : service;
       const signupToken = `racr_${encodeBase64Url(randomBytes(32))}`;
       const hash = new Uint8Array(createHash("sha256").update(signupToken).digest());
       if (alpha) {
@@ -77,7 +79,7 @@ it.skipIf(!process.env.DATABASE_URL)("public owner/managed onboarding seals owne
       expect(prepared.monitorAssurance).toBe(alpha ? "reduced-assurance-alpha-v1" : "independent");
       expect((await current.prepare(address, owner.did(), identity.didKey, true, custody,
         "https://monitor.example.com", monitor.didKey, hash, alpha)).accountId).toBe(prepared.accountId);
-      if (alpha) await expect(service.prepare(address, owner.did(), identity.didKey, true, custody,
+      if (alpha&&!split) await expect(service.prepare(address, owner.did(), identity.didKey, true, custody,
         "https://monitor.example.com", monitor.didKey, hash)).rejects.toThrow("different");
       let emailed = 0;
       const emailApp = new Hono();
@@ -151,7 +153,7 @@ it.skipIf(!process.env.DATABASE_URL)("public owner/managed onboarding seals owne
         await expect(db.sql`DELETE FROM managed_custody_evidence WHERE account_id=${prepared.accountId}`)
           .rejects.toThrow("explicit assurance transition");
         const encryptor = new KeyEncryptor(encodeBase64Url(randomBytes(32)));
-        await expect(new SameProviderCustodyTransition(db.sql, plc, resolver, encryptor, base, verifier)
+        await expect(new SameProviderCustodyTransition(db.sql, plc, resolver, encryptor, base, verifier,undefined,undefined,nativeDomain)
           .reviewOwner(prepared.accountId, identity.didKey)).rejects.toThrow("Independent-monitor");
         const payloadBytes = encodeManagedHandshake({ type: "hail.managed-transfer-grant", version: 1,
           did, nonce: randomUUID(), source_service_base: base, destination_service_base: "https://destination.example.com/hail",

@@ -9,6 +9,7 @@ services:
         condition: service_healthy
     environment:
       PROVIDER_DOMAIN: ${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
+      WEB_CLIENT_DOMAIN: ${WEB_CLIENT_DOMAIN:?set WEB_CLIENT_DOMAIN}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -31,6 +32,7 @@ services:
       PORT: 3000
       PROVIDER_ID: ${PROVIDER_ID:?set PROVIDER_ID}
       PUBLIC_ORIGIN: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
+      NATIVE_ADDRESS_DOMAIN: ${NATIVE_ADDRESS_DOMAIN:?set NATIVE_ADDRESS_DOMAIN}
       HAIL_SERVICE_BASE: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}/hail
       PLC_DIRECTORY_URL: https://plc.directory
       PLC_AUTHORITY_PROFILE: strict-public-v1
@@ -43,9 +45,8 @@ services:
       PASSKEY_SESSION_ABSOLUTE_SECONDS: ${PASSKEY_SESSION_ABSOLUTE_SECONDS:-2592000}
       # Operator-approved Haili preview; other deployments may explicitly opt out.
       CONNECTION_PREVIEW: ${CONNECTION_PREVIEW:-true}
-      PASSKEY_ORIGIN: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
-      PASSKEY_RP_ID: ${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
-      WEB_CLIENT_ORIGIN: http://gui:3000
+      PASSKEY_ORIGIN: https://${WEB_CLIENT_DOMAIN:?set WEB_CLIENT_DOMAIN}
+      PASSKEY_RP_ID: ${WEB_CLIENT_DOMAIN:?set WEB_CLIENT_DOMAIN}
       SIGNUP_EMAIL_ORIGIN: ${SIGNUP_EMAIL_ORIGIN:-}
       SIGNUP_EMAIL_TOKEN: ${SIGNUP_EMAIL_TOKEN:-}
       SIGNUP_MONITOR_API_ORIGIN: ${SIGNUP_MONITOR_API_ORIGIN:-}
@@ -92,7 +93,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
-      ORIGIN: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
+      ORIGIN: https://${WEB_CLIENT_DOMAIN:?set WEB_CLIENT_DOMAIN}
       HAIL_WEB_CLIENT_NAME: Haili
       # Public ingest key for this Haili-specific deployment; empty disables telemetry.
       PUBLIC_SENTRY_DSN: ${HAIL_WEB_CLIENT_SENTRY_DSN-https://80c13bf2881ac862e38923c7ed14201a@o4512397983023104.ingest.us.sentry.io/4512398013825025}
@@ -100,7 +101,8 @@ services:
       HAIL_WEB_CLIENT_PROVIDER: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
       # Private Docker transport; public provider/passkey origins stay HTTPS.
       HAIL_WEB_CLIENT_API_ORIGIN: http://provider:3000
-      HAIL_WEB_CLIENT_ORIGIN: https://${PROVIDER_DOMAIN:?set PROVIDER_DOMAIN}
+      HAIL_WEB_CLIENT_ORIGIN: https://${WEB_CLIENT_DOMAIN:?set WEB_CLIENT_DOMAIN}
+      HAIL_NATIVE_ADDRESS_DOMAIN: ${NATIVE_ADDRESS_DOMAIN:?set NATIVE_ADDRESS_DOMAIN}
       HAIL_WEB_CLIENT_SIGNUP: ${PUBLIC_ALPHA_SIGNUP:-false}
       ALPHA_SIGNUP_MONITOR_ORIGIN: ${ALPHA_SIGNUP_MONITOR_ORIGIN:-}
       SIGNUP_MONITOR_PUBLIC_KEY: ${SIGNUP_MONITOR_PUBLIC_KEY:-}
