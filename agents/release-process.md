@@ -152,7 +152,7 @@ do not replace it with the new fresh-install profile.
 
    Verify the commit and both repository/digest references against the successful
    run. Never substitute a mutable tag or publish/build on the provider host.
-4. Connect to `haili-provider` as `hailops` using the Tailscale and host-key
+4. Connect to `haili-hostinger` as `hailops` using the Tailscale and host-key
    procedure in [operations](haili-operations.md#connect-to-the-provider). Verify
    the installed wrapper, clean checkout, backups, free disk and memory.
 5. Execute the artifact's **three-argument** deploy command:
@@ -211,8 +211,8 @@ recorded PostgreSQL major. Never select an older database volume as image rollba
 This policy requires the updated root-owned wrapper; publishing application
 images does not install it. Through existing privileged operator access, preserve
 the previous wrapper, review the source diff, retain the host's configured checkout
-path (`/opt/hailproto` on the current Haili host; the example source uses
-`/opt/hail`), install the reviewed executable root-owned, and verify its SHA-256.
+path (`/opt/hail` on Hostinger; the retired Hetzner host used
+`/opt/hailproto`), install the reviewed executable root-owned, and verify its SHA-256.
 Python 3 is required. Do not broaden sudo/SSH policy. Review the report before
 applying the initial cleanup:
 
