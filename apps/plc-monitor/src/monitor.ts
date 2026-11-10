@@ -4,7 +4,7 @@ import { operationDetail } from "./operation-detail.js";
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { isDeepStrictEqual } from "node:util";
-import { def, type DocumentData, type ExportedOp } from "@did-plc/lib";
+import { assureValidSig, def, type DocumentData, type ExportedOp } from "@did-plc/lib";
 import type { SQL } from "bun";
 import { plcStateDigest, type MonitorPlcClient } from "./plc.js";
 import type { MonitorSigner } from "./signing.js";
@@ -74,9 +74,9 @@ export class PlcMonitor {
           throw new ProviderAdmissionError(429, "Enrollment capacity reached; existing monitoring continues");
       }
       await tx`INSERT INTO monitored_dids (did, expected_cid, expected_state, alert_webhook_url, enrollment_provider_id,
-        enrolled_at, last_verified_cid, last_verified_at, last_audit, coverage_since)
+        management_cid, enrolled_at, last_verified_cid, last_verified_at, last_audit, coverage_since)
         VALUES (${did}, ${expectedCid}, ${JSON.stringify(current.state)}::jsonb,
-          ${alertWebhookUrl}, ${providerId ?? null}, ${enrolledAt}, ${expectedCid}, ${enrolledAt},
+          ${alertWebhookUrl}, ${providerId ?? null}, ${providerId ? expectedCid : null}, ${enrolledAt}, ${expectedCid}, ${enrolledAt},
           ${JSON.stringify(current.audit)}::jsonb, ${enrolledAt})`;
       if (reviewed !== undefined) {
         await tx`INSERT INTO monitor_bootstrap_checkpoints (did, operation_cid, reviewed_state, reviewed_at)
@@ -96,15 +96,61 @@ export class PlcMonitor {
           AND alert_origin || '/hail/signup'=${alertWebhookUrl} FOR SHARE`).length)
         throw new ProviderAdmissionError(403, "Provider enrollment disabled or mismatched");
       await tx`SELECT pg_advisory_xact_lock(686169155, hashtext(${did}))`;
-      const row = (await tx`SELECT b.operation_cid,b.reviewed_state,w.alert_webhook_url,w.enrollment_provider_id
+      const row = (await tx`SELECT b.operation_cid,b.reviewed_state,w.management_cid,w.alert_webhook_url,w.enrollment_provider_id
         FROM monitored_dids w JOIN monitor_bootstrap_checkpoints b ON b.did=w.did
         WHERE w.did=${did} FOR UPDATE OF w`)[0];
       const state = row && (typeof row.reviewed_state === "string" ? JSON.parse(row.reviewed_state) : row.reviewed_state);
-      if (!row || providerId && row.enrollment_provider_id !== providerId || row.operation_cid !== operationCid || row.alert_webhook_url !== alertWebhookUrl ||
-        state?.services?.hail?.type !== "HailMessaging" || state.services.hail.endpoint !== `${providerOrigin}/hail`)
+      if (!row || (providerId ? row.enrollment_provider_id !== providerId || row.management_cid !== operationCid :
+        row.enrollment_provider_id !== null || row.operation_cid !== operationCid || row.alert_webhook_url !== alertWebhookUrl ||
+        state?.services?.hail?.type !== "HailMessaging" || state.services.hail.endpoint !== `${providerOrigin}/hail`))
         throw new Error("Managed enrollment does not match");
+      if (providerId) await tx`INSERT INTO monitor_receiver_cleanup(did,operation_cid,receiver_url)
+        VALUES (${did},${row.operation_cid},${row.alert_webhook_url}) ON CONFLICT(did) DO NOTHING`;
       await tx`UPDATE monitored_dids SET stopped_at=coalesce(stopped_at,clock_timestamp()),poll_ready=false WHERE did=${did}`;
       await tx`UPDATE monitor_alerts SET lease_token=NULL,lease_expires_at=NULL WHERE did=${did} AND sent_at IS NULL`;
+    });
+  }
+
+  // A current owner-signed PLC operation authorizes management handoff, not
+  // approval of the new expected PLC state. Preserve coverage and alert history.
+  async handoff(did: string, operationCid: string, transferId: string, providerId: string,
+    claimReceiver: (url: string, did: string, bootstrapCid: string) => Promise<void>): Promise<boolean> {
+    const current = await this.readState(did);
+    if (current.cid !== operationCid) throw new Error("Handoff must name the current PLC operation");
+    return this.sql.begin(async tx => {
+      await tx`SELECT pg_advisory_xact_lock(686169156)`;
+      const provider = (await tx`SELECT * FROM monitor_enrollment_providers WHERE id=${providerId} AND enabled AND retired_at IS NULL FOR UPDATE`)[0];
+      if (!provider || current.state.services.hail?.type !== "HailMessaging" ||
+        current.state.services.hail.endpoint !== provider.provider_origin + "/hail") throw new Error("Destination provider differs");
+      await tx`SELECT pg_advisory_xact_lock(686169155, hashtext(${did}))`;
+      const row = (await tx`SELECT w.*,b.operation_cid AS bootstrap_cid FROM monitored_dids w
+        LEFT JOIN monitor_bootstrap_checkpoints b ON b.did=w.did WHERE w.did=${did} FOR UPDATE OF w`)[0];
+      if (!row || !row.enrollment_provider_id) return false; // Never claim independently managed monitoring.
+      if (row.stopped_at || !row.bootstrap_cid) throw new Error("Stopped enrollment cannot be transferred");
+      const receipt = (await tx`SELECT * FROM monitor_management_handoffs WHERE transfer_id=${transferId}`)[0];
+      if (receipt) {
+        if (receipt.did !== did || receipt.to_provider !== providerId || receipt.operation_cid !== operationCid ||
+          row.enrollment_provider_id !== providerId || row.management_cid !== operationCid) throw new Error("Handoff retry differs");
+        return true;
+      }
+      if (row.enrollment_provider_id === providerId) throw new Error("Identity already belongs to this provider");
+      const expected = typeof row.expected_state === "string" ? JSON.parse(row.expected_state) : row.expected_state;
+      const audit = typeof row.last_audit === "string" ? JSON.parse(row.last_audit) : row.last_audit;
+      this.assertNoHistoryRegression(audit, current.audit);
+      const operation = current.audit.find(entry => entry.cid === operationCid && !entry.nullified)!.operation;
+      // The trusted owner's highest-priority key is required; provider rotation
+      // authority alone must never transfer control over security notifications.
+      await assureValidSig([expected.rotationKeys[0]], operation);
+      const [usage] = await tx`SELECT count(*)::integer AS active FROM monitored_dids
+        WHERE enrollment_provider_id=${providerId} AND stopped_at IS NULL`;
+      if (usage!.active >= provider.max_identities) throw new ProviderAdmissionError(429, "Destination enrollment capacity reached");
+      // Lock ownership across the bounded receiver request. An old-provider stop
+      // either wins before handoff or is rejected after it; never erase email first.
+      await claimReceiver(row.alert_webhook_url, did, row.bootstrap_cid);
+      await tx`INSERT INTO monitor_management_handoffs(transfer_id,did,from_provider,to_provider,operation_cid)
+        VALUES (${transferId},${did},${row.enrollment_provider_id},${providerId},${operationCid})`;
+      await tx`UPDATE monitored_dids SET enrollment_provider_id=${providerId},management_cid=${operationCid} WHERE did=${did}`;
+      return true;
     });
   }
 

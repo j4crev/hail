@@ -1,3 +1,4 @@
+import { handoffAccountMonitor } from "../src/accounts/monitor-handoff.js";
 import {encodePayload,decodePayload} from '@racrproto/codec';
 import {storeAttachment} from '../src/bodies/attachments.js';
 import {assertExportConformance} from "./support/account-history-conformance.js";
@@ -487,6 +488,16 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
       .toEqual({did,accountId,generation:2});
     expect(await withFreshServingGenerations(target.sql,()=>activation.activate(offer.transfer_id)))
       .toEqual({did,accountId,generation:2});
+    if(publicRuntime){
+      let handoffs=0;
+      const monitorClient={publicKey:monitor.monitorPublicKey,async handoff(identity:string,cid:string,transferId:string){
+        expect([identity,cid,transferId]).toEqual([did,cutoverCid,offer.transfer_id]);handoffs++;return true;
+      }};
+      expect(await handoffAccountMonitor(target.sql,monitorClient)).toBe("managed");
+      expect(await handoffAccountMonitor(target.sql,monitorClient)).toBe("idle");expect(handoffs).toBe(1);
+      expect((await target.sql`SELECT operation_cid,serving_generation::integer FROM account_monitor_bindings WHERE account_id=${accountId}`)[0])
+        .toEqual({operation_cid:cutoverCid,serving_generation:2});
+    }
     expect((await target.sql<{onboarding_state:string;canonical_address:string}[]>`SELECT onboarding_state,canonical_address
       FROM provider_accounts WHERE id=${accountId} AND did=${did}`)[0]).toEqual({onboarding_state:"active",canonical_address:"alice@b.example.com"});
     expect(Number((await target.sql<{generation:number|string}[]>`SELECT generation FROM account_serving_generations WHERE account_id=${accountId}`)[0]?.generation)).toBe(2);
@@ -639,6 +650,13 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
     phase="return activation";
     expect(await withFreshServingGenerations(source.sql,()=>returnActivation.activate(returnTransfer,returnMonitor))).toEqual({did,accountId,generation:3});
     expect(await withFreshServingGenerations(source.sql,()=>returnActivation.activate(returnTransfer))).toEqual({did,accountId,generation:3});
+    if(publicRuntime){
+      expect(await handoffAccountMonitor(source.sql,{publicKey:monitor.monitorPublicKey,async handoff(identity,cid,transferId){
+        expect([identity,cid,transferId]).toEqual([did,returnCid,returnTransfer]);return true;
+      }})).toBe("managed");
+      expect((await source.sql`SELECT operation_cid,serving_generation::integer FROM account_monitor_bindings WHERE account_id=${accountId}`)[0])
+        .toEqual({operation_cid:returnCid,serving_generation:3});
+    }
     expect(Number((await source.sql<{generation:string|number}[]>`SELECT generation FROM account_serving_generations WHERE account_id=${accountId}`)[0]?.generation)).toBe(3);
     expect((await source.sql<{canonical_address:string}[]>`SELECT canonical_address FROM provider_accounts WHERE id=${accountId}`)[0]?.canonical_address)
       .toBe("alice@a.example.com");

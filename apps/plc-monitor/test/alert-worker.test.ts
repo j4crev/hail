@@ -304,3 +304,29 @@ it("removes managed alert recipients idempotently and discards delayed signed al
   }, body: bytes }), env)).status).toBe(204);
   expect(send).not.toHaveBeenCalled();
 });
+
+it("requires monitor signatures for transferred recipient cleanup and never revives stopped bindings",async()=>{
+  const signer=new MonitorSigner(generateKeyPairSync("ed25519").privateKey);
+  const env:any={MONITOR_PUBLIC_KEY:signer.publicDidKey,SIGNUP_EMAIL_TOKEN:"A".repeat(43)};
+  const store=deduplicator(env);env.ALERT_DEDUPLICATOR=store;
+  const did=`did:plc:${"a".repeat(24)}`,operationCid=(await cidForCbor({test:"lifecycle"})).toString();
+  store.values.set(`recipient:${did}`,{did,operationCid,email:"owner@example.com",signupId:"signup",signupHash:"hash",verifiedAt:Date.now()});
+  store.values.set("signup:signup",{email:"owner@example.com"});
+  const lifecycle=async(action:"claim"|"stop",sign=signer.signReceiverLifecycle.bind(signer),issuedAt=Math.floor(Date.now()/1000))=>{
+    const bytes=new TextEncoder().encode(JSON.stringify({type:"hail.plc-monitor-receiver-lifecycle",version:1,did,operationCid,action,issuedAt}));
+    return worker.fetch(new Request("https://alerts.example/hail/signup/lifecycle",{method:"POST",headers:{"Content-Type":"application/json",
+      "X-Hail-Monitor-Key":signer.publicDidKey,"X-Hail-Monitor-Signature":encodeBase64Url(sign(bytes))},body:bytes}),env);
+  };
+  expect((await lifecycle("claim",signer.signAlert.bind(signer))).status).toBe(401);
+  expect((await lifecycle("claim",undefined,0)).status).toBe(400);
+  expect((await lifecycle("claim")).status).toBe(204);
+  expect((await lifecycle("claim")).status).toBe(204);
+  expect((await worker.fetch(new Request("https://alerts.example/signup-email/remove-monitoring",{method:"POST",headers:{
+    "Content-Type":"application/json",Authorization:`Bearer ${"A".repeat(43)}`},body:JSON.stringify({did,operationCid})}),env)).status).toBe(409);
+  expect(store.values.has(`recipient:${did}`)).toBe(true);
+  expect((await lifecycle("stop")).status).toBe(204);
+  expect((await lifecycle("stop")).status).toBe(204);
+  expect((await lifecycle("claim")).status).toBe(409);
+  expect(store.values.has(`recipient:${did}`)).toBe(false);
+  expect(store.values.has("signup:signup")).toBe(false);
+});

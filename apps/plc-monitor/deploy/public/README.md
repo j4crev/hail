@@ -200,7 +200,7 @@ The base Compose publishes no API port. For automatic enrollment, bind the monit
 API to `0.0.0.0:3001` inside the container and add only a host-loopback port mapping
 in your private deployment overlay. Put a loopback reverse proxy in front of it and
 route your HTTPS ingress to that proxy. Preserve the enrollment Host, POST
-method and exact `/api/v1/onboarding`, `/api/v1/onboarding/stop`, and
+method and exact `/api/v1/onboarding`, `/api/v1/onboarding/stop`, `/api/v1/onboarding/handoff`, and
 `/api/v1/providers/register` paths. Keep the service-token check for enrollment and
 stop; registration instead proves control of both HTTPS origins. Provider IP
 allowlists are no longer required. Preserve the separate incident UI routes.
@@ -276,7 +276,7 @@ The existing private API listener serves the incident pages as well as enrollmen
 No new plaintext/public container port is needed. The incident origin must be
 reachable by users, independently of enrollment credentials.
 
-Keep `/api/v1/onboarding` and `/api/v1/onboarding/stop` under their authenticated
+Keep `/api/v1/onboarding`, `/api/v1/onboarding/stop`, and `/api/v1/onboarding/handoff` under their authenticated
 method/host restrictions. Add a separate host-specific matcher for
 `/incidents/*` and only GET/POST; proxy it to the same loopback backend. All other
 paths remain denied. Use `configure-incidents.py --check` then `--apply` through

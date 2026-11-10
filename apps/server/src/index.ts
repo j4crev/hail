@@ -1,3 +1,4 @@
+import { handoffAccountMonitor } from "./accounts/monitor-handoff.js";
 import { cleanAccountMonitor } from "./accounts/monitor-cleanup.js";
 import {pruneConversationState} from './accounts/conversation-memberships.js';
 import { createApp } from "./app.js";
@@ -215,13 +216,15 @@ if(connections?.federation)setInterval(async()=>{
 },1_000);
 
 if (config.signupMonitor && config.signupEmail) {
-  const cleanupMonitor = new SignupMonitorClient(config.signupMonitor), cleanupEmail = new SignupEmailClient(config.signupEmail);
+  const cleanupMonitor = new SignupMonitorClient(config.signupMonitor);
   let running = false;
   const cleanMonitoring = async () => {
     if (running) return;
     running = true;
     try {
-      const outcome = await cleanAccountMonitor(database.sql, cleanupMonitor, cleanupEmail);
+      const handoff = await handoffAccountMonitor(database.sql, cleanupMonitor);
+      if (handoff !== "idle") console.info(JSON.stringify({ event: "account-monitor-handoff", outcome: handoff }));
+      const outcome = await cleanAccountMonitor(database.sql, cleanupMonitor);
       if (outcome !== "idle") console.info(JSON.stringify({ event: "account-monitor-cleanup", outcome }));
     } catch { console.error(JSON.stringify({ event: "account-monitor-cleanup-error" })); }
     finally { running = false; }

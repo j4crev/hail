@@ -1,11 +1,9 @@
 import type { SQL } from "bun";
 import type { SignupMonitorClient } from "../onboarding/monitor.js";
-import type { SignupEmailClient } from "../onboarding/email.js";
 
 // Lock only the outbox row across bounded network calls. Concurrent workers skip
 // it; a crash releases the lock and retries the idempotent remote operations.
-export async function cleanAccountMonitor(sql: SQL, monitor: Pick<SignupMonitorClient, "publicKey" | "stop">,
-  email: Pick<SignupEmailClient, "removeMonitoring">): Promise<"idle" | "completed" | "retry"> {
+export async function cleanAccountMonitor(sql: SQL, monitor: Pick<SignupMonitorClient, "publicKey" | "stop">): Promise<"idle" | "completed" | "retry"> {
   return sql.begin(async tx => {
     const row = (await tx`SELECT c.* FROM account_monitor_cleanup c
       JOIN provider_accounts a ON a.id=c.account_id
@@ -14,8 +12,8 @@ export async function cleanAccountMonitor(sql: SQL, monitor: Pick<SignupMonitorC
     if (!row) return "idle";
     try {
       if (row.monitor_public_key !== monitor.publicKey) throw new Error("Cleanup monitor pin differs");
-      // Remove the external destination first, including pending alert delivery.
-      await email.removeMonitoring(row.did, row.operation_cid);
+      // The monitor checks current ownership before scheduling signed receiver
+      // cleanup. An old provider must never remove the destination directly.
       await monitor.stop(row.did, row.operation_cid);
       await tx`UPDATE account_monitor_cleanup SET completed_at=clock_timestamp(),attempt_count=attempt_count+1
         WHERE account_id=${row.account_id}`;

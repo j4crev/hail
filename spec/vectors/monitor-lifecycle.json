@@ -1,0 +1,18 @@
+{
+  "description": "State-transition conformance vectors; C0, C1, C2 denote distinct valid owner-signed PLC operation CIDs",
+  "initial": { "provider": "A", "managementCid": "C0", "receiverBootstrapCid": "C0", "active": true },
+  "transitions": [
+    { "action": "disable A", "result": "polling continues; A API refused" },
+    { "action": "handoff to B at C1 signed only by lower-priority provider key", "result": "refused; unchanged" },
+    { "action": "handoff to B at owner-signed C1; receiver claim fails", "result": "refused; unchanged" },
+    { "action": "handoff to B at owner-signed C1; receiver claimed", "result": "owner B; management C1; receiver C0; coverage preserved" },
+    { "action": "retry same B transfer at C1", "result": "success; unchanged" },
+    { "action": "A direct receiver removal at C0", "result": "409; claimed binding preserved" },
+    { "action": "enable A; A stop C0", "result": "409; B monitoring continues" },
+    { "action": "handoff back to A at owner-signed C2", "result": "owner A; management C2; receiver C0" },
+    { "action": "A stop C0 or B stop C1", "result": "409; current monitoring continues" },
+    { "action": "A stop C2", "result": "204; polling stopped; durable signed receiver stop at C0 queued" },
+    { "action": "signed receiver stop C0; exact retry", "result": "204 both times; email erased; tombstone retained" },
+    { "action": "claim stopped C0", "result": "409; no resurrection" }
+  ]
+}

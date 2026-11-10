@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Monitor signed receiver lifecycle v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["type", "version", "did", "operationCid", "action", "issuedAt"],
+  "properties": {
+    "type": { "const": "hail.plc-monitor-receiver-lifecycle" },
+    "version": { "const": 1 },
+    "did": { "type": "string", "pattern": "^did:plc:[a-z2-7]{24}$" },
+    "operationCid": { "type": "string", "pattern": "^b[a-z2-7]+$" },
+    "action": { "enum": ["claim", "stop"] },
+    "issuedAt": { "type": "integer" }
+  },
+  "$comment": "Require canonical DAG-CBOR/SHA-256 CID, timestamp within 300 seconds, pinned monitor signature over purpose-separated exact JSON bytes, and binding-specific state checks; see monitor-providers.md."
+}

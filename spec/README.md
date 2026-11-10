@@ -44,7 +44,7 @@ Historical implementation/rollout notes do not override the current profile belo
 | Connections | Invitation, confirmation and control v1; [consent](connection-auth.md), [federation](connection-federation.md), [wire binding](connection-wire.md) |
 | Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
 | Custody | [Account onboarding](account-onboarding.md), [managed custody](managed-custody.md); [reduced-assurance alpha](alpha-onboarding.md) is an explicitly weaker deployment profile |
-| Reference monitor service | Provider registration v1 and scoped enrollment in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
+| Reference monitor service | Provider registration, scoped enrollment, management handoff and signed receiver lifecycle v1 in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
 | Transfer | Handshake v1, portable snapshot v7, managed snapshot v8, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
 
 Envelope versions select different authority models. V4 is not a replacement for

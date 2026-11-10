@@ -1,3 +1,4 @@
+import { ReceiverLifecycleClient } from "./receiver-lifecycle.js";
 import { EnrollmentProviders, ProviderAdmissionError, type EnrollmentProvider } from "./providers.js";
 import { PinnedHttpsClient } from "./public-http.js";
 import { CID } from "multiformats/cid";
@@ -45,8 +46,9 @@ export function createMonitorEnrollmentApi(config: MonitorEnrollmentConfig, moni
   const json = (value: unknown, status = 200) => Response.json(value, { status,
     headers: { "Cache-Control": "no-store", ...(status === 202 || status === 429 ? { "Retry-After": "15" } : {}) } });
   return { async fetch(input: Request): Promise<Response> {
+    const handoff = new URL(input.url).pathname === "/api/v1/onboarding/handoff";
     const stopping = new URL(input.url).pathname === "/api/v1/onboarding/stop";
-    if (!stopping && new URL(input.url).pathname !== "/api/v1/onboarding") return json({ error: "Not found" }, 404);
+    if (!stopping && !handoff && new URL(input.url).pathname !== "/api/v1/onboarding") return json({ error: "Not found" }, 404);
     if (input.method !== "POST") return json({ error: "Use POST" }, 405);
     const now = Date.now();
     if (now - windowStart >= 60_000) { windowStart = now; requests = 0; }
@@ -64,22 +66,33 @@ export function createMonitorEnrollmentApi(config: MonitorEnrollmentConfig, moni
     try {
       if (input.headers.get("Content-Type") !== "application/json" || input.headers.has("Content-Encoding"))
         return json({ error: "Use uncoded JSON" }, 415);
-      if (stopping) {
-        let did: string, operationCid: string;
+      if (stopping || handoff) {
+        let did: string, operationCid: string, transferId: string | undefined;
         try {
           const bytes = await boundedBody(input, 1024);
           if (!bytes) return json({ error: "Stop request exceeds limit" }, 413);
           const row = parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as Record<string, unknown>;
-          if (!row || Array.isArray(row) || Object.keys(row).sort().join(",") !== "did,operationCid" ||
+          if (!row || Array.isArray(row) || Object.keys(row).sort().join(",") !== (handoff ? "did,operationCid,transferId" : "did,operationCid") ||
             typeof row.did !== "string" || !/^did:plc:[a-z2-7]{24}$/.test(row.did) || typeof row.operationCid !== "string") throw new Error();
           const cid = CID.parse(row.operationCid);
           if (cid.toString() !== row.operationCid || cid.code !== 0x71 || cid.multihash.code !== 0x12 || cid.multihash.digest.length !== 32) throw new Error();
           did = row.did; operationCid = row.operationCid;
+          if (handoff) {
+            if (typeof row.transferId !== "string" || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(row.transferId)) throw new Error();
+            transferId = row.transferId;
+          }
         } catch { return json({ error: "Invalid managed monitoring stop request" }, 400); }
         try {
+          if (handoff) {
+            const receiver = new ReceiverLifecycleClient(signer);
+            const managed = await monitor.handoff(did, operationCid, transferId!, provider.id,
+              (url, identity, cid) => receiver.send(url, identity, cid, "claim"));
+            return json({ did, operationCid, transferId, managed });
+          }
           await monitor.stopManaged(did, operationCid, provider.provider_origin, `${provider.alert_origin}${SIGNUP_ALERT_PATH}`, provider.id);
           return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-        } catch { return json({ error: "Managed monitoring stop refused or unavailable" }, 409); }
+        } catch (error) { return json({ error: "Managed monitoring lifecycle request refused or unavailable" },
+          error instanceof ProviderAdmissionError ? error.status : 409); }
       }
       let query: MonitorEmailBindingQuery, state: NonNullable<Awaited<ReturnType<typeof validateOperationLog>>>;
       try {

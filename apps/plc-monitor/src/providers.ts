@@ -31,14 +31,34 @@ export class EnrollmentProviders {
   async rotate(id: string) {
     const token = randomBytes(32).toString("base64url");
     const rows = await this.sql`UPDATE monitor_enrollment_providers SET token_hash=${await hash(token)}
-      WHERE id=${id} RETURNING id`;
+      WHERE id=${id} AND retired_at IS NULL RETURNING id`;
     if (!rows.length) throw new Error("Unknown provider");
     return { id, token };
   }
   async setEnabled(id: string, enabled: boolean) {
-    if (!(await this.sql`UPDATE monitor_enrollment_providers SET enabled=${enabled} WHERE id=${id} RETURNING id`).length)
+    if (!(await this.sql`UPDATE monitor_enrollment_providers SET enabled=${enabled} WHERE id=${id} AND retired_at IS NULL RETURNING id`).length)
       throw new Error("Unknown provider");
     // Existing monitoring and notification delivery do not depend on this flag.
+  }
+  async retire(id: string, expectedActive: number): Promise<number> {
+    if (!Number.isSafeInteger(expectedActive) || expectedActive < 0) throw Error("Expected active count required");
+    return this.sql.begin(async tx => {
+      await tx`SELECT pg_advisory_xact_lock(686169156)`;
+      const provider = (await tx`SELECT id FROM monitor_enrollment_providers WHERE id=${id} FOR UPDATE`)[0];
+      if (!provider) throw Error("Unknown provider");
+      const rows = await tx`SELECT did FROM monitored_dids WHERE enrollment_provider_id=${id} AND stopped_at IS NULL ORDER BY did FOR UPDATE`;
+      if (rows.length !== expectedActive) throw Error("Active enrollment count changed; review before retiring");
+      await tx`UPDATE monitor_enrollment_providers SET enabled=false,retired_at=coalesce(retired_at,clock_timestamp()) WHERE id=${id}`;
+      await tx`INSERT INTO monitor_receiver_cleanup(did,operation_cid,receiver_url)
+        SELECT w.did,b.operation_cid,w.alert_webhook_url FROM monitored_dids w
+        JOIN monitor_bootstrap_checkpoints b ON b.did=w.did
+        WHERE w.enrollment_provider_id=${id} AND w.stopped_at IS NULL ON CONFLICT(did) DO NOTHING`;
+      await tx`UPDATE monitored_dids SET stopped_at=coalesce(stopped_at,clock_timestamp()),poll_ready=false
+        WHERE enrollment_provider_id=${id}`;
+      await tx`UPDATE monitor_alerts SET lease_token=NULL,lease_expires_at=NULL
+        WHERE sent_at IS NULL AND did IN (SELECT did FROM monitored_dids WHERE enrollment_provider_id=${id})`;
+      return rows.length;
+    });
   }
   async authenticate(request: Request): Promise<EnrollmentProvider> {
     const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("Authorization") ?? "")?.[1];

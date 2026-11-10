@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, createPublicKey, sign, type KeyObject } f
 import { readFile, stat } from "node:fs/promises";
 import { base58btc } from "multiformats/bases/base58";
 import { encodeDeterministic, type HailValue } from "@racrproto/codec";
+import { RECEIVER_LIFECYCLE_CONTEXT } from "./receiver-lifecycle-wire.js";
 import { EMAIL_BINDING_CONTEXT } from "./email-binding.js";
 
 const ALERT_CONTEXT = new TextEncoder().encode("hail.plc-monitor-alert.v1\0");
@@ -43,6 +44,10 @@ export class MonitorSigner {
 
   registrationToken(bytes: Uint8Array): string {
     return createHash("sha256").update(this.sign(new TextEncoder().encode("hail.monitor-provider-credential.v1\0"), bytes)).digest("base64url");
+  }
+
+  signReceiverLifecycle(bytes: Uint8Array): Uint8Array {
+    return this.sign(new TextEncoder().encode(RECEIVER_LIFECYCLE_CONTEXT), bytes);
   }
 
   signAlert(bytes: Uint8Array): Uint8Array { return this.sign(ALERT_CONTEXT, bytes); }

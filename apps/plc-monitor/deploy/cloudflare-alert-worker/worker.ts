@@ -1,3 +1,4 @@
+import { RECEIVER_LIFECYCLE_CONTEXT, RECEIVER_LIFECYCLE_PATH, checkReceiverLifecycle } from "../../src/receiver-lifecycle-wire.js";
 import { alertMessage } from "./alert-message.js";
 import { base58btc } from "multiformats/bases/base58";
 import { parseJsonWithoutDuplicateKeys } from "../../src/strict-json.js";
@@ -38,6 +39,24 @@ export class AlertDeduplicator {
     let alert:Record<string,unknown>;
     try{alert=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;}catch{return new Response(null,{status:400});}
     if(signupEmailPaths.has(path))return signupEmail(path,alert,this.state.storage,this.env);
+    if(path==="/lifecycle"){
+      try{checkReceiverLifecycle(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
+      return this.state.storage.transaction(async storage=>{
+        const recipient=await storage.get<Recipient>(`recipient:${alert.did}`),stopped=await storage.get<string>(`stopped-monitoring:${alert.did}`);
+        if(recipient&&recipient.operationCid!==alert.operationCid||stopped&&stopped!==alert.operationCid)
+          return new Response(null,{status:409});
+        if(alert.action==="claim"){
+          if(!recipient||stopped)return new Response(null,{status:409});
+          await storage.put(`recipient:${alert.did}`,{...recipient,monitorControlled:true});
+        }else{
+          if(!recipient&&!stopped)return new Response(null,{status:409});
+          await storage.put(`stopped-monitoring:${alert.did}`,alert.operationCid);
+          await storage.delete(`recipient:${alert.did}`);
+          if(recipient)await storage.delete(`signup:${recipient.signupId}`);
+        }
+        return new Response(null,{status:204});
+      });
+    }
     if(path==="/binding"){
       try{checkEmailBindingQuery(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
       const recipient=await this.state.storage.get<Recipient>(`recipient:${alert.did}`);
@@ -129,16 +148,22 @@ export default {
       await env.HAIL_PRODUCTION_MONITOR.put(backupKey,String(Date.now()));
       return new Response(null,{status:204});
     }
-    const bindingQuery=url.pathname===SIGNUP_BINDING_PATH,consumer=url.pathname===SIGNUP_ALERT_PATH;
-    if(request.method!=="POST"||url.pathname!=="/hail"&&!consumer&&!bindingQuery)return new Response(null,{status:404});
+    const lifecycleQuery=url.pathname===RECEIVER_LIFECYCLE_PATH,bindingQuery=url.pathname===SIGNUP_BINDING_PATH,consumer=url.pathname===SIGNUP_ALERT_PATH;
+    if(request.method!=="POST"||url.pathname!=="/hail"&&!consumer&&!bindingQuery&&!lifecycleQuery)return new Response(null,{status:404});
     if(request.headers.get("content-type")!=="application/json")return new Response(null,{status:415});
-    const bytes=await boundedBody(request,bindingQuery?4096:65_536);if(!bytes)return new Response(null,{status:413});
+    const bytes=await boundedBody(request,bindingQuery||lifecycleQuery?4096:65_536);if(!bytes)return new Response(null,{status:413});
     const key=request.headers.get("x-hail-monitor-key"),encoded=request.headers.get("x-hail-monitor-signature");
     if(key!==env.MONITOR_PUBLIC_KEY||!encoded||!signature(encoded)||!await verify(bytes,encoded,key,
-      bindingQuery?new TextEncoder().encode(EMAIL_BINDING_CONTEXT):context))return new Response(null,{status:401});
+      lifecycleQuery?new TextEncoder().encode(RECEIVER_LIFECYCLE_CONTEXT):bindingQuery?new TextEncoder().encode(EMAIL_BINDING_CONTEXT):context))return new Response(null,{status:401});
     let alert:Record<string,unknown>;
     try{alert=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;}catch{return new Response(null,{status:400});}
     if(!alert||typeof alert!=="object"||Array.isArray(alert))return new Response(null,{status:400});
+    if(lifecycleQuery){
+      try{checkReceiverLifecycle(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
+      const id=env.ALERT_DEDUPLICATOR.idFromName("hail-monitor-alerts");
+      return env.ALERT_DEDUPLICATOR.get(id).fetch(new Request("https://deduplicator.internal/lifecycle",{method:"POST",
+        headers:{"Content-Type":"application/json"},body:Uint8Array.from(bytes).buffer}));
+    }
     if(bindingQuery){
       try{checkEmailBindingQuery(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
       const id=env.ALERT_DEDUPLICATOR.idFromName("hail-monitor-alerts");

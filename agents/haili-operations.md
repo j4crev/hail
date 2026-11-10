@@ -9,6 +9,32 @@ the live provider. A Git push alone does not deploy. Public registration is the
 current intended policy; preserve it during application rollouts.
 
 
+## Multi-provider monitor rollout (2026-11-10 UTC)
+
+PR #60 deployed monitor commit `4cd643a6658aff80b722a9df752176600364df45`
+after main verification run `42840166161`. The monitor checkout is `/opt/hailproto`;
+the retained Compose site remains `/opt/hail/hail-plc-monitor-ts/deploy/public` with
+both enrollment and PostgreSQL overlays. Signing key, database, two active DIDs,
+and PostgreSQL uptime were preserved. One managed signup belongs to the Haili
+registration; the manually enrolled administrator remains independently managed.
+
+The enrollment API at `https://enroll.plcmonitor.us` accepts public registration
+and authenticated provider calls without the former source-IP allowlist. Its
+identity origin remains `https://plcmonitor.us`. The existing provider credential
+was imported as a hash; provider images/configuration were unchanged. Actual
+provider authentication passed from IPv4 and IPv6, unauthenticated requests returned
+401, and public registration validation returned 400 for an empty request.
+
+Encrypted backup `monitor-20261110T150225Z-67969294.tar.gpg` passed off-host checksum,
+decryption and full PostgreSQL 18 restore; post-rollout backup
+`monitor-20261110T150835Z-b5082724.tar.gpg` passed off-host checksum verification.
+The prior monitor image is retained as `hail-plc-monitor-ts:before-multiprovider-20261110`;
+protected previous configuration and rollout evidence remain under
+`/var/lib/hail-monitor-enrollment/multi-provider-20261110/`. Installed health probes
+now verify unauthenticated rejection without requiring a plaintext legacy token;
+authenticated probes run separately from the provider. This section records PR #60,
+not deployment of the subsequent lifecycle/handoff changes.
+
 ## Hostinger split-origin installation (2026-11-10 UTC)
 
 Production hostname routes now use `haili-hostinger` (`100.99.115.0`, public IP

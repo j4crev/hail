@@ -178,23 +178,39 @@ no evidence is rewritten or approved by this change.
 
 ### Account deletion
 
-Managed alpha account deletion queues retryable removal of the signup email
-recipient and stops the matching PLC enrollment. Stopped DIDs retain audit and
-replay-prevention evidence but are no longer polled or attested. Independent
-webhook enrollments are not cancelled. See the
-[alpha lifecycle contract](../../spec/alpha-onboarding.md#account-deletion-and-managed-monitoring).
+Managed account deletion commits a provider cleanup outbox. The monitor first
+checks current provider ownership and management CID, then stops polling and
+queues signed receiver cleanup. Receiver outages cannot keep polling alive, and a
+former provider cannot erase the verified destination after handoff. Stopped DIDs
+retain audit/tombstone evidence. Independent enrollments are not cancelled.
+See the [lifecycle contract](../../spec/monitor-providers.md#managed-handoff-and-retirement-v1).
 
-Deploy the updated alert Worker and monitor (including migration 7 and the
-restricted edge allowlist for `/api/v1/onboarding/stop` and installed health
-verifier that excludes stopped DIDs) before the provider
-worker. Provider migration 105 backfills cleanup for already-closed alpha
-accounts. If services are unavailable, cleanup remains queued and retries; watch
-`account-monitor-cleanup` / `account-monitor-cleanup-error` provider logs and
-pending rows in `account_monitor_cleanup`. Monitor and alert Worker deployment
-are separate from a provider/client release. Root-owned ingress tooling requires
-its usual reviewed installation; changing this checkout does not update it.
-Once stop records exist, do not roll back to a monitor build that ignores
-`stopped_at`; schema rollback explicitly refuses to remove this evidence.
+Deploy the provider with monitor-first cleanup, then the updated alert receiver,
+then the monitor with migration 10 and `/api/v1/onboarding/handoff` ingress. The
+monitor backfills cleanup for previously stopped owned enrollments. Keep migration
+105's closed-account backfill and migration 108's local bindings/outbox. Root-owned
+ingress and verifier scripts require separate reviewed installation; editing the
+checkout does not update them. Do not enable handoff against an old receiver.
+
+Inspect `account-monitor-handoff`, `account-monitor-cleanup` and
+`monitor-receiver-cleanup` logs. Pending/repeated failures are visible in
+`account_monitor_handoffs`, `account_monitor_cleanup`, and
+`monitor_receiver_cleanup` (attempt_count, next_attempt_at, completed_at). Retries
+back off to one hour without silently abandoning responsibility. Receiver email
+contents and credentials must not appear in logs.
+
+`monitor:providers list` reports current active ownership. `disable ID` revokes API
+access while polling continues. `retire ID EXPECTED_ACTIVE_COUNT` explicitly stops
+only currently owned identities and queues signed receiver cleanup. Review the
+count immediately before retirement; a changed count aborts. Retirement is not
+credential rotation and cannot be undone by `enable`.
+
+Preserve expanded schemas and the new receiver during application rollback.
+Once handoffs exist, older monitor code cannot enforce the management generations:
+roll forward or keep mutation ingress disabled during recovery. Schema rollback
+refuses retained handoff/retirement evidence or unfinished cleanup. Do not roll a
+provider back to email-first cleanup after enabling handoffs. Stop workers before
+any schema rollback. No periodic expiry or annual attestation is enabled.
 
 ## Incident review and recovery
 
