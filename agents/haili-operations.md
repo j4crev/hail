@@ -16,8 +16,11 @@ rather than migrating existing accounts. Use the
 [new-provider guide](../apps/server/deploy/standalone/README.md) with
 `svr.haili.app` (provider/media), `haili.app` (browser/passkeys), and native address
 domain `haili.app`. Retain host-only browser cookies and scoped media tickets.
-The operator will perform the reinstall; this source change does not authorize
-an agent to remove production data or claim production has been migrated.
+The operator has authorized an agent to perform the fresh installation on the
+existing server and archive/reset the dedicated test monitor (2026-11-09). Follow
+the new-provider guide, correcting verified gaps as installation proceeds. This
+authorization does not broaden SSH/sudo access or permit deleting recovery material.
+Record actual installation evidence before claiming production has been replaced.
 
 Archive the old provider state and recovery material before replacement. New
 accounts have new DIDs; public PLC history and remote recipients' data are not

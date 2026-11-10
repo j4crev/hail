@@ -48,7 +48,13 @@ administration network. The supplied Caddy terminates HTTPS and obtains
 certificates automatically. The database and provider have no host-published
 ports. Do not expose PostgreSQL or the provider's HTTP port directly.
 
-From a reviewed repository checkout:
+Install Git, OpenSSL, Docker Engine and its Compose plugin using your Linux
+distribution's supported installation procedure. Verify `docker version` and
+`docker compose version` through your existing privileged administration access.
+Check out the exact source commit recorded in the publication artifact, so the
+Compose files and images describe the same release.
+
+From that reviewed repository checkout:
 
 ```bash
 cd apps/server/deploy/standalone
@@ -655,13 +661,51 @@ is not an unbound vault for a new signup, even if the new account uses the same
 human-readable address. Clear stale browser session/signup state for this app and
 use a new private CLI state directory.
 
-For Haili, use `svr.haili.app` / `haili.app` / `haili.app` for provider, browser,
-and native address domains. This guide's direct-HTTPS ingress differs from the
-existing Haili tunnel; choose the intended ingress explicitly. Do not silently
-reuse the old deployment wrapper against a new Compose project or remove its
-volumes. Keep the old deployment stopped and archived until the new install and
-backups are verified; releasing the same address at a new DID does not notify
-old contacts or replace their saved relationships.
+Before reusing a host:
+
+1. Inventory the active Compose project, all overlays, database/storage volumes,
+   image digests, secrets, backup jobs, ingress and monitoring. Record which
+   accounts will be retired. Stop application writers before the final backup.
+2. Make an encrypted off-host archive of the database, configuration and recovery
+   material, and prove the database dump restores on a disposable instance of the
+   same PostgreSQL major. Preserve the original volumes and encryption keys.
+3. Select fresh database storage explicitly. The supplied Compose project is named
+   `hail-provider`; a previous installation with that name will reuse its volumes.
+   For an independent replacement, use a new `--project-name` on **every** Compose
+   command and verify its resolved volume names before startup. Never use
+   `down --volumes` to make an installation appear fresh.
+4. Decide which existing service owns ports 80/443 and the public hostnames before
+   starting Caddy. Follow this guide's direct HTTPS path, or adapt ingress for your
+   existing proxy using the requirements below. Keep the old application stopped
+   so it cannot accept writes while the new service owns those names.
+5. Follow the installation and first-administrator steps above. Adapt existing
+   backup and operations tooling to the selected project, service names and full
+   overlay list before enabling routine jobs. Verify a new off-host backup and
+   restore before retiring the archived deployment.
+
+Keep old data archived until the new install and backups are verified. Releasing
+an address at a new DID does not notify old contacts or replace their saved
+relationships. Application image rollback cannot restore the retired accounts;
+restoring the previous installation is a separate data/configuration recovery.
+
+### Optional reverse proxy or tunnel
+
+A proxy or tunnel is an alternative ingress deployment, not a signup dependency.
+Publish both provider and browser hostnames and preserve the original Host header
+when routing to Caddy. Bind its HTTP listener to loopback when the connector runs
+on the same host; restrict it to the proxy network otherwise. Configure TLS at the
+public edge and secure any non-loopback upstream transport.
+
+Trust client-address headers only from that explicitly configured proxy. Caddy
+must replace `X-Hail-Trusted-Client-IP` before forwarding requests; direct callers
+must not be able to impersonate the proxy. Disable caching and browser challenges
+for API/federation/authentication traffic. Verify both hostnames from outside the
+server and confirm uploaded media is served only on the provider origin.
+
+Provider-specific tunnel installation, DNS records and firewall rules belong in
+that operator's site configuration. The [Haili operations notes](../../../../agents/haili-operations.md)
+record that deployment's Cloudflare setup and installed wrapper constraints;
+those are not prerequisites for an independent provider.
 
 A reset of the dedicated test PLC monitor is a separate operation. Follow
 [archive and restart monitoring](../../../plc-monitor/deploy/public/reset-test-monitor.md)
