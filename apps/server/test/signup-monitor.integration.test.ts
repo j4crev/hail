@@ -1,3 +1,4 @@
+import { cleanMonitorReceiver } from "../../plc-monitor/src/receiver-lifecycle.js";
 import { EnrollmentProviders } from "../../plc-monitor/src/providers.js";
 import { AccountLifecycle } from "../src/accounts/lifecycle.js";
 import { cleanAccountMonitor } from "../src/accounts/monitor-cleanup.js";
@@ -409,22 +410,31 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
         expect(await new AccountLifecycle(db.sql).close(ownerSession, ownerSession.canonical_address)).toEqual({ closed: true });
         expect(await accounts.authenticate(undefined, session.token)).toBeNull();
         expect(await db.sql`SELECT * FROM account_monitor_cleanup WHERE completed_at IS NULL`).toHaveLength(1);
-        expect(await cleanAccountMonitor(db.sql, { publicKey: "wrong-pin", stop: async () => { throw new Error("Must not call"); } }, email)).toBe("retry");
+        expect(await cleanAccountMonitor(db.sql, { publicKey: "wrong-pin", stop: async () => { throw new Error("Must not call"); } })).toBe("retry");
         expect(stored.has(`recipient:${identity.did}`)).toBe(true);
         await db.sql`UPDATE account_monitor_cleanup SET next_attempt_at=clock_timestamp()`;
+        const receiverCleanup = { async send(url: string, did: string, operationCid: string, action: "claim" | "stop") {
+          const bytes = new TextEncoder().encode(JSON.stringify({ type: "hail.plc-monitor-receiver-lifecycle", version: 1,
+            did, operationCid, action, issuedAt: Math.floor(Date.now()/1000) }));
+          const result = await receiverFetch(new URL("/hail/signup/lifecycle",url), { method: "POST", headers: {
+            "Content-Type": "application/json", "X-Hail-Monitor-Key": signer.publicDidKey,
+            "X-Hail-Monitor-Signature": encodeBase64Url(signer.signReceiverLifecycle(bytes)) }, body: bytes });
+          if(result.status!==204)throw Error("Receiver unavailable");
+        } };
         receiverAvailable = false;
-        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("retry");
-        expect((await monitorDb.sql`SELECT stopped_at FROM monitored_dids WHERE did=${identity.did}`)[0]!.stopped_at).toBeNull();
-        receiverAvailable = true;
-        await db.sql`UPDATE account_monitor_cleanup SET next_attempt_at=clock_timestamp()`;
         loseMonitorReply = true;
-        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("retry");
-        expect(stored.has(`recipient:${identity.did}`)).toBe(false);
+        expect(await cleanAccountMonitor(db.sql, cleanupClient)).toBe("retry");
         expect((await monitorDb.sql`SELECT stopped_at FROM monitored_dids WHERE did=${identity.did}`)[0]!.stopped_at).not.toBeNull();
-        // A subsequent worker invocation safely finishes after a lost acknowledgement.
+        expect(stored.has(`recipient:${identity.did}`)).toBe(true);
+        expect(await cleanMonitorReceiver(monitorDb.sql,receiverCleanup)).toBe("retry");
+        // Provider acknowledgement and receiver delivery have independent durable retries.
         await db.sql`UPDATE account_monitor_cleanup SET next_attempt_at=clock_timestamp()`;
-        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("completed");
-        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("idle");
+        expect(await cleanAccountMonitor(db.sql, cleanupClient)).toBe("completed");
+        expect(await cleanAccountMonitor(db.sql, cleanupClient)).toBe("idle");
+        receiverAvailable = true;
+        await monitorDb.sql`UPDATE monitor_receiver_cleanup SET next_attempt_at=clock_timestamp()`;
+        expect(await cleanMonitorReceiver(monitorDb.sql,receiverCleanup)).toBe("completed");
+        expect(stored.has(`recipient:${identity.did}`)).toBe(false);
         expect((await monitor.pollDid(identity.did)).inspected).toBe(0);
         await expect(monitor.attestOnboarding(identity.did, identity.operation_cid, monitorOrigin, signer)).rejects.toThrow();
         await expect(monitor.enroll(identity.did, identity.operation_cid, `${alertOrigin}/hail/signup`, await plc.getDocumentData(identity.did))).rejects.toThrow("stopped");
@@ -441,7 +451,7 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
         await db.sql`DELETE FROM schema_migrations WHERE version=105`;
         await db.migrate();
         expect(await db.sql`SELECT * FROM account_monitor_cleanup WHERE account_id=${setup.accountId} AND completed_at IS NULL`).toHaveLength(1);
-        expect(await cleanAccountMonitor(db.sql, cleanupClient, email)).toBe("completed");
+        expect(await cleanAccountMonitor(db.sql, cleanupClient)).toBe("completed");
         // The other account's live enrollment remains watched.
         expect((await monitorDb.sql`SELECT stopped_at FROM monitored_dids WHERE did=${genesis.did}`)[0]!.stopped_at).toBeNull();
       }

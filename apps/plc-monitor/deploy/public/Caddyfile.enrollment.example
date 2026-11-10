@@ -8,7 +8,7 @@
   @api {
     host enroll.monitor.example
     method POST
-    path /api/v1/onboarding /api/v1/onboarding/stop /api/v1/providers/register
+    path /api/v1/onboarding /api/v1/onboarding/stop /api/v1/onboarding/handoff /api/v1/providers/register
   }
   handle @api {
     reverse_proxy 127.0.0.1:3001 {

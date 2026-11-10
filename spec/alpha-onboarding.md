@@ -104,48 +104,37 @@ account deletion never publishes a PLC tombstone or changes the DID document.
 For a managed account whose retained preparation declares
 `reduced-assurance-alpha-v1`, successful local deletion must durably record
 cleanup responsibility in the same transaction as closure. Record the account
-ID, DID, original genesis CID and pinned monitor key, not a reusable Hail
-address. Previously closed accounts with this evidence are backfilled on upgrade.
-Other custody/assurance profiles do not enter this cleanup path. Failure to
-record responsibility must roll back closure. Network failures must not undo
-local deletion: retry cleanup until both services acknowledge it, including
-after process restart or loss of a successful response. The browser must disclose
-that cleanup can be delayed and that the PLC identity and independently arranged
-monitoring remain.
+ID, DID, current management CID and pinned monitor key, not a reusable Hail
+address. The initial management CID is the genesis CID. After a managed handoff
+it is the new owner-signed PLC operation CID. Previously closed alpha accounts
+with preparation evidence are backfilled on upgrade. The destination's retained
+managed handoff binding also carries the current serving generation. Independent
+monitoring is not adopted. Failure to record cleanup responsibility rolls back
+closure; network failures do not undo local deletion.
 
-The reference worker first removes the security-email destination, then stops
-the configured monitor. It refuses a different configured monitor key. Each
-request is `POST`, `Content-Type: application/json`, with no content encoding,
-redirect following, or user-selected destination. The exact JSON object is:
+The provider worker first requests `/api/v1/onboarding/stop`, authenticated with
+its enrollment credential, with exactly `did` and `operationCid` in uncoded JSON
+(maximum 1024 bytes). The monitor verifies current owner and management CID,
+marks polling inactive, and durably queues signed removal at the retained
+receiver. The provider retries until the monitor acknowledges; the monitor retries
+receiver cleanup independently, including after restart or a lost response.
+A changed configured monitor pin fails closed. Neither request accepts a
+caller-selected receiver. See the complete [handoff and signed receiver lifecycle
+contract](monitor-providers.md#managed-handoff-and-retirement-v1) for wire formats,
+status codes, authorization and A→B→A stale-request protection.
 
-```json
-{"did":"did:plc:aaaaaaaaaaaaaaaaaaaaaaaa","operationCid":"<canonical genesis DAG-CBOR CID>"}
-```
+The legacy provider-authenticated `/signup-email/remove-monitoring` endpoint is
+retained only for bindings not yet claimed by the monitor. It MUST reject a
+monitor-controlled recipient. Updated provider cleanup MUST NOT call it: removing
+an email destination before monitor authorization would let an old provider
+bypass handoff ownership. Signed lifecycle stop erases the recipient and retained
+signup email record, retaining a minimal DID/genesis-CID tombstone. Exact retries
+are idempotent; stopped bindings cannot be claimed or rebound.
 
-No extra or duplicate fields are allowed. `did` must be canonical `did:plc`;
-`operationCid` must be a canonical CID with DAG-CBOR codec and SHA-256 multihash.
-The APIs are:
-
-- Monitor: `/api/v1/onboarding/stop`, authenticated with the individual provider's
-  enrollment bearer credential. Maximum body: 1024 bytes.
-  The retained bootstrap CID and enrollment owner must match. The reviewed
-  bootstrap's Hail service must name the authenticated provider, and the alert
-  destination must equal its registered receiver's `/hail/signup`. These checks scope removal to the managed
-  signup integration, including existing enrollments. An independent webhook or
-  missing bootstrap is refused. Repeated stops of the same enrollment succeed.
-- Email receiver: `/signup-email/remove-monitoring`, authenticated with the
-  existing provider signup-email bearer secret. Maximum body: 4096 bytes. A
-  retained recipient or stop record with a different CID is refused. Otherwise
-  delete the recipient and its retained signup email record and retain a minimal
-  DID/CID stop record. Missing recipients are idempotent success. Binding the DID
-  again is refused, and subsequent valid signed consumer alerts are acknowledged
-  and discarded without email delivery.
-
-Both return empty `204` on success with `Cache-Control: no-store`; malformed
-requests return `400`, invalid authentication `401`, incorrect content type or
-encoding `415`, excessive body size `413`, and enrollment mismatch `409`.
-The monitor also applies its existing rate limit (`429`, `Retry-After: 15`).
-Failures, including transient service errors, remain pending at the provider.
+The browser must disclose delayed cleanup and that PLC identities and independently
+arranged monitoring remain. Existing account-deletion restrictions for retained
+migration history remain unchanged; lifecycle cleanup does not authorize erasing
+that history.
 
 Stopped monitor records retain audit evidence and a stop timestamp. They are
 excluded from polling, new notification claims, and both ongoing and onboarding

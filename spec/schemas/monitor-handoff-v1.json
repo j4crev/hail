@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Managed monitor handoff request v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["did", "operationCid", "transferId"],
+  "properties": {
+    "did": { "type": "string", "pattern": "^did:plc:[a-z2-7]{24}$" },
+    "operationCid": { "type": "string", "pattern": "^b[a-z2-7]+$" },
+    "transferId": { "type": "string", "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$" }
+  },
+  "$comment": "Enforce canonical DAG-CBOR/SHA-256 CID and owner-signed current canonical PLC state naming the authenticated destination; schema validation alone is not authorization."
+}

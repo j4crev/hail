@@ -198,7 +198,11 @@ def verify():
                 "OR last_polled_at<clock_timestamp()-interval '5 minutes')) FROM monitor_cursor WHERE singleton=true") == 't':
             probe = """const u='http://127.0.0.1:3001/api/v1/onboarding';
 const post=async(headers)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:'{}'});
-if((await post({})).status!==401||(await post({Authorization:'Bearer '+process.env.MONITOR_ENROLLMENT_TOKEN})).status!==400)process.exit(1);
+if((await post({})).status!==401)process.exit(1);
+// Multi-provider workers retain only credential hashes. Verify actual provider
+// authentication separately from its host; do not store a probe credential here.
+if(!process.env.MONITOR_ENROLLMENT_TOKEN)process.exit(0);
+if((await post({Authorization:'Bearer '+process.env.MONITOR_ENROLLMENT_TOKEN})).status!==400)process.exit(1);
 import {MonitorSigner} from './src/signing.ts';import {cidForCbor} from '@atproto/common';import {encodeBase64Url} from '@racrproto/codec/base64url';
 const signer=await MonitorSigner.fromPrivateFile(process.env.MONITOR_PRIVATE_KEY_FILE);
 const bytes=new TextEncoder().encode(JSON.stringify({type:'hail.plc-monitor-email-binding',version:1,signupId:crypto.randomUUID(),

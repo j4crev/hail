@@ -2,7 +2,7 @@
 
 This is the reference monitor's optional HTTPS service API, not Hail federation
 or a new PLC authority. It supports multiple Hail providers with separate service
-credentials. Generic public DID subscriptions, provider transfer of monitoring,
+credentials. Generic public DID subscriptions, annual renewal/expiry,
 and self-service replacement of an existing provider registration remain outside
 this version. Same-operator monitoring retains its reduced-assurance label.
 
@@ -128,3 +128,93 @@ both origins, public-proof theft, exact retries, expiry and revocation;
 limits, concurrent quota admission, ownership and preserved monitoring;
 `signup-monitor.integration.test.ts` verifies the existing end-to-end email binding,
 notification and attestation requirements with registered provider credentials.
+
+## Managed handoff and retirement v1
+
+`POST /api/v1/onboarding/handoff` uses the destination provider's credential,
+uncoded JSON (maximum 1024 bytes; [request schema](schemas/monitor-handoff-v1.json)), and exactly `did`, `operationCid`, `transferId`.
+DID and DAG-CBOR/SHA-256 CID encodings must be canonical; transferId is a lowercase
+UUID. Success is `200` with exactly those three fields plus boolean `managed`.
+The request shares onboarding admission limits. Invalid input is `400`, oversized
+body `413`, wrong content type/encoding `415`, authentication failure `401`/`403`,
+rate refusal `429`, and refused/unavailable handoff `409`.
+
+The monitor MUST validate the current canonical PLC audit, retained history
+continuity, exact operation CID, and destination Hail service endpoint. The current
+operation MUST be signed by the highest-priority recovery key in the monitor's
+trusted expected state. A lower-priority provider rotation signature is insufficient.
+Key replacement that differs from this trusted owner requires separately approved
+expectation review before handoff; the API cannot approve it implicitly.
+
+For a managed enrollment, the monitor atomically records the destination owner and
+new management CID. An immutable transfer receipt permits exact retries while that
+management state remains current. Conflicting transfer IDs, stopped enrollments,
+and stale retries fail closed. A valid endpoint change alone does not transfer
+management. Unowned/manual or absent monitoring returns `managed:false`; it MUST
+NOT be adopted. Handoff preserves the bootstrap, expected PLC state, coverage,
+notifications and verified security-email receiver. It does not acknowledge an
+incident or extend an attestation's assurance. Moving to another receiver requires
+a future independently verified transition; this version retains the old receiver,
+even if the destination provider registered a different alert origin.
+
+Before committing handoff, the monitor MUST successfully claim control of the
+retained receiver binding using the signed lifecycle protocol below. After claim,
+the receiver MUST reject direct provider removal and preserve monitor control on
+exact binding retries. This prevents the former provider's email-service credential
+from bypassing monitor ownership checks.
+
+`/api/v1/onboarding/stop` still accepts exactly `did` and `operationCid`; the CID
+now identifies the **current management generation**, initially the genesis CID
+and subsequently the handoff operation CID. Both authenticated provider ownership
+and management CID MUST match. A delayed request from A cannot stop B, nor can
+A's original request stop monitoring after A→B→A. Stop marks polling/attestation
+inactive immediately and durably queues signed cleanup of the original receiver.
+It retains audit and tombstone evidence and never resumes through enrollment retry.
+An already in-flight external email cannot be recalled.
+
+Credential disablement only blocks API requests. Explicit operator retirement is
+separate: `monitor:providers retire ID EXPECTED_ACTIVE_COUNT` disables credentials,
+permanently retires the registration, stops only its currently owned enrollments,
+and queues receiver cleanup in one transaction. A count mismatch aborts. Previously
+transferred identities and manually managed identities are untouched. Retirement
+cannot be reversed using credential enablement or self-service registration.
+
+### Signed receiver lifecycle v1
+
+`POST /hail/signup/lifecycle` accepts the [lifecycle schema](schemas/monitor-receiver-lifecycle-v1.json).
+Exactly `type`, `version`, `did`, `operationCid`, `action`, `issuedAt` are present.
+`type` is `hail.plc-monitor-receiver-lifecycle`, version is 1, action is `claim` or
+`stop`, and issuedAt is integer Unix seconds within ±300 seconds. operationCid is
+always the original receiver-bound genesis CID, **not** the current management CID.
+The monitor signs the exact UTF-8 JSON bytes prefixed by
+`hail.plc-monitor-receiver-lifecycle.v1\0` using its pinned Ed25519 key. Headers are
+`X-Hail-Monitor-Key` and unpadded base64url `X-Hail-Monitor-Signature`.
+Bodies are bounded to 4096 bytes; duplicate/extra fields and noncanonical CIDs fail.
+Other signature contexts, including ordinary alerts, MUST NOT authorize lifecycle.
+
+Claim requires an existing matching verified recipient, atomically marks it
+monitor-controlled, and is idempotent. Stop erases the matching recipient and
+retained signup record and retains a DID/genesis-CID tombstone. Exact stop retries
+return `204`; conflicting bindings, absent unknown bindings and attempts to claim
+a stopped binding return `409`. Invalid signatures return `401`, invalid fields or
+stale timestamps `400`. Successful claim and stop return `204` without email data.
+The monitor regenerates timestamps/signatures on bounded, durable cleanup retries;
+it never gives the provider a replayable signed stop capability.
+
+Reference monitor migration 10 adds management CIDs, handoff receipts, explicit
+retirement and receiver cleanup without rewriting existing evidence. Provider
+migration 108 tracks current serving-generation bindings and pending handoffs.
+The destination worker discovers successful public activations from selected,
+verified cutover evidence, checks its monitor pin and current serving generation,
+and retries handoff; stale generations are superseded. Different-monitor and
+independent enrollments are not adopted. Existing account-deletion restrictions
+for retained migration history remain in force; this change does not discard
+migration evidence to permit deletion. Provider account closure commits cleanup
+responsibility with closure; only the monitor authorizes receiver removal.
+
+Conformance: `lifecycle.integration.test.ts` covers owner versus provider signatures,
+receiver outages, exact retries, A→B→A stale cleanup, revocation versus retirement,
+and preserved coverage. `monitor-handoff.integration.test.ts` covers durable provider
+retry and serving-generation fences. `alert-worker.test.ts` verifies signature-domain
+separation, claimed-binding protection, idempotent erasure and no resurrection.
+The [lifecycle vectors](vectors/monitor-lifecycle.json) describe required transitions.

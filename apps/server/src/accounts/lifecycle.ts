@@ -106,6 +106,12 @@ export class AccountLifecycle {
         JOIN plc_operation_evidence e ON e.account_id=a.id AND e.did=a.did AND e.previous_cid IS NULL
         WHERE a.id=${session.account_id} AND p.custody_profile='managed' AND p.monitor_assurance='reduced-assurance-alpha-v1'
         ON CONFLICT(account_id) DO NOTHING`;
+      await tx`INSERT INTO account_monitor_cleanup(account_id,did,operation_cid,monitor_public_key)
+        SELECT b.account_id,b.did,b.operation_cid,b.monitor_public_key FROM account_monitor_bindings b
+        JOIN account_serving_generations g ON g.account_id=b.account_id AND g.generation=b.serving_generation
+        WHERE b.account_id=${session.account_id}
+        ON CONFLICT(account_id) DO UPDATE SET operation_cid=excluded.operation_cid,monitor_public_key=excluded.monitor_public_key,
+          next_attempt_at=clock_timestamp(),completed_at=NULL`;
       await releaseAccountAddress(tx,session.account_id,"account-deletion");
       await tx`UPDATE provider_accounts SET closed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=${session.account_id}`;
       return {closed:true};

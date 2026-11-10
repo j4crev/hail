@@ -1,3 +1,4 @@
+import { ReceiverLifecycleClient, cleanMonitorReceiver } from "../receiver-lifecycle.js";
 import { SourceAdmission } from "../admission.js";
 import { createProviderRegistrationApi } from "../provider-registration.js";
 import { EnrollmentProviders } from "../providers.js";
@@ -27,6 +28,7 @@ if (incidents && (!enrollment || Bun.env.PLC_DIRECTORY_URL !== "https://plc.dire
 const incidentApi = incidents ? createIncidentApi(incidents, new IncidentService(database.sql, monitor, plc), {
   javascript: await Bun.file(new URL("../../dist-browser/incident-browser.js", import.meta.url)).text(), stylesheet: incidentStyles,
 }) : undefined;
+const receiver = new ReceiverLifecycleClient(signer);
 const notifier = new MonitorNotifier(database.sql, signer, new PinnedHttpsAlertTransport(), () => new Date(), incidents);
 if (enrollment) {
   const providers = new EnrollmentProviders(database.sql);
@@ -66,6 +68,8 @@ async function notify() {
   if (notifying) return;
   notifying = true;
   try {
+    const cleanup = await cleanMonitorReceiver(database.sql, receiver);
+    if (cleanup !== "idle") console.info(JSON.stringify({ event: "monitor-receiver-cleanup", outcome: cleanup }));
     const outcome = await notifier.sendOne();
     if (outcome !== "idle") console.info(JSON.stringify({ event: "monitor-notify", outcome }));
   } catch (error) {

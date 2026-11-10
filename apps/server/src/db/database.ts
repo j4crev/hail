@@ -249,6 +249,7 @@ const migrations: readonly Migration[] = [
   {version:105,name:"account-monitor-cleanup",url:new URL("../../migrations/0105_account_monitor_cleanup.sql",import.meta.url)},
   {version:106,name:"unseen-connections",url:new URL("../../migrations/0106_unseen_connections.sql",import.meta.url)},
   {version:107,name:"conversation-participation",url:new URL("../../migrations/0107_conversation_participation.sql",import.meta.url)},
+  {version:108,name:"monitor-handoff",url:new URL("../../migrations/0108_monitor_handoff.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

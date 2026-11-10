@@ -2,16 +2,21 @@ import { MonitorDatabase } from "../database.js";
 import { EnrollmentProviders } from "../providers.js";
 
 const [action, first, second, output] = Bun.argv.slice(2);
-const usage = "Usage: monitor:providers list | create PROVIDER_ORIGIN ALERT_ORIGIN PRIVATE_OUTPUT | rotate ID PRIVATE_OUTPUT | disable ID | enable ID | import-legacy";
+const usage = "Usage: monitor:providers list | create PROVIDER_ORIGIN ALERT_ORIGIN PRIVATE_OUTPUT | rotate ID PRIVATE_OUTPUT | disable ID | enable ID | retire ID EXPECTED_ACTIVE_COUNT | import-legacy";
 if (!Bun.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-if (!["list", "create", "rotate", "disable", "enable", "import-legacy"].includes(action ?? "")) throw new Error(usage);
+if (!["list", "create", "rotate", "disable", "enable", "retire", "import-legacy"].includes(action ?? "")) throw new Error(usage);
 const db = new MonitorDatabase(Bun.env.DATABASE_URL);
 try {
   await db.migrate();
   const providers = new EnrollmentProviders(db.sql);
   if (action === "list") {
     console.info(JSON.stringify(await db.sql`SELECT id,provider_origin,alert_origin,enabled,
-      requests_per_minute,max_identities,enrollments_per_day FROM monitor_enrollment_providers ORDER BY provider_origin`));
+      requests_per_minute,max_identities,enrollments_per_day,retired_at,
+      (SELECT count(*) FROM monitored_dids w WHERE w.enrollment_provider_id=p.id AND w.stopped_at IS NULL) AS active_identities
+      FROM monitor_enrollment_providers p ORDER BY provider_origin`));
+  } else if (action === "retire") {
+    if (!first || !second || !/^(0|[1-9][0-9]*)$/.test(second) || output) throw new Error(usage);
+    console.info(JSON.stringify({ id: first, stopped: await providers.retire(first, Number(second)) }));
   } else if (action === "disable" || action === "enable") {
     if (!first || second) throw new Error(usage);
     await providers.setEnabled(first, action === "enable");
@@ -42,7 +47,7 @@ try {
         let state = item.reviewed_state;
         while (typeof state === "string") state = JSON.parse(state);
         if (state?.services?.hail?.endpoint !== origin + "/hail") continue;
-        await tx`UPDATE monitored_dids SET enrollment_provider_id=${row.id} WHERE did=${item.did}`;
+        await tx`UPDATE monitored_dids SET enrollment_provider_id=${row.id},management_cid=(SELECT operation_cid FROM monitor_bootstrap_checkpoints WHERE did=${item.did}) WHERE did=${item.did}`;
         adopted++;
       }
       console.info(JSON.stringify({ id: row.id, providerOrigin: origin, adopted, preservedMonitoring: true }));

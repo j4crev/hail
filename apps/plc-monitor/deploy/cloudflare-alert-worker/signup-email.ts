@@ -22,6 +22,7 @@ interface Signup {
   did?: string; operationCid?: string;
 }
 export interface Recipient {
+  monitorControlled?: boolean;
   hailAddress?: string; email: string; signupId: string; signupHash: string; did: string; operationCid: string; verifiedAt: number;
 }
 interface Rate { count: number; expiresAt: number; }
@@ -141,7 +142,7 @@ export async function signupEmail(path: string, input: unknown, storage: Durable
       recipient && (recipient.signupId !== signupId || recipient.signupHash !== signupHash || recipient.operationCid !== operationCid || recipient.email !== saved.email || hailAddress !== undefined && recipient.hailAddress !== undefined && recipient.hailAddress !== hailAddress))
       return reply({ error: "Verified signup destination cannot be bound" }, 409);
     const retainedAddress = recipient?.hailAddress ?? hailAddress;
-    await tx.put(recipientKey, { ...(retainedAddress ? { hailAddress: retainedAddress } : {}), email: saved.email, signupId, signupHash, did, operationCid, verifiedAt: saved.verifiedAt } satisfies Recipient);
+    await tx.put(recipientKey, { ...(recipient?.monitorControlled ? { monitorControlled: true } : {}), ...(retainedAddress ? { hailAddress: retainedAddress } : {}), email: saved.email, signupId, signupHash, did, operationCid, verifiedAt: saved.verifiedAt } satisfies Recipient);
     await tx.put(key, { ...saved, state: "bound", codeHash: null, did, operationCid });
     return reply({ bound: true, did, operationCid });
   });
@@ -220,6 +221,7 @@ async function removeMonitoring(input: unknown, storage: DurableStorage): Promis
   const did = row.did, operationCid = row.operationCid;
   return storage.transaction(async tx => {
     const recipient = await tx.get<Recipient>(`recipient:${did}`), stopped = await tx.get<string>(`stopped-monitoring:${did}`);
+    if (recipient?.monitorControlled) return reply({ error: "Monitor authorization required" }, 409);
     if (recipient && recipient.operationCid !== operationCid || stopped && stopped !== operationCid)
       return reply({ error: "Enrollment differs" }, 409);
     await tx.put(`stopped-monitoring:${did}`, operationCid);

@@ -27,6 +27,20 @@ export class SignupMonitorClient {
     if (key.length !== 34 || key[0] !== 0xed || key[1] !== 1) throw new Error("Monitor API requires a pinned Ed25519 public key");
     this.publicKey = config.publicKey;
   }
+  async handoff(did: string, operationCid: string, transferId: string): Promise<boolean> {
+    const response = await this.request(`${this.config.apiOrigin}/api/v1/onboarding/handoff`, {
+      method: "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.config.token}` },
+      body: JSON.stringify({ did, operationCid, transferId }),
+    });
+    if (response.status !== 200) { await response.body?.cancel(); throw new SignupMonitorError(503); }
+    const bytes = await boundedTransferBody(response.body, response.headers.get("Content-Length"), 2048);
+    const value = parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as Record<string, unknown>;
+    if (!value || Object.keys(value).sort().join(",") !== "did,managed,operationCid,transferId" ||
+      value.did !== did || value.operationCid !== operationCid || value.transferId !== transferId || typeof value.managed !== "boolean")
+      throw new SignupMonitorError(503);
+    return value.managed;
+  }
   async stop(did: string, operationCid: string): Promise<void> {
     const response = await this.request(`${this.config.apiOrigin}/api/v1/onboarding/stop`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(10_000),
@@ -78,7 +92,12 @@ export class SignupMonitorService {
     if (!identity) throw new SignupMonitorError(403);
     if (identity.monitor_public_key !== this.monitor.publicKey) throw new SignupMonitorError(503);
     await this.email.post("bind", { signupId, did: identity.did, operationCid: identity.operation_cid, hailAddress: identity.canonical_address }, token);
-    return this.monitor.enroll(identity, signupId, token);
+    const result = await this.monitor.enroll(identity, signupId, token);
+    await this.sql`INSERT INTO account_monitor_bindings(account_id,did,operation_cid,monitor_public_key,serving_generation)
+      SELECT a.id,a.did,${identity.operation_cid},${this.monitor.publicKey},g.generation FROM provider_accounts a
+      JOIN account_serving_generations g ON g.account_id=a.id WHERE a.id=${accountId} AND g.generation=1
+      ON CONFLICT(account_id) DO NOTHING`;
+    return result;
   }
 }
 
