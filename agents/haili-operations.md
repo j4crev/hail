@@ -55,19 +55,28 @@ The new provider's post-bootstrap backup `haili-20261110T034050Z.tar.gpg` passed
 off-host restoration and application-schema/driver checks. All three retained
 operational private keys decrypted and matched their public keys. The latest
 pre-cutover Hetzner backup is `haili-20261110T032106Z.tar.gpg`; preserve its volumes
-and recovery material when shutting that old host down.
+and recovery material. The operator powered off Hetzner, and its Tailscale node
+is confirmed offline; the host has not been deleted.
 
-### Remaining cutover checks
+### Completed host security and cutover checks
 
-Confirm the Hostinger root console works before disabling temporary private root
-SSH. Routine `hailops` sudo is already restricted to `hail-provider-ops`. Public
-SSH/web ingress is blocked on IPv4 and IPv6; private SSH and the tunnel survived
-the kernel-update reboot. Retire the old Hetzner host and activate the new backup
-timer without leaving two active provider backup schedules. The Cloudflare
-Browser Integrity Check exception is verified for the provider and native-domain
-discovery/health paths: default non-browser requests return successful readiness
-and WebFinger responses. Until the host tasks above are verified, do not report
-the security/retirement handoff as complete.
+The operator verified independent root recovery through Hostinger's dashboard
+console. Root SSH, password/keyboard-interactive authentication and X11 forwarding
+are disabled; only the named `hailops` account can use SSH. A fresh private
+`hailops` connection and wrapper status succeeded after reloading SSH, and a fresh
+root connection was refused. Routine sudo remains restricted to
+`hail-provider-ops`. The previous SSH configuration is retained under
+`/root/hail-hardening-backup/ssh-before-root-disable` for console recovery.
+
+Public SSH/web ingress is blocked on IPv4 and IPv6; private SSH and the tunnel
+survived the kernel-update reboot. With Hetzner powered off, Hostinger's
+`hail-provider-backup.timer` is enabled and active, with its next run scheduled
+for 2026-11-11 UTC. The manual post-bootstrap backup and restore checks above
+verify the installed backup path; the first scheduled run is still due.
+
+The Cloudflare Browser Integrity Check exception is verified for the provider
+and native-domain discovery/health paths: default non-browser requests return
+successful readiness and WebFinger responses.
 
 ## Pre-launch development policy — developers and agents
 
@@ -123,8 +132,8 @@ are not rollback targets after either application has accepted new writes.
 
 - Final SSH policy allows only the named `hailops` account with public-key
   authentication; root, passwords, keyboard-interactive authentication and X11
-  must be disabled. Temporary private root access remains pending the console
-  recovery check above.
+  are disabled. Independent dashboard-console recovery was verified before
+  disabling root SSH.
 - Passwordless sudo for `hailops` is limited to the root-owned provider/monitor operations wrapper.
   Root recovery uses the VPS console, not remote root SSH.
 - Provider secrets and R2 credentials are root-owned mode `0600`. Database
