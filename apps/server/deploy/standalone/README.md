@@ -136,7 +136,9 @@ Complete the [first administrator ceremony](#first-administrator-vault-to-dashbo
 For server-only use, complete CLI signup/activation and use the issued account
 credential; the browser passkey/dashboard steps require adding a web client.
 No reference-client process is needed for provider CLI commands or bearer API use.
-Recreate the provider after changing environment settings.
+Recreate the provider after changing environment settings. Test startup with the
+final signup configuration as well as the basic server-only configuration; signup
+and passkey validation runs before the provider starts accepting requests.
 
 Alternative clients should start with the
 [account API contract](../../../cli/docs/cli-contract.md),
@@ -716,5 +718,7 @@ receiver's state.
 
 The current provider-transfer profile still assumes native address domains match
 service hostnames. Transfers to/from the split native-domain profile remain
-unsupported; leave transfer features disabled. This fresh-install procedure does
+unsupported; leave `PUBLIC_MANAGED_TRANSFER=false` and unset
+`PLC_MANAGED_MONITOR_ORIGIN` and `PLC_MANAGED_MONITOR_PUBLIC_KEY`. Those declarations
+belong to managed transfer, not the separate `SIGNUP_MONITOR_*` settings. This fresh-install procedure does
 not bypass that protocol constraint.

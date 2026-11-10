@@ -177,6 +177,11 @@ Provider authorization remains authoritative for every read and mutation. See
 
 ## Reference-provider browser media and origin separation
 
+Reference-provider signup policy permits a distinct configured browser/passkey
+HTTPS origin while retaining production passkey, email, and monitor requirements.
+The monitor identity hostname must differ from both the API and browser hostnames.
+These are reference-provider configuration rules, not a new federation wire format.
+
 This section specifies the reference provider's optional browser extension, not
 mandatory federation behavior. The account API origin, browser/passkey origin,
 and native account domain are separate configuration roles. Account records and

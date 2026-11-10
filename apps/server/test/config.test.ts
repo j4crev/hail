@@ -123,6 +123,13 @@ describe("loadConfig", () => {
       SIGNUP_MONITOR_PUBLIC_KEY:`did:key:${base58btc.encode(new Uint8Array([0xed,1,...new Uint8Array(32)]))}`,
       PUBLIC_ALPHA_SIGNUP:"true",ALPHA_SIGNUP_INVITE_KEY:"B".repeat(42)+"A",ALPHA_SIGNUP_MONITOR_ORIGIN:"https://monitor.example.com"};
     expect(loadConfig(settings).alphaSignup?.monitorOrigin).toBe(settings.ALPHA_SIGNUP_MONITOR_ORIGIN);
+    const split={...settings,PUBLIC_ORIGIN:"https://svr.haili.app",HAIL_SERVICE_BASE:"https://svr.haili.app/hail",
+      NATIVE_ADDRESS_DOMAIN:"haili.app",PASSKEY_ORIGIN:"https://haili.app",PASSKEY_RP_ID:"haili.app"};
+    expect(loadConfig(split)).toMatchObject({publicOrigin:"https://svr.haili.app",nativeAddressDomain:"haili.app",
+      passkeys:{origin:"https://haili.app",rpId:"haili.app"},alphaSignup:{monitorOrigin:settings.ALPHA_SIGNUP_MONITOR_ORIGIN}});
+    for(const change of [{PASSKEY_ORIGIN:"http://haili.app"},{PASSKEY_RP_ID:"svr.haili.app"},
+      {ALPHA_SIGNUP_MONITOR_ORIGIN:"https://haili.app"},{ALPHA_SIGNUP_MONITOR_ORIGIN:"https://svr.haili.app"}])
+      expect(()=>loadConfig({...split,...change})).toThrow();
     for(const change of [{PUBLIC_ALPHA_SIGNUP:"yes"},{PUBLIC_ALPHA_SIGNUP:"false"},{NODE_ENV:"test"},{PASSKEY_AUTH:"false"},
       {ALPHA_SIGNUP_INVITE_KEY:undefined},{ALPHA_SIGNUP_INVITE_KEY:settings.SIGNUP_EMAIL_TOKEN},{ALPHA_SIGNUP_MONITOR_ORIGIN:settings.PUBLIC_ORIGIN},{SIGNUP_MONITOR_TOKEN:undefined},
       {POC_SELF_SERVICE_ONBOARDING:"true"}])expect(()=>loadConfig({...settings,...change})).toThrow();
