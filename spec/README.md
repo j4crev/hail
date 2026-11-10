@@ -35,7 +35,7 @@ Historical implementation/rollout notes do not override the current profile belo
 
 | Area | Current format and specification |
 | --- | --- |
-| Data encoding | Deterministic Hail CBOR and COSE in [encoding](encoding.md); explicitly separate transfer representations below |
+| Data encoding | Deterministic Hail CBOR and COSE; RFC 9995 envelopes in [encoding](encoding.md); explicit transfer representations below |
 | Identity and address discovery | `did:plc`, Address Binding v2; [DID profile](did-profile.md), [address binding](address-binding.md), [PLC evidence](plc-read-evidence.md) |
 | Sender discovery and consent | Sender Profile v2, Grant v1; [sender profile](sender-profile.md), [grants](grants.md) |
 | Message delivery | Envelope v1 for Grant delivery; v2 for unthreaded connection delivery; v3 for threaded direct/reply-capability delivery; v4 for shared conversations; [envelopes](envelopes.md) |
@@ -104,6 +104,25 @@ field, reference mapping and continuity requirement. Schema and signature validi
 alone do not replace live cutover, owner and monitor authority checks.
 
 ## Conformance and publication work
+
+The nonnormative [standards adoption baseline](../agents/standards-baseline.md)
+maps planned work to current implementation/specification owners and records
+cutover and history-preservation requirements. It does not change the current
+profiles above or establish conformance to the planned standards.
+
+The [phase 1 completion record](../agents/standards-phase-1.md) covers bounded
+Content-Digest dictionaries, private caching, safe download headers and real TLS
+hostname tests. These HTTP changes do not introduce a signed format version;
+retrieval still uses the current bearer profile, not HTTP Message Signatures.
+
+The [phase 2 implementation record](../agents/standards-phase-2.md) replaces
+ordinary envelope and snapshot signatures with RFC 9995 hash COSE_Sign1.
+[Encoding](encoding.md#rfc-9995-hash-profile), [envelopes](envelopes.md) and
+[transfer formats](transfer-formats.md) define the current profiles;
+[account history](account-history.md#signature-profiles-in-history) uses the same
+current signatures, with no superseded-format reader. The [experimental schema](experiments/rfc9995.cddl)
+and [experimental vectors](vectors/experimental-rfc9995.json) remain test-only,
+with different extension labels. Implementation is not a production deployment.
 
 The separate [first Internet-Draft workspace](../drafts/README.md) contains
 `draft-creviston-racr-00`, its RFCXML source and readable renderings. It is an

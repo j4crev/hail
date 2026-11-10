@@ -166,7 +166,7 @@ For core delivery:
 - An unknown or unauthenticated sender receives a generic HTTP `202` response that reports only the `received` submission outcome.
 - An authenticated sender with a current or previous relationship may receive a detailed current result when privacy permits.
 - Terminal delivery status is reported asynchronously with a signed status snapshot.
-- The current alpha requires support for complete envelope representations through 16384 bytes, as defined in [envelopes.md](envelopes.md).
+- The current alpha requires support for complete envelope representations through 17408 bytes, as defined in [envelopes.md](envelopes.md).
 - v0 requires no transport authentication in addition to HTTPS and the envelope COSE signature. Private deployment controls carry no RACR protocol semantics and never replace COSE verification.
 - The body retrieval location is derived from authenticated sender discovery rather than supplied by the envelope.
 - Signed delivery-status correlation uses the parties, message ID, envelope digest
@@ -229,7 +229,7 @@ The generic receipt uses `202` with `application/json`; an authenticated success
 
 ### 14. Resource And Abuse Limits
 
-- The current envelope support floor is 16384 transmitted octets.
+- The current envelope support floor is 17408 transmitted octets.
 - The current body ceiling is 1048576 uncompressed octets, supported by every provider.
 - Body receivers support identity and gzip; gzip emission is optional.
 - Compressed bodies are bounded by 2097152 transmitted octets and the signed

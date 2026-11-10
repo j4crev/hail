@@ -206,7 +206,7 @@ integration("post-expiry owner account access", () => {
         // Synthetic retired fixtures must retain an export too; migration 36 archives that evidence atomically.
         await db.sql`INSERT INTO provider_migration_exports
           (transfer_id,did,manifest_bytes,manifest_digest,source_messaging_public_key,signature,signing_plc_document,signing_plc_data,signing_plc_operation_log)
-          VALUES (${transferId},${owner.vault.vault.did!},${new Uint8Array([1])},${snapshotDigest},${owner.vault.vault.identity.publicDidKey},${randomBytes(64)},'{}','{}','[]')`;
+          VALUES (${transferId},${owner.vault.vault.did!},${new Uint8Array([1])},${snapshotDigest},${owner.vault.vault.identity.publicDidKey},${randomBytes(215)},'{}','{}','[]')`;
         await db.sql`UPDATE provider_migration_fences SET state='retired',retirement_receipt_bytes=${new Uint8Array([1])},retired_at=clock_timestamp() WHERE transfer_id=${transferId}`;
       }
       await expect(access.complete(framed.challenge.challengeId,framed.secret,framedSig)).rejects.toThrow("fenced");

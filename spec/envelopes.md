@@ -386,7 +386,15 @@ The suggested product default is 120 days, but the signed timestamp is authorita
 
 ## Signature Profile
 
-The POC represents an envelope using the deterministic CBOR and tagged COSE_Sign1 profile in [encoding.md](encoding.md). The protected content type is `application/hail-envelope+cbor`, and the required role is `#hail-messaging`. Protected `kid` is the UTF-8 encoding of the sender's absolute `#hail-messaging` DID URL. The embedded payload is the exact deterministic encoding of the closed envelope map, and the unprotected map and external AAD are empty.
+An envelope is the RFC 9995 hash-profile COSE_Sign1 in [encoding.md](encoding.md#rfc-9995-hash-profile).
+Protected label 259 is `application/hail-envelope+cbor`; label 258 is SHA-256
+(`-16`). Protected `kid` is the UTF-8 sender DID plus `#hail-messaging`.
+The embedded payload is SHA-256 of the exact deterministic envelope descriptor,
+carried in the sole unprotected `https://haili.app/ns/racr/preimage` byte string.
+External AAD is empty. There is one signature and no nested signed envelope.
+All descriptor fields, including consent and detached-body credentials, are bound
+by its signed hash. The body itself is fetched only after existing admission gates.
+The old direct-payload profile is forbidden for new submissions.
 
 A receiver rejects every non-deterministic or prohibited CBOR/COSE form defined by the shared profile, even when its signature is cryptographically valid.
 
@@ -413,7 +421,7 @@ The recipient re-checks envelope expiration immediately before committing comple
 
 ## Envelope Size
 
-A conforming current-alpha recipient MUST support a valid tagged COSE_Sign1 envelope whose complete transmitted representation is no larger than 16384 octets, subject to the authorization, validation, and policy rules below. It may reject a larger envelope before parsing or cryptographic verification. A larger local limit does not establish support by other peers.
+A conforming current-alpha recipient MUST support a valid tagged COSE_Sign1 envelope whose complete transmitted representation is no larger than 17408 octets, subject to the authorization, validation, and policy rules below. It may reject a larger envelope before parsing or cryptographic verification. A larger local limit does not establish support by other peers.
 
 The limit applies to the transmitted COSE representation. The POC does not apply HTTP content coding to individual envelopes. Batch submission is not part of v0.
 
@@ -421,9 +429,9 @@ The limit applies to the transmitted COSE representation. The POC does not apply
 
 A recipient should process an envelope in this order:
 
-1. Enforce transport requirements and the 16384-byte envelope limit.
+1. Enforce transport requirements and the 17408-byte envelope limit.
 2. Perform bounded structural CBOR and COSE decoding sufficient to enforce the exact tagged COSE_Sign1 shape.
-3. Decode the protected header and payload; reject malformed, non-deterministic, unknown, or unsupported fields.
+3. Decode the closed protected headers and digest; check the carried descriptor hash and 16384-byte descriptor limit, then decode its deterministic closed schema. Reject malformed, unknown, or unsupported fields.
 4. Validate inexpensive payload syntax, types, timestamp relationships, and body limits.
 5. Require `to` to identify a recipient DID served by this endpoint. A server may return the public PLC-derived `421` routing mismatch defined by the HTTP binding; inability to establish that mismatch and unavailable local-account state follow the protected response path.
 6. Do not consult protected relationships before signature verification: their existence MUST NOT select whether expensive public-key work occurs.
@@ -546,7 +554,7 @@ The current profiles define:
 - protected content type `application/hail-envelope+cbor`
 - RFC 9864 COSE `Ed25519` (`-19`) signatures using `#hail-messaging`
 - 300-second timestamp tolerance
-- 16384-byte maximum envelope representation
+- 17408-byte maximum envelope representation (16384-byte descriptor)
 - idempotent duplicate handling and conflicting-payload rejection
 - the closed submission-outcome set in the HTTPS binding
 - generic `202` receipt before authenticated relationship disclosure
@@ -562,8 +570,8 @@ Deferred:
 - end-to-end envelope encryption
 - arbitrary extension fields
 
-Unsigned envelopes and nonempty COSE unprotected headers are prohibited by the
-current security profile, not planned optional features.
+Unsigned envelopes and unprotected headers other than the sole required descriptor
+preimage are prohibited by the current security profile.
 
 ## Open Questions
 

@@ -1,0 +1,46 @@
+; Experimental evaluation only. Not part of hail.cddl or production acceptance.
+; Normative current formats remain in ../encoding.md and ../transfer-formats.md.
+; All CBOR is deterministic, all maps closed; no detached/null digest, label 3,
+; payload-location, or external AAD. Ed25519 signatures have 64 bytes.
+
+experimental-descriptor-envelope = #6.18([
+  protected: bstr .cbor descriptor-protected,
+  unprotected: {"https://haili.app/ns/racr/experimental-preimage": bstr .size (1..16384)},
+  digest: bstr .size 32,
+  signature: bstr .size 64
+])
+descriptor-protected = {
+  1: -19,
+  4: bstr, ; exact UTF-8 from DID + #hail-messaging
+  258: -16,
+  259: "application/hail-envelope+cbor"
+}
+
+experimental-body-envelope = #6.18([
+  protected: bstr .cbor body-protected,
+  unprotected: {},
+  digest: bstr .size 32,
+  signature: bstr .size 64
+])
+body-protected = {
+  1: -19,
+  2: ["https://haili.app/ns/racr/experimental-admission"],
+  4: bstr,
+  258: -16,
+  259: "application/hail-body+cbor",
+  "https://haili.app/ns/racr/experimental-admission": bstr .size (1..16384)
+}
+
+experimental-snapshot-envelope = #6.18([
+  protected: bstr .cbor snapshot-protected,
+  unprotected: {"https://haili.app/ns/racr/experimental-preimage": bstr .size (1..67108864)},
+  digest: bstr .size 32,
+  signature: bstr .size 64
+])
+snapshot-protected = {
+  1: -19,
+  4: bstr, ; exact manifest DID + #hail-messaging; external source-key authority required
+  258: -16,
+  259: "application/hail-portable-snapshot+json;version=7" /
+       "application/hail-managed-snapshot+json;version=8"
+}

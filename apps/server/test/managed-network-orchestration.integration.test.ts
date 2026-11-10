@@ -1,3 +1,4 @@
+import {verifySnapshotSignature} from '../src/migration/snapshot-signature.js';
 import { handoffAccountMonitor } from "../src/accounts/monitor-handoff.js";
 import {encodePayload,decodePayload} from '@racrproto/codec';
 import {storeAttachment} from '../src/bodies/attachments.js';
@@ -35,7 +36,7 @@ import {ManagedTransferDelivery} from "../src/migration/managed-delivery.js";
 import {ManagedTransferAddressReservation} from "../src/migration/managed-address-selection.js";
 import {ManagedMigrationFenceService} from "../src/migration/managed-fence.js";
 import {ManagedTransferFencePublisher} from "../src/migration/managed-fence-publisher.js";
-import {ManagedMigrationExportService,managedSnapshotSignatureInput,
+import {ManagedMigrationExportService,
   validateManagedTransferManifest} from "../src/migration/managed-snapshot.js";
 import {ManagedMigrationStageService} from "../src/migration/managed-stage.js";
 import {ManagedMigrationPlcSubmission} from "../src/migration/managed-plc-submission.js";
@@ -307,8 +308,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
     tampered.historyCheckpointDigest=encodeBase64Url(randomBytes(32));
     expect(()=>validateManagedTransferManifest(new TextEncoder().encode(JSON.stringify(tampered))))
       .toThrow(/history checkpoint/);
-    expect(await crypto.subtle.verify("Ed25519",await ed25519PublicKeyFromDidKey(exported.sourceMessagingPublicKey),
-      Uint8Array.from(exported.signature),managedSnapshotSignatureInput(exported.digest,manifest.version))).toBe(true);
+    await verifySnapshotSignature(exported.signature,exported.bytes,manifest.version,did,exported.sourceMessagingPublicKey);
     const exportRetry=await exporter.exportFenced({did,accountId,transferId:offer.transfer_id,destinationServiceBase:targetBase,
       ownerRecoveryPublicKey:owner.did(),sourceIdentityPublicKey:keys.identityDidKey,
       destinationIdentityPublicKey:offer.destination_identity_key,
@@ -689,7 +689,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
       await expect(rollback49.unsafe(await Bun.file(new URL("../migrations/rollback/0049_managed_migration_materialization.sql",import.meta.url)).text()))
         .rejects.toThrow("active imports exist");
     } finally {await rollback49.unsafe("ROLLBACK");rollback49.release();}
-  } catch(error) {throw new Error(`${profile}: ${phase}`,{cause:error});}
+  } catch(error) {throw new Error(`${profile}: ${phase}: ${error instanceof Error?error.message:String(error)}`,{cause:error});}
   finally {await source.close();await target.close();await admin.unsafe(`DROP SCHEMA "${sourceSchema}" CASCADE`);
     await admin.unsafe(`DROP SCHEMA "${targetSchema}" CASCADE`);await admin.close();}
 },45_000);

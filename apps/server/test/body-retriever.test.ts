@@ -125,3 +125,15 @@ describe("authenticated detached body retrieval", () => {
       .toEqual({ kind: "retry", reason: "body-transfer-interrupted", retryAfter: null });
   });
 });
+
+it('checks all supported wire digests and always checks the signed uncompressed body',async()=>{
+ const coded=gzipSync(bytes),digest=(algorithm:string,data:Uint8Array)=>createHash(algorithm).update(data).digest('base64');
+ const response=(header:string,data=coded)=>new Response(data,{headers:{'Content-Type':'application/hail-body+cbor','Content-Encoding':'gzip','Content-Digest':header}});
+ const multiple=`sha-512=:${digest('sha512',coded)}:, sha-256=:${digest('sha256',coded)}:;note="two, hashes"`;
+ expect((await setup([response(multiple)]).retriever.retrieve(envelope)).kind).toBe('success');
+ // A header over plaintext is invalid for a gzip HTTP message.
+ expect(await setup([response(`sha-256=:${digest('sha256',bytes)}:`)]).retriever.retrieve(envelope)).toEqual({kind:'fail',reason:'body-integrity-failed'});
+ const other=gzipSync(bodyFromText('Different content'));
+ expect(await setup([response(`sha-512=:${digest('sha512',other)}:`,other)]).retriever.retrieve(envelope)).toEqual({kind:'fail',reason:'body-integrity-failed'});
+ expect(await setup([response(multiple+', sha-512=:AA==:')]).retriever.retrieve(envelope)).toEqual({kind:'fail',reason:'body-integrity-failed'});
+});

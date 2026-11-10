@@ -1,0 +1,145 @@
+{
+  "contentHex": "68656c6c6f",
+  "cases": [
+    {
+      "name": "absent",
+      "header": null,
+      "valid": true
+    },
+    {
+      "name": "single",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:",
+      "valid": true
+    },
+    {
+      "name": "multiple",
+      "header": "sha-512=:m3HSJL1i83hdltRq0+o9czGb+8KJDKra4t/3JRlnPKcjI8PZm6XBHXx6zG4UuMXaDEZjR1wuXDre9G9zvN7AQw==:, sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:",
+      "valid": true
+    },
+    {
+      "name": "ows",
+      "header": " sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:\t,  sha-512=:m3HSJL1i83hdltRq0+o9czGb+8KJDKra4t/3JRlnPKcjI8PZm6XBHXx6zG4UuMXaDEZjR1wuXDre9G9zvN7AQw==: ",
+      "valid": true
+    },
+    {
+      "name": "parameters",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;note=\"a,b\";flag;date=@1;label=%\"caf%c3%a9\"",
+      "valid": true
+    },
+    {
+      "name": "unknown",
+      "header": "future=:AA==:, sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:",
+      "valid": true
+    },
+    {
+      "name": "unknown-only",
+      "header": "future=:AA==:",
+      "valid": true
+    },
+    {
+      "name": "empty",
+      "header": "",
+      "valid": true
+    },
+    {
+      "name": "last-duplicate-wins",
+      "header": "sha-256=:AA==:, sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:",
+      "valid": true
+    },
+    {
+      "name": "bad-last-duplicate",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:, sha-256=:AA==:",
+      "valid": false
+    },
+    {
+      "name": "bad-supported",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:, sha-512=:AA==:",
+      "valid": false
+    },
+    {
+      "name": "bad-unknown-type",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:, future=\"x\"",
+      "valid": false
+    },
+    {
+      "name": "inner-list",
+      "header": "sha-256=(:AA==:)",
+      "valid": false
+    },
+    {
+      "name": "boolean",
+      "header": "sha-256",
+      "valid": false
+    },
+    {
+      "name": "bad-base64",
+      "header": "sha-256=:ab_!:",
+      "valid": false
+    },
+    {
+      "name": "bad-padding",
+      "header": "sha-256=:A===:",
+      "valid": false
+    },
+    {
+      "name": "trailing-comma",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:,",
+      "valid": false
+    },
+    {
+      "name": "uppercase-key",
+      "header": "SHA-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:",
+      "valid": false
+    },
+    {
+      "name": "whitespace-at-equals",
+      "header": "sha-256 =:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:",
+      "valid": false
+    },
+    {
+      "name": "invalid-parameter",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;x=?2",
+      "valid": false
+    },
+    {
+      "name": "wrong-content",
+      "header": "sha-256=:2SmKENGwc1g33EvYXaxkGw887yekfl1TpU8vP1svz/o=:",
+      "valid": false
+    },
+    {
+      "name": "parameter ;date=@1, other=::",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;date=@1, other=::",
+      "valid": true
+    },
+    {
+      "name": "parameter ;date=@-1;next=?1",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;date=@-1;next=?1",
+      "valid": true
+    },
+    {
+      "name": "parameter ;date=@1.0",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;date=@1.0",
+      "valid": false
+    },
+    {
+      "name": "parameter ;date=@1234567890123456",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;date=@1234567890123456",
+      "valid": false
+    },
+    {
+      "name": "parameter ;date=@",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;date=@",
+      "valid": false
+    },
+    {
+      "name": "parameter ;date=@1x",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;date=@1x",
+      "valid": false
+    },
+    {
+      "name": "parameter ;p=one;p=two",
+      "header": "sha-256=:LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=:;p=one;p=two",
+      "valid": true
+    }
+  ]
+}

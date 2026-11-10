@@ -364,6 +364,26 @@ Content-Digest: sha-256=:base64-standard-digest:
 
 The RFC 9530 `Content-Digest` header is recommended as transport-level integrity metadata. It hashes the HTTP message content, including gzip-coded bytes when `Content-Encoding: gzip` is present. The digest committed by the signed envelope separately hashes the uncompressed deterministic body bytes and remains authoritative for Hail content identity.
 
+Receivers parse a present field as an RFC 9651 Structured Fields Dictionary,
+combining multiple field lines with commas in received order. This retrieval
+profile limits the combined field value to 8192 ASCII octets and the parsed
+dictionary to 16 distinct algorithm keys. Parsing failure, a limit violation,
+or a dictionary member whose value is not a Byte Sequence fails retrieval with
+`body-integrity-failed`. Duplicate keys use the last value as specified by
+Structured Fields; parameters are parsed and ignored, including unknown ones.
+
+Receivers MUST validate every present supported algorithm (`sha-256` and
+`sha-512`) against the HTTP content bytes; a mismatch or incorrect digest length
+fails with `body-integrity-failed`. Other well-formed algorithm entries are
+ignored. An absent field, empty dictionary, or dictionary containing only
+unsupported algorithms supplies no transport integrity evidence and does not
+itself fail retrieval. In every case the signed uncompressed size/digest and
+body validation remain mandatory. A valid HTTP digest cannot authorize content
+or replace those checks. This profile does not require trailer-field processing;
+senders cannot rely on a trailer digest being checked. The same rules apply to
+detached attachment responses, whose signed declaration remains authoritative.
+See [digest vectors](vectors/content-digest.json).
+
 The response body may use an allowed HTTP content coding. After bounded decompression, the recipient verifies:
 
 1. Uncompressed byte length exactly equals the declared `size`.

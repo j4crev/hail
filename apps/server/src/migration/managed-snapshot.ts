@@ -1,3 +1,4 @@
+import {signSnapshot,inspectSnapshotSignature} from './snapshot-signature.js';
 import {ATTACHMENT_TABLES,collectAttachmentHistory,validateAttachmentHistory} from './attachment-history.js';
 import {collectConversationHistory,conversationHistoryDigest,type ConversationHistory} from './conversation-history.js';
 import { createHash } from "node:crypto";
@@ -77,12 +78,6 @@ function requireEnvelopes(table: string, rows: Record<string, unknown>[], known:
 
 function hexKey(value: unknown, label: string): string {
   return Buffer.from(bytea(value, label)).toString("hex");
-}
-
-export function managedSnapshotSignatureInput(hash: Uint8Array,version:4|6|8=4): Uint8Array<ArrayBuffer> {
-  const MANAGED_CONTEXT=new TextEncoder().encode(`hail-migration-snapshot-v${version}\0`);
-  const value = new Uint8Array(MANAGED_CONTEXT.length + hash.length);
-  value.set(MANAGED_CONTEXT); value.set(hash, MANAGED_CONTEXT.length); return value;
 }
 
 export function managedHistoryCheckpoint(manifest: Omit<ManagedTransferManifest, "historyCheckpointDigest">): Uint8Array {
@@ -405,7 +400,8 @@ export class ManagedMigrationExportService {
           source_messaging_public_key,custody_profile FROM provider_migration_exports
           WHERE transfer_id=${fence.transferId}`)[0];
         if (!existing || existing.custody_profile !== "managed") throw new Error("Managed export is missing");
-        validateManagedTransferManifest(new Uint8Array(existing.manifest_bytes));
+        const retainedManifest=validateManagedTransferManifest(new Uint8Array(existing.manifest_bytes));
+        inspectSnapshotSignature(existing.signature,existing.manifest_bytes,retainedManifest.version,retainedManifest.did);
         return { bytes: new Uint8Array(existing.manifest_bytes), digest: new Uint8Array(existing.manifest_digest),
           signature: new Uint8Array(existing.signature), sourceMessagingPublicKey: existing.source_messaging_public_key };
       }
@@ -443,8 +439,7 @@ export class ManagedMigrationExportService {
       const secret = await this.encryptor.decrypt(fence.accountId, messaging.role, messaging.algorithm,
         messaging.publicKey, messaging);
       let signature: Uint8Array;
-      try { signature = new Uint8Array(await crypto.subtle.sign("Ed25519",
-        await importEd25519PrivateKey(secret), managedSnapshotSignatureInput(hash,manifest.version))); }
+      try { signature = await signSnapshot(bytes,manifest.version,manifest.did,await importEd25519PrivateKey(secret)); }
       finally { secret.fill(0); }
       await tx`INSERT INTO provider_migration_exports(transfer_id,did,manifest_bytes,manifest_digest,
         source_messaging_public_key,signature,signing_plc_document,signing_plc_data,signing_plc_operation_log,custody_profile)

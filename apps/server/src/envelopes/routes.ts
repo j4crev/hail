@@ -7,7 +7,7 @@ import type { DeliveryStatusSigner } from "../delivery/status.js";
 import { ProtectedResponseSchedule } from "../http/protected-schedule.js";
 import {clientAddress,FixedWindowRateLimit} from "../http/rate-limit.js";
 
-const MAX_BYTES = 16_384;
+const MAX_BYTES = 17_408;
 
 function problem(status: number, title: string, extra: Record<string, string> = {}): Response {
   return Response.json({ type: "about:blank", title, status }, {

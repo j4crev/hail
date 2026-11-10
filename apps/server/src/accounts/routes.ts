@@ -131,7 +131,7 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
         const found=await messaging.attachment(session,context.req.param('sender')!,context.req.param('messageId')!,context.req.param('digest')!,query.has('index')?Number(query.get('index')):undefined);
         if(!found)return problem(404);
         return new Response(Uint8Array.from(found.bytes),{headers:{'Content-Type':found.file.media_type,'Content-Length':String(found.bytes.length),
-          'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(found.file.filename).replace(/'/g,'%27')}`,
+          'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(found.file.filename).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}`,
           'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Cache-Control':'private, no-store'}});
       }
       if(action==="drafts"){

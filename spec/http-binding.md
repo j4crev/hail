@@ -8,6 +8,29 @@ Grant, envelope, body, and delivery-state semantics remain authoritative in thei
 
 ## Hail Service Base URL
 
+### Transport identity and private caching
+
+HTTPS certificate validation MUST authenticate the selected endpoint hostname,
+including a delegated provider hostname, as well as its certificate chain. A
+trusted certificate for another host is insufficient. The reference transport
+retains the URL hostname for HTTPS/SNI while connecting to a validated, pinned
+public DNS answer; it rejects mixed public/private answer sets, IP-literal URLs
+and ambient credentials. Redirect responses do not authorize a new destination.
+Bearer retrieval is limited to canonical body and detached-attachment GET paths
+without query strings. These restrictions also apply after endpoint discovery.
+
+Private bodies, detached attachments and protected negative responses MUST NOT
+be stored in HTTP caches (`Cache-Control: no-store`; successful retrievals also
+use `private`). The reference account API and web client likewise emit `no-store`
+for private success, authentication, scope and resource-error responses. Shared
+HTTP caches must not reuse an authorized response or a protected miss for another
+account. Provider-internal immutable blob reuse and request-scoped authenticated
+client reads are distinct from shared HTTP caching and still require current
+resource authorization. Public discovery retains its specified freshness,
+conditional requests and current-key revalidation rules.
+
+### Canonical endpoint
+
 The `HailMessaging` service endpoint in a Hail DID document is the base URL for that DID's federation operations. A conforming publisher emits the base URL in canonical form. A consumer normalizes the limited equivalent forms below and then validates the result before constructing or sending a request.
 
 The canonical base URL:
@@ -298,7 +321,7 @@ The request uses the registered COSE media type profiled by [encoding.md](encodi
 Content-Type: application/cose; cose-type="cose-sign1"
 ```
 
-The request body is exactly one tagged COSE_Sign1 Hail Envelope. Protected content type `application/hail-envelope+cbor` identifies the object profile defined in [envelopes.md](envelopes.md#signature-profile). A missing or different request media type is an unsupported-media-type safe transport error and is rejected before protected envelope processing.
+The request body is exactly one RFC 9995 tagged COSE_Sign1 Hail Envelope, at most 17408 bytes. Protected preimage content type (label 259) `application/hail-envelope+cbor` identifies the object profile defined in [envelopes.md](envelopes.md#signature-profile). A missing or different request media type is an unsupported-media-type safe transport error and is rejected before protected envelope processing.
 
 v0 requires no transport authentication in addition to HTTPS and the envelope COSE signature. HTTPS authenticates the recipient service endpoint and protects the exchange in transit. COSE authenticates the sender DID and signed envelope contents. Mutual TLS, bearer credentials, RFC 9421 HTTP Message Signatures, and private reverse-proxy authentication carry no Hail envelope-submission semantics and never replace COSE verification. Deployments may use additional private transport controls without requiring federation peers to support them.
 

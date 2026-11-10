@@ -27,13 +27,13 @@ export class ManagedMigrationCompletion {
     const container=input.snapshot;
     if(!container||typeof container!=="object"||Array.isArray(container)||Object.keys(container).sort().join(",")!==
       "digest,manifest,signature,sourceMessagingPublicKey,type,version"||!("type" in container)||container.type!=="hail.managed-migration-transfer"||
-      !("version" in container)||![4,6,8].includes(container.version as number)||!("manifest" in container)||typeof container.manifest!=="string"||
+      !("version" in container)||container.version!==8||!("manifest" in container)||typeof container.manifest!=="string"||
       !("digest" in container)||typeof container.digest!=="string"||!("signature" in container)||typeof container.signature!=="string"||
       !("sourceMessagingPublicKey" in container)||typeof container.sourceMessagingPublicKey!=="string")
       throw new Error("Invalid managed snapshot container");
     const snapshot:SignedManagedTransferSnapshot={bytes:canonical(container.manifest),digest:canonical(container.digest),
       signature:canonical(container.signature),sourceMessagingPublicKey:container.sourceMessagingPublicKey};
-    if(snapshot.bytes.length>67_108_864||snapshot.digest.length!==32||snapshot.signature.length!==64)
+    if(snapshot.bytes.length>67_108_864||snapshot.digest.length!==32||snapshot.signature.length>1024)
       throw new Error("Managed snapshot exceeds its limits");
     const approval=decodeSignedRecord(input.approval),operationBytes=canonical(input.operation);
     const manifest=await this.stage.stage(snapshot,approval,operationBytes);

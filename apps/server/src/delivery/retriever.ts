@@ -1,4 +1,5 @@
 import {bodyAttachments,validateAttachmentBytes} from '../bodies/attachments.js';
+import { validateContentDigest } from '../http/content-digest.js';
 import { createHash } from "node:crypto";
 import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
@@ -49,12 +50,6 @@ function retryAfter(response: Response, now: Date): Date | null {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && parsed > now.getTime()
     ? new Date(Math.min(parsed, now.getTime() + 86_400_000)) : null;
-}
-
-function validateContentDigest(header: string | null, wire: Uint8Array): boolean {
-  if (header === null) return true;
-  const expected = createHash("sha256").update(wire).digest("base64");
-  return header === `sha-256=:${expected}:`;
 }
 
 export class BodyRetriever {

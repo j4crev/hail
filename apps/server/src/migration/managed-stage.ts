@@ -1,3 +1,4 @@
+import {inspectSnapshotSignature,verifySnapshotSignature} from './snapshot-signature.js';
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { cidForCbor } from "@atproto/common";
@@ -10,7 +11,7 @@ import type { HailDidResolver } from "../plc/resolver.js";
 import { parseJsonWithoutDuplicateKeys } from "../discovery/strict-json.js";
 import { managedHandshakeDigest, verifyManagedOwnerHandshake, verifyManagedProviderHandshake,
   type SignedManagedHandshake } from "./managed-handshake.js";
-import { managedSnapshotSignatureInput, validateManagedTransferManifest,
+import { validateManagedTransferManifest,
   type SignedManagedTransferSnapshot } from "./managed-snapshot.js";
 import { PreparedMigrationTarget, type PreparedTargetKeys } from "./target-keys.js";
 import {verifyConnectionHistoryAuthority} from "./connection-history-verification.js";
@@ -36,10 +37,11 @@ export class ManagedMigrationStageService {
   async stage(snapshot: SignedManagedTransferSnapshot, approvalSigned: SignedManagedHandshake,
     operationBytes: Uint8Array): Promise<ReturnType<typeof validateManagedTransferManifest>> {
     const snapshotDigest = sha256(snapshot.bytes);
-    if (!same(snapshotDigest, snapshot.digest) || snapshot.signature.length !== 64) {
+    if (!same(snapshotDigest, snapshot.digest) || snapshot.signature.length > 1024) {
       throw new Error("Managed snapshot digest or signature is invalid");
     }
     const manifest = validateManagedTransferManifest(snapshot.bytes);
+    inspectSnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did);
     if(manifest.tables.managed_custody_evidence[0]?.verification_mode!==this.verificationMode)
       throw new Error("Managed snapshot authority profile is not enabled here");
     if(this.verificationMode==="strict-public-v1"&&(!manifest.tables.plc_operation_evidence.length||
@@ -69,11 +71,10 @@ export class ManagedMigrationStageService {
     if (resolved.evidence.verification?.profile !== this.verificationMode || resolved.did !== manifest.did ||
       resolved.serviceBase !== manifest.sourceServiceBase || resolved.identityDidKey !== manifest.sourceIdentityPublicKey ||
       plc.rotationKeys[0] !== manifest.ownerRecoveryPublicKey ||
-      resolved.messagingDidKey !== snapshot.sourceMessagingPublicKey ||
-      !await crypto.subtle.verify("Ed25519", await ed25519PublicKeyFromDidKey(snapshot.sourceMessagingPublicKey),
-        Uint8Array.from(snapshot.signature), managedSnapshotSignatureInput(snapshotDigest,manifest.version))) {
+      resolved.messagingDidKey !== snapshot.sourceMessagingPublicKey) {
       throw new Error("Current strict PLC state does not authenticate the managed snapshot");
     }
+    await verifySnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did,snapshot.sourceMessagingPublicKey);
     const approval = await verifyManagedOwnerHandshake(approvalSigned,
       "hail.managed-transfer-approval", manifest.ownerRecoveryPublicKey);
     const seconds = this.now();

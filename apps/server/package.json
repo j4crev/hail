@@ -46,7 +46,8 @@
     "hono": "4.13.11",
     "ipaddr.js": "2.2.0",
     "multiformats": "13.4.2",
-    "@racrproto/client-support": "workspace:*"
+    "@racrproto/client-support": "workspace:*",
+    "structured-headers": "2.1.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

@@ -59,7 +59,7 @@ describe("envelope submission HTTP binding", () => {
     expect((await app.request("/hail/envelopes", { method: "POST", body: "bad" })).status).toBe(415);
     expect((await app.request("/hail/envelopes", { method: "POST",
       headers: { "Content-Type": 'application/cose; cose-type="cose-sign1"' },
-      body: new Uint8Array(16_385) })).status).toBe(413);
+      body: new Uint8Array(17_409) })).status).toBe(413);
     expect(receive).not.toHaveBeenCalled();
   });
 

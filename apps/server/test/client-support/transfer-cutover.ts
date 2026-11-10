@@ -1,3 +1,4 @@
+import {verifySnapshotSignature} from '../../src/migration/snapshot-signature.js';
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { cidForCbor } from "@atproto/common";
@@ -41,14 +42,14 @@ export async function verifySignature(kind: string, payload: Uint8Array,
 
 export async function verifyTransferSnapshot(snapshot:Record<string,unknown>) {
   if(!snapshot||typeof snapshot!=="object"||Array.isArray(snapshot)||Object.keys(snapshot).sort().join(",")!=="digest,manifest,signature,sourceMessagingPublicKey,type,version"||
-    snapshot.type!=="hail.portable-migration-transfer"||![2,3,5,7].includes(snapshot.version as number)||typeof snapshot.manifest!=="string"||typeof snapshot.digest!=="string"||
+    snapshot.type!=="hail.portable-migration-transfer"||snapshot.version!==7||typeof snapshot.manifest!=="string"||typeof snapshot.digest!=="string"||
     typeof snapshot.signature!=="string"||typeof snapshot.sourceMessagingPublicKey!=="string")throw new Error("Source did not supply a signed portable snapshot");
   const manifestBytes=decodeBase64Url(snapshot.manifest),digest=new Uint8Array(createHash("sha256").update(manifestBytes).digest());
-  if(manifestBytes.length>67108864||decodeBase64Url(snapshot.digest).length!==32||decodeBase64Url(snapshot.signature).length!==64||
+  if(manifestBytes.length>67108864||decodeBase64Url(snapshot.digest).length!==32||decodeBase64Url(snapshot.signature).length>1024||
     !Buffer.from(digest).equals(Buffer.from(decodeBase64Url(snapshot.digest))))throw new Error("Source snapshot digest mismatch or size limit exceeded");
   const manifest=data(manifestBytes);
   if(manifest.version!==snapshot.version)throw new Error("Snapshot container and manifest versions differ");
-  await verifySignature(`hail-migration-snapshot-v${snapshot.version}`,digest,decodeBase64Url(snapshot.signature),snapshot.sourceMessagingPublicKey);
+  await verifySnapshotSignature(decodeBase64Url(snapshot.signature),manifestBytes,7,String(manifest.did),snapshot.sourceMessagingPublicKey);
   return {manifest,digest};
 }
 export function warnConnectionCodeCutover(manifest:Record<string,unknown>):void {

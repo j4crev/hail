@@ -26,6 +26,17 @@ Do not translate signed protocol objects into reconstructed payloads. Preserve
 original COSE, PLC operation and retained evidence bytes. Storage independence
 changes storage representation, not historical identity, authority or signatures.
 
+## Signature profiles in history
+
+Stored envelopes and snapshot signatures use the same RFC 9995 profiles as new
+objects. There is no reader for the superseded direct-payload envelope or raw
+snapshot signature.
+
+History verification still MUST preserve original signed bytes and use the
+corresponding key/authority evidence. Do not re-sign or normalize accepted objects.
+The envelope identity remains SHA-256 of the descriptor bytes. Verifying history
+does not restore consent or authorize a new action.
+
 ## Value and size rules
 
 - Every manifest, collection map and record has a closed set of required fields.

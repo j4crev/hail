@@ -40,3 +40,12 @@ it('matches JPEG and WebP vectors and rejects mismatched extension/media combina
     file.media_type='image/png';expect(()=>encodePayload('hail.body.spt-2',value)).toThrow();
   }
 });
+
+it('rejects control/path characters and preserves legal Unicode and reserved filename characters',()=>{
+ for(const name of ['a\0.txt','a\r.txt','a\u007f.txt','dir/a.txt','dir\\a.txt']){
+  expect(()=>encodePayload('hail.body.spt-2',body([{...file(),filename:name}]))).toThrow();
+ }
+ const filename="résumé (final)*'%;\".txt";
+ const encoded=encodePayload('hail.body.spt-2',body([{...file(),filename}]));
+ expect(decodePayload('hail.body.spt-2',encoded).attachments![0]!.filename).toBe(filename);
+});

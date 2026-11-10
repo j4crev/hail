@@ -261,7 +261,7 @@ The snapshot container has exactly `type`, `version`, `manifest`, `digest`,
 `signature`, `sourceMessagingPublicKey`. Type is `hail.portable-migration-transfer`
 with version 7 or `hail.managed-migration-transfer` with version 8. Manifest, digest
 and signature are canonical base64url strings; decoded manifest size is at most
-67108864 bytes, digest is 32 bytes and signature is 64 bytes. Container and manifest
+67108864 bytes, digest is 32 bytes and signature is a complete RFC 9995 COSE_Sign1 of at most 1024 bytes. Container and manifest
 versions MUST match. Preserve exact artifacts across retries; fresh monitor evidence
 may be supplied without changing the snapshot, consent/approval or PLC operation.
 
@@ -366,18 +366,39 @@ empty. No old snapshot version is required by the current alpha specification.
 The snapshot manifest is UTF-8 JSON, with duplicate keys rejected. Unlike ordinary
 Hail signed objects, its identity is the **exact saved JSON byte sequence**; there
 is no JSON canonicalization or permission to parse/re-serialize before verification.
-The source signs:
+The source produces one RFC 9995 tagged COSE_Sign1:
 
 ```text
-UTF8("hail-migration-snapshot-v7") || 0x00 || SHA256(manifest_bytes)  # portable
-UTF8("hail-migration-snapshot-v8") || 0x00 || SHA256(manifest_bytes)  # managed
+protected = deterministicCBOR({1: -19, 4: UTF8(manifest.did + "#hail-messaging"),
+                              258: -16, 259: preimage_type})
+digest = SHA256(manifest_bytes)
+input = deterministicCBOR(["Signature1", protected, h'', digest])
+signature_field = deterministicCBOR(18([protected, {}, digest, Ed25519(input)]))
 ```
 
-Both use the source's authenticated Ed25519 messaging key and a 64-byte signature.
-The snapshot carrier retains the manifest bytes, their 32-byte digest, signature
-and source messaging public key. Verify the key against the source authority;
-never trust a key simply because the carrier includes it. This is an explicit
-reference-profile exception to the CBOR payload rule, not an alternate encoding
+`preimage_type` is exactly `application/hail-portable-snapshot+json;version=7`
+or `application/hail-managed-snapshot+json;version=8`. The protected map is closed;
+labels 3 and 260 are forbidden. The unprotected map and external AAD are empty.
+The COSE payload is an embedded 32-byte hash, never null. The Ed25519 signature
+inside COSE is 64 bytes; the complete `signature` field is at most 1024 bytes.
+Manifest bytes remain limited to 67108864 bytes. COSE and protected bytes use
+the deterministic encoding and bounded decoding rules in [encoding](encoding.md).
+
+The existing JSON artifact retains exactly `type`, `version`, `manifest`, `digest`,
+`signature`, and `sourceMessagingPublicKey`. Its base64url `signature` now carries
+that complete COSE item; `manifest` carries the external preimage exactly once.
+The separately carried digest MUST match both the manifest hash and COSE payload.
+There is no domain-prefix signature or silent old-signature fallback on current
+export, stage or completion paths. Current artifact/manifest versions are 7/8;
+the protected profile distinguishes them from superseded signatures of those
+same manifest versions.
+
+Verify the source messaging key against authenticated transfer authority; never
+trust it merely because the artifact includes it. Verify the hash and signature,
+manifest DID, destination, transfer ID, generations and all owner/monitor/live
+cutover requirements. The RFC container does not grant authorization. Stored snapshot evidence uses this same current profile; there is no raw-signature
+compatibility path.
+This remains a reference JSON-manifest profile, not an alternate payload encoding
 for envelopes, Grants or connection controls.
 
 ```typescript

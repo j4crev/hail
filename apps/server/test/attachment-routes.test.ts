@@ -39,3 +39,32 @@ it('cancels an interrupted inbound upload when its read deadline expires',async(
  await expect(accountRequestBytes(new Request('https://example.com',{method:'POST',body,duplex:'half'} as RequestInit),10,5)).rejects.toBeInstanceOf(RequestBodyTimeout);
  expect(cancel).toHaveBeenCalledOnce();
 });
+
+it('encodes Unicode and every reserved filename character as an RFC 8187 value',async()=>{
+ const f=setup(),filename="résumé (final)*'%;\".pdf";
+ f.attachment.mockResolvedValue({file:{filename,media_type:'application/pdf'},bytes:new Uint8Array([1])});
+ const r=await f.app.request(`/api/v1/account/attachments/${did}/${id}/${digest}`);
+ const value=r.headers.get('content-disposition')!.split("UTF-8''")[1]!;
+ expect(value).toMatch(/^(?:[A-Za-z0-9!#$&+.^_`|~-]|%[0-9A-F]{2})+$/);
+ expect(decodeURIComponent(value)).toBe(filename);
+});
+
+it('marks account download successes and authentication/scope/storage failures uncacheable',async()=>{
+ const f=setup(),path=`/api/v1/account/attachments/${did}/${id}/${digest}`;
+ f.attachment.mockResolvedValue({file:{filename:'a.pdf',media_type:'application/pdf'},bytes:new Uint8Array([1])});
+ const check=async(status:number)=>{const r=await f.app.request(path);expect(r.status).toBe(status);expect(r.headers.get('cache-control')).toContain('no-store');};
+ await check(200);
+ f.attachment.mockResolvedValue(null);await check(404);
+ f.attachment.mockRejectedValue(new Error('storage failure'));await check(503);
+ f.session.scopes=[];await check(403);
+ f.authenticate.mockResolvedValue(null);await check(401);
+});
+
+it('rechecks the account for the same download URL after a session change',async()=>{
+ const f=setup(),owner=f.session.account_id,path=`/api/v1/account/attachments/${did}/${id}/${digest}`;
+ f.attachment.mockImplementation(async(session)=>session.account_id===owner?{file:{filename:'private.pdf',media_type:'application/pdf'},bytes:new Uint8Array([42])}:null);
+ const first=await f.app.request(path);expect(first.status).toBe(200);expect(first.headers.get('cache-control')).toContain('no-store');
+ f.session.account_id=crypto.randomUUID();
+ const second=await f.app.request(path);expect(second.status).toBe(404);expect(second.headers.get('cache-control')).toContain('no-store');
+ expect(f.attachment).toHaveBeenCalledTimes(2);
+});

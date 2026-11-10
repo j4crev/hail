@@ -51,7 +51,7 @@ export class SafeHttpsTransport {
     const url = new URL(request.url);
     this.validateUrl(url);
     if (bodyRetrieval && (request.method !== "GET" ||
-      !/^\/(?:[A-Za-z0-9._~-]+\/)*bodies\/[A-Za-z0-9_-]{43}$/.test(url.pathname) || url.search)) {
+      !/^\/(?:[A-Za-z0-9._~-]+\/)*bodies\/[A-Za-z0-9_-]{43}(?:\/attachments\/[A-Za-z0-9_-]{43})?$/.test(url.pathname) || url.search)) {
       throw new Error("Body retrieval requires the canonical body GET operation");
     }
     for (const name of ["cookie", "referer", ...(bodyRetrieval ? [] : ["authorization"])]) {

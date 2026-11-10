@@ -1,4 +1,5 @@
-import {collectConversationHistory,reconstructConversations} from '../src/migration/conversation-history.js';
+import {signSnapshot} from '../src/migration/snapshot-signature.js';
+import {collectConversationHistory,conversationHistoryDigest,reconstructConversations} from '../src/migration/conversation-history.js';
 import {CustomDomains} from "../src/accounts/custom-domains.js";
 import {AddressVerifier} from "../src/discovery/verifier.js";
 import {registerDiscoveryRoutes} from "../src/discovery/routes.js";
@@ -54,7 +55,7 @@ import {registerConnectionHandoverRoutes} from "../src/migration/routes.js";
 import {PortablePlcSubmission} from "../src/migration/poc-plc-submission.js";
 import {verifyConnectionHistoryAuthority} from "../src/migration/connection-history-verification.js";
 import {ConnectionReconstruction,reconstructConnections} from '../src/migration/connection-reconstruction.js';
-import {MANAGED_TRANSFER_TABLES,managedHistoryCheckpoint,managedSnapshotSignatureInput,validateManagedTransferManifest,type ManagedTransferManifest} from '../src/migration/managed-snapshot.js';
+import {MANAGED_TRANSFER_TABLES,managedHistoryCheckpoint,validateManagedTransferManifest,type ManagedTransferManifest} from '../src/migration/managed-snapshot.js';
 import {signConnectionHandoverTransition,verifyConnectionHandoverResult,connectionActivationDigest,type ConnectionHandoverTransition} from '../src/migration/connection-handover.js';
 import {signActivationReceipt} from '../src/migration/activation-receipt.js';
 import {ConnectionTransferOrchestration} from '../src/migration/connection-orchestration.js';
@@ -654,20 +655,22 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     tables.portable_custody_evidence=[{account_id:a.id,user_recovery_public_key:a.recoveryPublicKey,user_identity_public_key:a.keys.identityDidKey,
       monitor_verification_mode:'poc-local',monitor_origin:'https://monitor.example.com',monitor_public_key:a.keys.messagingDidKey,monitor_confirmed_at:capturedAt,backup_confirmed_at:capturedAt}];
     tables.sent_envelopes=(await first.db.sql<{row:Record<string,unknown>}[]>`SELECT to_jsonb(t) AS row FROM sent_envelopes t WHERE sender_account_id=${a.id}`).map(r=>r.row);
-    const manifest:TransferManifest={version:5,transferId,did:a.did,accountId:a.id,sourceServiceBase:first.origin+'/hail',destinationServiceBase:second.origin+'/hail',
+    const privateMessaging=async(user:User)=>{const k=user.keys.keys.find(k=>k.role==='hail-messaging')!,raw=await user.provider.encryptor.decrypt(user.id,k.role,k.algorithm,k.publicKey,k);
+      try{return await importEd25519PrivateKey(raw);}finally{raw.fill(0);}};
+    const conversationCheckpoint=await collectConversationHistory(first.db.sql,{accountId:a.id,did:a.did,sourceGeneration:1,sourceServiceBase:first.origin+'/hail'},capturedAt);
+    const manifest:TransferManifest={version:7,transferId,did:a.did,accountId:a.id,sourceServiceBase:first.origin+'/hail',destinationServiceBase:second.origin+'/hail',
       destinationRotationPublicKey:d.keys.rotationDidKey,destinationMessagingPublicKey:d.keys.messagingDidKey,custodyProfile:'portable',capturedAt,sourceGeneration:1,
+      conversations:conversationCheckpoint,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(conversationCheckpoint)),
       connections:checkpoint,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(checkpoint)),tables};
     const manifestBytes=new TextEncoder().encode(JSON.stringify(manifest)),snapshotDigest=new Uint8Array(createHash('sha256').update(manifestBytes).digest());
     expect(validateTransferManifest(manifestBytes).connections).toEqual(checkpoint);
     expect(()=>requireConnectionHandoverComplete(manifest)).toThrow('staged only');
     await second.db.sql`INSERT INTO pending_migration_imports(transfer_id,did,source_service_base,destination_service_base,manifest_bytes,manifest_digest,
       source_messaging_public_key,signature,state,verified_plc_document,verified_plc_data,verified_plc_operation_log) VALUES(${transferId},${a.did},${manifest.sourceServiceBase},
-      ${manifest.destinationServiceBase},${manifestBytes},${snapshotDigest},${a.keys.messagingDidKey},${new Uint8Array(64)},'staged','{}','{}','[]')`;
+      ${manifest.destinationServiceBase},${manifestBytes},${snapshotDigest},${a.keys.messagingDidKey},${await signSnapshot(manifestBytes,7,a.did,await privateMessaging(a))},'staged','{}','{}','[]')`;
     let plcCalls=0;const forbiddenPlc=async()=>{plcCalls++;throw new Error('Must not reach PLC before handover commit');};
     await expect(new PortablePlcSubmission(second.db.sql,{getOperationLog:forbiddenPlc,sendOperation:forbiddenPlc} as never,'https://plc.directory',manifest.destinationServiceBase).submit(transferId)).rejects.toThrow('staged only');
     expect(plcCalls).toBe(0);
-    const privateMessaging=async(user:User)=>{const k=user.keys.keys.find(k=>k.role==='hail-messaging')!,raw=await user.provider.encryptor.decrypt(user.id,k.role,k.algorithm,k.publicKey,k);
-      try{return await importEd25519PrivateKey(raw);}finally{raw.fill(0);}};
     const [sourcePrivate,destinationPrivate]=await Promise.all([privateMessaging(a),privateMessaging(d)]);
     const handoverStage=new ConnectionHandoverStage(second.db.sql,resolver,manifest.destinationServiceBase);
     const handoverApp=new Hono();registerConnectionHandoverRoutes(handoverApp,handoverStage);
@@ -847,14 +850,16 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       verification_mode:'poc-local',managed_profile_version:'hail-managed-custody-v1'}];
     for(const table of ['detached_bodies','body_authorizations','sent_envelopes'] as const)moveTables[table]=await collectRows(table,'sender_account_id=$1',[b.id]);
     moveTables.sent_delivery_status=await collectRows('sent_delivery_status','sender_did=$1',[b.did]);
-    const moveBase={version:6 as const,transferId:movingTransfer,did:b.did,accountId:b.id,sourceServiceBase:second.origin+'/hail',destinationServiceBase:third.origin+'/hail',
+    const moveConversations=await collectConversationHistory(second.db.sql,{accountId:b.id,did:b.did,sourceGeneration:1,sourceServiceBase:second.origin+'/hail'},moveCapturedAt);
+    const moveBase={version:8 as const,transferId:movingTransfer,did:b.did,accountId:b.id,sourceServiceBase:second.origin+'/hail',destinationServiceBase:third.origin+'/hail',
       ownerRecoveryPublicKey:b.recoveryPublicKey,sourceIdentityPublicKey:b.keys.identityDidKey,destinationRotationPublicKey:movedKeys.rotationDidKey,
       destinationIdentityPublicKey:movedKeys.identityDidKey,destinationMessagingPublicKey:movedKeys.messagingDidKey,sourceGeneration:1,custodyProfile:'managed' as const,capturedAt:moveCapturedAt,
+      conversations:moveConversations,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(moveConversations)),
       connections:moveHistory,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(moveHistory)),tables:moveTables};
     const movingManifest:ManagedTransferManifest={...moveBase,historyCheckpointDigest:encodeBase64Url(managedHistoryCheckpoint(moveBase))},movingBytes=new TextEncoder().encode(JSON.stringify(movingManifest)),
       movingDigest=new Uint8Array(createHash('sha256').update(movingBytes).digest()),binding=await signPayload('hail.address-binding',{type:'hail.address-binding',version:2,did:b.did,address:movingAddress,
         issued_at:Math.floor(Date.now()/1000),key_id:b.did+'#hail-identity'},createWebCryptoSigner(b.did+'#hail-identity',movedKeys.identityPrivateKey)),
-      bindingDigest=new Uint8Array(createHash('sha256').update(binding).digest()),sourceSnapshotSignature=new Uint8Array(await crypto.subtle.sign('Ed25519',sourceBPrivate,managedSnapshotSignatureInput(movingDigest,6)));
+      bindingDigest=new Uint8Array(createHash('sha256').update(binding).digest()),sourceSnapshotSignature=await signSnapshot(movingBytes,8,b.did,sourceBPrivate);
     validateManagedTransferManifest(movingBytes);
     await third.db.sql`INSERT INTO pending_migration_imports(transfer_id,did,source_service_base,destination_service_base,manifest_bytes,manifest_digest,source_messaging_public_key,
       signature,state,verified_plc_document,verified_plc_data,verified_plc_operation_log,destination_address,destination_binding_cose,destination_binding_digest,custody_profile,

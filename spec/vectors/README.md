@@ -1,5 +1,19 @@
 # Current protocol conformance vectors
 
+`experimental-rfc9995.json` is explicitly **not current protocol conformance**.
+It records the [phase 2 candidate evaluation](../../agents/standards-phase-2.md),
+including exact signature inputs, public synthetic signing keys and size evidence.
+The TS `rfc9995-candidates.test.ts` and Go `rfc9995_candidates_test.go` consume it;
+production codecs reject these experimental representations, including their
+experimental extension labels. Regenerate only deliberately
+with `bun run --cwd packages/hail-codec-ts scripts/evaluate-rfc9995.ts`.
+
+`content-digest.json` freezes HTTP digest dictionary acceptance/rejection cases
+over exact `contentHex` bytes. The server's `content-digest.test.ts` consumes it;
+body and attachment retriever tests separately prove that matching transport
+digests cannot bypass signed content checks. These are HTTP profile vectors, not
+new signed CBOR formats or evidence of an independent HTTP implementation.
+
 These are public synthetic fixtures. They contain test signatures, key identifiers,
 bearer capabilities and message content. Never use their keys, tokens or identities
 for a real account. No production account or hosted database was read to create them.
@@ -19,6 +33,12 @@ Normal tests read committed files; they do not generate their own expected bytes
 | `transfer-wire.json` | Real portable/managed signing functions, handover signing functions and wire wrapper; 32 fixed Ed25519/ES256 records, all handover signature roles, consent, activation and cancellation |
 | `connection-wire.json` | Real COSE codec; coherent invitation, confirmation, address bindings, reviewed coordinator snapshot and deterministic bundle, lifecycle/ack controls, conversation descriptor, exact JSON request/response bodies and ingress rejection cases |
 | `history-negative.json` | Shared mutation instructions for unknown/private fields, missing domains, wrong scalar types, foreign ownership and changed checkpoint digests |
+
+Current codec envelope vectors in `packages/hail-codec-ts/vectors/` use the
+production RFC 9995 descriptor profile, with exact wire and signature inputs.
+Current snapshot fixtures carry complete RFC 9995 COSE in `signatureHex`; the
+manifest is an external preimage. TS/provider, Go and Rust consumers verify the
+current formats. Superseded envelope and snapshot fixtures are not maintained.
 
 Snapshot fixtures retain exact manifest bytes in `manifestBase64`, source public
 key, signature and expected digest. JSON objects displayed after parsing are not

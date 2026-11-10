@@ -159,7 +159,7 @@ export class EnvelopeService {
         if (kid !== `${senderDid}#hail-messaging`) throw new Error("Invalid envelope signer");
         return ed25519PublicKeyFromDidKey(key.publicKey);
       }));
-    if (representation.length > 16_384) throw new Error("Signed envelope exceeds 16 KiB");
+    if (representation.length > 17_408) throw new Error("Signed envelope exceeds 17 KiB");
     await this.envelopes.createSent(payload, representation, account.id);
     return { payload, representation,
       digest: new Uint8Array(createHash("sha256").update(inspectSignedPayload("hail.envelope", representation).payloadBytes).digest()),

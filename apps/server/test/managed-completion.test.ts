@@ -2,7 +2,7 @@ import {createHash} from "node:crypto";
 import {cidForCbor} from "@atproto/common";
 import {P256Keypair} from "@atproto/crypto";
 import {signOperation} from "@did-plc/lib";
-import {encodeBase64Url} from "@racrproto/codec";
+import {encodeBase64Url,encodeHashEnvelope} from "@racrproto/codec";
 import {expect,it,vi} from "vitest";
 import {ManagedMigrationCompletion} from "../src/migration/managed-completion.js";
 
@@ -10,13 +10,13 @@ it("completes only the exact retained managed artifacts",async()=>{
   const owner=await P256Keypair.create(),operation=await signOperation({type:"plc_operation",prev:"bafy-old",
     rotationKeys:[owner.did()],verificationMethods:{},alsoKnownAs:[],services:{}},owner),
     operationBytes=new TextEncoder().encode(JSON.stringify(operation)),operationCid=(await cidForCbor(operation)).toString(),
-    bytes=new TextEncoder().encode('{"version":4}'),digest=new Uint8Array(createHash("sha256").update(bytes).digest()),
+    bytes=new TextEncoder().encode('{"version":8}'),digest=new Uint8Array(createHash("sha256").update(bytes).digest()),
     signature=new Uint8Array(64).fill(1),transferId="019a0000-0000-7000-8000-000000000001",
     did=`did:plc:${"a".repeat(24)}`,accountId="019a0000-0000-7000-8000-000000000002",
-    snapshot={type:"hail.managed-migration-transfer",version:4,manifest:encodeBase64Url(bytes),digest:encodeBase64Url(digest),
-      signature:encodeBase64Url(signature),sourceMessagingPublicKey:"did:key:zsource"},
+    snapshot={type:"hail.managed-migration-transfer",version:8,manifest:encodeBase64Url(bytes),digest:encodeBase64Url(digest),
+      signature:encodeBase64Url(encodeHashEnvelope(bytes,signature,'application/hail-managed-snapshot+json;version=8',did+'#hail-messaging',true)),sourceMessagingPublicKey:"did:key:zsource"},
     approval={payload:encodeBase64Url(new Uint8Array([1])),signature:encodeBase64Url(signature)};
-  const stage=vi.fn(async()=>({version:4,transferId,did,accountId})),submit=vi.fn(async()=>operationCid),activate=vi.fn(async()=>({did,accountId,generation:2})),
+  const stage=vi.fn(async()=>({version:8,transferId,did,accountId})),submit=vi.fn(async()=>operationCid),activate=vi.fn(async()=>({did,accountId,generation:2})),
     receipt={payloadBytes:new Uint8Array([2]),signature},issueReceipt=vi.fn(async()=>receipt),
     completion=new ManagedMigrationCompletion({stage} as never,{submit},{activate,issueReceipt});
   await expect(completion.complete({snapshot,approval,operation:encodeBase64Url(operationBytes)})).resolves.toMatchObject({
@@ -36,8 +36,8 @@ it("completes only the exact retained managed artifacts",async()=>{
   await expect(completion.complete({...input,monitor:approval})).rejects.toThrow(/requires exact/);
   await publicCompletion.complete({...input,monitor:approval});
   expect(activate).toHaveBeenLastCalledWith(transferId,{payloadBytes:new Uint8Array([1]),signature});
-  stage.mockResolvedValueOnce({version:6,transferId,did,accountId,connections:{tables:{history:[{}]}}} as never);
+  stage.mockResolvedValueOnce({version:8,transferId,did,accountId,connections:{tables:{history:[{}]}}} as never);
   submit.mockClear();activate.mockClear();issueReceipt.mockClear();
-  await expect(publicCompletion.complete({...input,snapshot:{...snapshot,version:6}})).resolves.toMatchObject({phase:'awaiting-connection-handover'});
+  await expect(publicCompletion.complete({...input,snapshot:{...snapshot,version:8}})).resolves.toMatchObject({phase:'awaiting-connection-handover'});
   expect(submit).not.toHaveBeenCalled();expect(activate).not.toHaveBeenCalled();expect(issueReceipt).not.toHaveBeenCalled();
 });

@@ -787,9 +787,9 @@ integration("fenced transfer and concurrent cutover", () => {
       SELECT state FROM pending_migration_imports WHERE transfer_id = ${fence.transferId}`;
     expect(imported[0]?.state).toBe("staged");
     const changed: SignedTransferSnapshot = { ...snapshot, signature: Uint8Array.from(snapshot.signature) };
-    changed.signature[0] = changed.signature[0]! ^ 1;
+    changed.signature[changed.signature.length-1] = changed.signature[changed.signature.length-1]! ^ 1;
     await expect(transferTarget.stageImport(changed, consent, operationBytes, destinationBinding))
-      .rejects.toThrow("signature is invalid");
+      .rejects.toThrow("signature verification failed");
     const damagedHistory=JSON.parse(new TextDecoder().decode(snapshot.bytes));
     damagedHistory.tables.public_plc_resolution_evidence=[];
     expect(()=>validateTransferManifest(new TextEncoder().encode(JSON.stringify(damagedHistory))))

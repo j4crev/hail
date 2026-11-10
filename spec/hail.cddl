@@ -472,3 +472,24 @@ hail-attachment = {
   "size": 1..26214400,
   "digest": digest
 }
+
+; Current RFC 9995 carriers. The descriptor/manifest hash, UTF-8 kid role,
+; purpose, deterministic encoding and total size constraints are semantic gates.
+hail-envelope-hash-cose = #6.18([
+  protected: bstr .cbor hail-envelope-hash-protected,
+  unprotected: {"https://haili.app/ns/racr/preimage": bstr .cbor hail-envelope},
+  payload: sha256,
+  signature: bstr .size 64
+])
+hail-envelope-hash-protected = {
+  1: -19, 4: bstr, 258: -16, 259: "application/hail-envelope+cbor"
+}
+hail-snapshot-hash-cose = #6.18([
+  protected: bstr .cbor hail-snapshot-hash-protected,
+  unprotected: {}, payload: sha256, signature: bstr .size 64
+])
+hail-snapshot-hash-protected = {
+  1: -19, 4: bstr, 258: -16,
+  259: "application/hail-portable-snapshot+json;version=7" /
+       "application/hail-managed-snapshot+json;version=8"
+}

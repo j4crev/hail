@@ -43,3 +43,14 @@ it('accepts structurally valid PNG files beyond the header budget and rejects co
   const animated=Buffer.concat([png.subarray(0,33),chunk('acTL',new Uint8Array(8)),png.subarray(33)]);
   expect(()=>validate(animated)).toThrow('animated');
 });
+
+it('uses dictionary digest validation for attachments and keeps signed declarations authoritative',async()=>{
+ const valid=`sha-512=:${createHash('sha512').update(data).digest('base64')}:, sha-256=:${createHash('sha256').update(data).digest('base64')}:`;
+ for(const [header,kind] of [[valid,'success'],[valid+', unknown=:AA==:','success'],[valid+', sha-512=:AA==:','fail'],['unknown="bad"','fail']] as const){
+  const r=response(data,'application/octet-stream');r.headers.set('Content-Digest',header);
+  expect((await setup(r).retriever.retrieve(envelope)).kind).toBe(kind);
+ }
+ const bad=new Uint8Array(data.length),r=response(bad,'application/octet-stream');
+ r.headers.set('Content-Digest',`sha-512=:${createHash('sha512').update(bad).digest('base64')}:`);
+ expect((await setup(r).retriever.retrieve(envelope)).kind).toBe('fail');
+});

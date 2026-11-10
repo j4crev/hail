@@ -4,8 +4,8 @@ mod schema;
 mod tests;
 
 use crate::contract::Error;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use cbor::{Limits, Value, decode, invalid};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use cbor::{decode, invalid, Limits, Value};
 use sha2::{Digest, Sha256};
 
 pub fn decode_base64(text: &str) -> Result<Vec<u8>, Error> {
@@ -199,4 +199,51 @@ pub fn from_diagnostic(kind: &str, value: &serde_json::Value) -> Result<Value, E
     convert(&mut result)?;
     schema::validate(kind, &result)?;
     Ok(result)
+}
+
+/// RFC 9995 signature with the exact manifest supplied by the artifact, not
+/// fetched through an untrusted location hint. Public-key authority is external.
+pub fn verify_hash_envelope(
+    wire: &[u8],
+    preimage: &[u8],
+    content_type: &str,
+    kid: &str,
+    public: &str,
+) -> Result<(), Error> {
+    let Value::Tag(18, outer) = decode(wire, Limits::cose(1024), true)? else {
+        return Err(invalid());
+    };
+    let [protected, unprotected, payload, signature] = outer.array()? else {
+        return Err(invalid());
+    };
+    if *unprotected != Value::Map(vec![])
+        || signature.bytes()?.len() != 64
+        || payload.bytes()? != Sha256::digest(preimage).as_slice()
+    {
+        return Err(invalid());
+    }
+    let Value::Map(headers) = decode(protected.bytes()?, Limits::cose(1024), false)? else {
+        return Err(invalid());
+    };
+    let header = |label| {
+        headers
+            .iter()
+            .find(|(k, _)| *k == Value::Int(label))
+            .map(|(_, v)| v)
+            .ok_or_else(invalid)
+    };
+    if headers.len() != 4
+        || *header(1)? != Value::Int(-19)
+        || *header(258)? != Value::Int(-16)
+        || header(259)?.text()? != content_type
+        || header(4)?.bytes()? != kid.as_bytes()
+    {
+        return Err(invalid());
+    }
+    crate::crypto::ed_public(public)?
+        .verify_strict(
+            &signature_input(protected.bytes()?, payload.bytes()?)?,
+            &ed25519_dalek::Signature::from_slice(signature.bytes()?).map_err(|_| invalid())?,
+        )
+        .map_err(|_| Error::client("Hash envelope signature verification failed"))
 }

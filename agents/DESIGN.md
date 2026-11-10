@@ -325,7 +325,7 @@ SHA-256 integrity, dimensions, size, role and loading mode. `spt-3` uses one
 `header` asset and prohibits remote resources, so rendering cannot disclose a
 user open to the sender. Sender Profile v2 uses the same manifest for bundled PNG avatars. Attachments, remote assets,
 and other image formats remain deferred. See
-[content storage and attachments](../docs/content-storage-and-attachments.md) for
+[content storage and attachments](content-storage-and-attachments.md) for
 the received-body storage implementation and attachment design constraints.
 
 Later profiles may package additional declared assets or structured metadata.
@@ -488,3 +488,390 @@ and [read-evidence policy](../spec/plc-read-evidence.md).
 - Server abuse protections and rate limits.
 - Email bridge strategy.
 - Business model and ecosystem incentives.
+
+## Standards adoption direction
+
+Status: Accepted direction with explicitly marked design decisions still open,
+2026-11-10. Nonnormative; implementation is tracked in the checklist below.
+This section does not change current wire formats. Every implementation updates
+its affected `spec/` documents, schemas, version inventory and conformance vectors
+in the same change. Pre-launch changes need not preserve superseded alpha formats;
+preserve authenticated current history and define an explicit cutover instead.
+
+The intended layers are OAuth-based client authorization, JMAP client/provider
+interoperability, RACR recipient consent and federation, and eventual MLS content
+encryption. Reusing a standard is a valid interoperability benefit even when the
+current implementation already provides similar behavior. Evaluate security,
+implementation burden and ecosystem compatibility, not just new features.
+
+### Retrieval tokens and HTTP signatures
+
+Retain recipient-specific bearer tokens for cheap rejection and add mandatory
+[RFC 9421 HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html)
+in the next retrieval profile. The token selects a current authorization record;
+the signature proves possession of the authorized recipient's messaging key.
+Neither alone permits retrieval in that profile. This limits token-leakage damage
+without forcing unauthenticated requests through expensive PLC/key verification.
+
+The [body repository](../apps/server/src/bodies/repository.ts) already records
+recipient DID and message ID. Perform bounded token/digest/status/expiry lookup
+before resolving the record's recipient key. A valid token is not permission to
+choose an arbitrary DID or key-resolution URL. Rate-limit even valid-token
+failures: a leaked token still permits attempts at expensive verification.
+
+Specify signed method, target and Authorization field, key role, freshness and
+replay handling, attachments, migration and key rotation. Keep authorization
+failures concealed until both checks pass; the existing token-only boundary for
+revealing storage failures must move accordingly. Test uniform response behavior
+for a valid token with a missing/invalid signature. No silent fallback to
+bearer-only retrieval is allowed once the new profile applies. HTTPS, immutable
+body digest checks and availability commitments remain necessary.
+
+### RFC 9995 envelope and transfer evaluation
+
+[RFC 9995](https://www.rfc-editor.org/rfc/rfc9995.html) does provide the ability to
+verify a signature over a content hash without retrieving the original content.
+The current envelope already uses the RFC 9052 COSE_Sign1 container; RFC 9995
+would standardize its hash-envelope structure further. It does not define RACR
+parties, recipient consent, categories, conversation membership or availability.
+Those semantics still require a RACR profile whichever container is selected.
+
+Evaluate replacement of ordinary envelopes as well as the bespoke
+[transfer-manifest signature wrapper](../spec/transfer-formats.md#snapshot-profile-and-standardization-boundary).
+Existing implementation effort is not a reason to reject replacement. RFC 9995
+requires a hash payload and forbids header label 3, which Hail currently requires;
+its adoption needs a deliberately revised profile rather than optional headers
+on the old format.
+
+For ordinary delivery, compare a body-hash envelope with authenticated RACR
+metadata in explicitly defined protected headers against a hash of a complete
+RACR descriptor carried alongside its preimage. These are candidate designs, not
+approved wire formats. Show exactly how all admission metadata is authenticated
+without downloading the body first. Do not imply application-specific metadata
+becomes standardized merely by putting it in a COSE header. Define extension
+labels/registration, domain separation, canonical bytes and resource limits.
+
+For snapshots, preserve exact manifest bytes, source-key authority, transfer and
+destination binding, fencing and live cutover checks. Evaluate standard-library
+support, independent verification, wire size, validation complexity and custom
+code removed. A recorded adopt/reject decision is required for each use case;
+implementation is conditional on the corresponding decision. Do not add a second
+signature wrapper merely to claim RFC adoption, or use optional location hints
+to bypass authenticated endpoint discovery and SSRF defenses.
+
+### Client-selected authentication and provider trust
+
+The goal is independent clients with their own authentication experience connecting
+to the same provider through a standard access contract. Separate three concerns:
+
+- Client-local authentication can unlock a client session or protect credentials
+  obtained through prior provider authorization. A client may use passkeys or
+  another method here without changing the provider's API. Local unlocking does
+  not mint provider authority, renew expired access or bypass revocation.
+- Provider-account authentication establishes who may authorize access to an
+  account. A client-selected login service or proof can perform this role only
+  when the provider explicitly trusts its issuer, enrollment and account binding.
+- OAuth authorizes a client to use specified provider resources. It does not
+  automatically translate an arbitrary client-side login into trusted identity.
+
+Proposed access baseline: authorization code with PKCE and the security practices
+in [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html),
+[RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) and
+[RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html). A provider authorization
+page is the baseline interoperable route. Supporting client-selected identity
+services requires an explicit provider trust configuration and account-linking
+flow; it is an open design item, not a promise that every client proof is accepted.
+Evaluate this before finalizing the auth profile rather than constraining the
+product goal to provider-owned login screens.
+
+[OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) can supply
+identity federation where needed. Bind accounts to trusted issuer and subject,
+not matching email addresses. ID tokens, API access tokens and Hail identity
+signatures remain distinct. [WebAuthn credentials](https://www.w3.org/TR/webauthn-3/)
+are scoped to relying parties and verified origins: an independently hosted client
+cannot assume a passkey enrolled at the provider works at its own origin. Any
+related-origin arrangement needs explicit configuration and validation.
+
+The CLI already has a custom authentication-method-neutral PKCE exchange in
+[the client profile](../spec/client-api.md). The GUI still assumes passkey login,
+`hail_session`, passkey settings and passkey-specific action approval. Decouple
+those workflows through the standard authorization boundary and advertised
+account capabilities. Ordinary login must not become independent owner-key or
+recovery authority. Signup, account linking, sensitive-action approval and
+recovery need their own documented contracts.
+
+For the server-rendered reference web client, use server-held OAuth credentials
+and a protected local browser session following
+[RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html). The CLI uses the system
+browser and loopback redirect. Specify client registration, issuer/resource
+metadata ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html),
+[RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html)), exact redirect validation,
+audiences, scopes, refresh, revocation, CSRF and logout behavior. Discovery neither
+registers clients automatically nor authorizes arbitrary issuers or token targets.
+
+### JMAP interoperability and notifications
+
+Adopt [JMAP core](https://www.rfc-editor.org/rfc/rfc8620.html) at the client/provider
+boundary with a specified RACR extension. Model messages, local read/trash state,
+drafts, relationships, Grants and submission results while separating immutable
+signed records from mutable local state. JSON API representations must preserve
+exact signed CBOR/COSE bytes. Reuse existing provider services and storage.
+
+Start with Session discovery and read-only message synchronization. Define account
+isolation, stable IDs, durable changes/tombstones, cache invalidation and provider
+transfer behavior. Add mutations with concurrency handling and explicit durable
+submission retry semantics. JMAP batches are not implicit transactions and creation
+IDs alone do not make separate requests idempotent. Advertise only implemented
+capabilities. Exact RACR type and capability identifiers remain design work.
+
+Standard JMAP mail clients do not automatically understand a RACR extension;
+this plan does not claim generic email-client compatibility. The federation
+protocol remains RACR.
+
+JMAP state-change notifications and Web Push work together;
+[RFC 9749](https://www.rfc-editor.org/rfc/rfc9749.html) integrates VAPID. Use event
+streams while connected and encrypted Web Push for background wakeups followed
+by authenticated synchronization. Notifications are hints, not message records,
+delivery acknowledgements or read receipts. Minimize payloads, validate push
+destinations, bound retries and retire subscriptions when authorization is lost.
+
+### Long-term MLS encryption
+
+Use [MLS](https://www.rfc-editor.org/rfc/rfc9420.html) and its
+[architecture](https://www.rfc-editor.org/rfc/rfc9750.html) as the basis for the
+long-term encrypted-conversation profile. Clients retain device keys and plaintext;
+providers enforce RACR admission and transport ciphertext. Define how MLS epochs
+and device membership bind to RACR identities and conversation membership, including
+removal, offline devices and provider migration. Define history access and recovery
+separately from login recovery. Revisit plaintext validation/search, content
+identity and deduplication. A provider-served web client also needs an explicit
+threat model for malicious replacement of its JavaScript.
+
+### Supporting standards and review rules
+
+Apply ACE/CWT lessons to the authorization work: exact subject, audience, resource,
+operation, expiry and revocation; explicit bearer versus proof-of-possession roles.
+Use [AIF](https://www.rfc-editor.org/rfc/rfc9237.html) and
+[CWT proof-of-possession](https://www.rfc-editor.org/rfc/rfc8747.html) as review
+references. Preserve immediate local Grant revocation and check authority when
+resources are used. Add only demonstrated missing constraints or tests; adopting
+a generic token encoding is not itself an implementation objective.
+
+Prepare media-type registrations under
+[RFC 6838](https://www.rfc-editor.org/rfc/rfc6838.html) and allocation policies under
+[RFC 8126](https://www.rfc-editor.org/rfc/rfc8126.html) for actual extension points.
+Reuse existing allocations and domain-controlled URIs where appropriate. Current
+media-type names are provisional and can be signed domain-separation values;
+coordinate any name changes with wire changes before independent implementations
+freeze them. Registration is not certification. Final templates depend on the
+RFC 9995 and JMAP profile decisions; inventory can begin immediately.
+
+Use OAuth metadata and `/.well-known/jmap`/Session discovery to remove endpoint
+and capability hard-coding. Preserve provider selection, authenticated endpoint
+validation and token audience restrictions. Existing WebFinger/PLC discovery
+continues to establish federation identity.
+
+The HTTP and transport work has focused outcomes:
+
+- Parse [structured fields](https://www.rfc-editor.org/rfc/rfc9651.html) according
+  to each adopted grammar. Replace the retriever's single exact-string
+  `Content-Digest` assumption with bounded handling of legal dictionaries under
+  [RFC 9530](https://www.rfc-editor.org/rfc/rfc9530.html); keep the signed body
+  digest authoritative and define malformed/unsupported-algorithm behavior.
+- Verify [HTTP caching](https://www.rfc-editor.org/rfc/rfc9111.html) cannot expose
+  private content or protected negative responses across accounts. Distinguish
+  internal authenticated content reuse from shared HTTP caching.
+- Verify the existing [Content-Disposition](https://www.rfc-editor.org/rfc/rfc6266.html)
+  and [filename*](https://www.rfc-editor.org/rfc/rfc8187.html) handling for Unicode,
+  reserved/control characters and safe downloads; fix only demonstrated gaps.
+- Verify [TLS service identity](https://www.rfc-editor.org/rfc/rfc9525.html) in the
+  actual DNS/SSRF-aware transport, including delegated endpoints. Use maintained
+  libraries and [TLS deployment guidance](https://www.rfc-editor.org/rfc/rfc9325.html).
+  A trusted certificate chain must also match the selected service hostname.
+
+Apply [RFC 9413](https://www.rfc-editor.org/rfc/rfc9413.html) and
+[RFC 6709](https://www.rfc-editor.org/rfc/rfc6709.html) through explicit capabilities,
+strict signed schemas, correctly extensible discovery/API objects and rejection
+of security downgrades. Apply [RFC 3552](https://www.rfc-editor.org/rfc/rfc3552.html)
+and [RFC 6973](https://www.rfc-editor.org/rfc/rfc6973.html) through concrete threat
+and disclosure cases for providers, identity services, push services, network
+observers, stolen credentials and malicious peers. Internationalized local parts
+remain future roadmap work with explicit comparison/normalization rules; do not
+silently normalize signed text.
+
+## Standards implementation checklist
+
+Status: phase 0 baseline recorded; phase 1 implemented and verified locally.
+See [phase 1 evidence and limits](standards-phase-1.md); no deployment is implied.
+Phase 2 implements full RFC 9995 envelope and snapshot signature replacement.
+[Implementation, validation and cutover requirements](standards-phase-2.md) are
+recorded. Only current envelope/snapshot signatures are supported; the confirmed
+deployment has no message or connection history requiring compatibility.
+Deployment remains separate.
+Work in the numbered order by default. Independent HTTP checks and registration
+inventory may run alongside profile design; notification work follows usable
+JMAP synchronization, and MLS follows stable identity/authorization/data contracts.
+Each item is complete only when its acceptance evidence is linked here. A design
+decision is not an implemented feature. RFC 9995 implementation is conditional;
+record a justified rejection as a completed evaluation, not a shipped feature.
+
+### 0. Decisions and baseline
+
+- [x] Record token-plus-signature retrieval, client authentication goals, JMAP and
+  MLS directions, and reopen RFC 9995 evaluation for both envelopes and snapshots.
+  Evidence: the standards adoption direction above.
+- [x] Inventory existing behavior, reusable services, protocol objects and tests
+  affected by each phase; identify exact spec/schema/vector owners before edits.
+  Evidence: [implementation inventory and initial registration inventory](standards-baseline.md#phase-by-phase-implementation-inventory).
+- [x] Define each phase's cutover and preservation requirements for authenticated
+  history, existing accounts and custody, under the pre-launch policy.
+  Evidence: [shared preservation rules](standards-baseline.md#shared-ownership-and-preservation-rules)
+  and [phase cutover matrix](standards-baseline.md#cutover-requirements-by-phase).
+  [Baseline validation](standards-baseline.md#baseline-validation-and-limits)
+  records local evidence and its limits; later profile decisions remain open.
+
+### 1. HTTP and transport foundations
+
+- [x] Implement bounded Content-Digest dictionary handling for bodies/attachments;
+  prove valid multiple digests work, invalid/mismatched digests fail as specified,
+  and gzip-content versus uncompressed signed-body verification stays distinct.
+  Evidence: [digest dictionaries](standards-phase-1.md#digest-dictionaries).
+- [x] Verify private and protected-error responses cannot cross account boundaries
+  through caches; fix any evidenced gap and retain discovery freshness rules.
+  Evidence: [private caching](standards-phase-1.md#private-caching-and-downloads).
+- [x] Verify Unicode/reserved filenames and control/path-character handling in
+  attachment downloads; fix only evidenced gaps.
+  Evidence: [download encoding and validation](standards-phase-1.md#private-caching-and-downloads).
+- [x] Verify hostname/certificate checks, delegation and SSRF restrictions through
+  real transport tests, including rejection of a trusted but wrong-host certificate.
+  Evidence: [real TLS and attachment transport](standards-phase-1.md#real-tls-and-attachment-transport).
+
+### 2. RFC 9995 profile decisions
+
+- [x] Build minimal ordinary-envelope and snapshot candidates; document exact
+  signed bytes, authenticated admission fields and domain separation. Verify each
+  using an independent implementation or standard-library path.
+  Evidence: [candidate layouts and independent verification](standards-phase-2.md#exact-candidate-layouts).
+- [x] Compare generic tooling interoperability, custom code, wire size, limits and
+  validation burden; record separate adopt/reject decisions with reasons.
+  Evidence: [adopt descriptor-hash envelopes and manifest-hash snapshots](standards-phase-2.md#decision),
+  with [measured tradeoffs](standards-phase-2.md#measurements-and-tradeoffs).
+- [x] If adopting ordinary envelopes, update codecs, submission/retrieval metadata,
+  authority checks, history representation and transfer handling together; prove
+  tampering with parties, consent, expiry or content fails before body retrieval.
+  Evidence: [production profiles and preservation](standards-phase-2.md#final-implementation-and-preservation)
+  and [validation](standards-phase-2.md#implementation-validation).
+- [x] If adopting snapshot wrappers, update export/import and prove wrong source,
+  destination, transfer, modified manifest or unmet cutover authority is rejected.
+  Evidence: [snapshot implementation and integration proof](standards-phase-2.md#implementation-validation).
+- [x] Publish current-profile schemas and positive/negative cross-language vectors;
+  document cutover and retire superseded formats where no distinct purpose remains.
+  The body-hash candidate is not adopted; its runtime implementation is N/A.
+  Evidence: [current encoding](../spec/encoding.md#rfc-9995-hash-profile),
+  [vectors](../spec/vectors/README.md), and [cutover/rollback](standards-phase-2.md#cutover-and-rollback).
+
+### 3. Token plus HTTP-signature retrieval
+
+Depends on phase 1 parsing work and phase 2's envelope decision, not on adopting
+RFC 9995. Keep this separable from client OAuth tokens.
+
+- [ ] Specify the RFC 9421 profile: covered method/target/Authorization, recipient
+  key role, freshness, replay state, retries, attachments and migration behavior.
+- [ ] Implement cheap token rejection before recipient-key resolution and require
+  both token and recipient proof; preserve concealed failures until both pass.
+- [ ] Prove leaked tokens fail without the recipient key, wrong recipients and
+  substituted paths fail, and malformed/missing signatures cannot reveal validity.
+- [ ] Prove legitimate retries, restarts, attachments and key/provider changes work;
+  bound expensive attempts and prohibit bearer-only downgrade in the new profile.
+
+### 4. Authentication and authorization contract
+
+Can be designed alongside phases 1–3. Resolve the trust decision before promising
+arbitrary client-selected provider login.
+
+- [ ] Specify local client unlocking versus provider-account authentication and
+  API authorization. Decide how provider-approved client-selected identity services
+  are enrolled, linked and revoked, or explicitly limit the first slice to local
+  unlocking plus provider authorization. Record the remaining product gap if limited.
+- [ ] Define OAuth code+PKCE, client registration, issuer/resource discovery,
+  redirects, scopes, audiences, token lifetime/refresh/revocation and logout.
+- [ ] Define GUI/CLI session handling and provider capabilities for signup,
+  security settings, reauthentication and exact-action approvals; retain separate
+  owner/recovery authority and reject email-only identity linking.
+- [ ] Implement provider authorization and API validation using existing account
+  policy services; replace the custom client exchange with a documented cutover.
+- [ ] Adapt GUI and CLI; prove independently hosted clients can use one provider
+  without implementing its passkey endpoints, and a client can use a non-passkey
+  provider without client-specific login code.
+- [ ] Demonstrate two clients with different local authentication experiences
+  accessing the same provider after valid authorization. If external identity
+  services are included, prove trusted linking succeeds and untrusted assertions
+  fail. Check origin-scoped passkey behavior explicitly.
+- [ ] Prove wrong issuer/audience, code replay, CSRF, scope escalation, expired or
+  revoked access and login-only attempts at owner actions fail safely.
+
+### 5. JMAP synchronization and operations
+
+Depends on the auth contract for protected endpoints. The data-model design can
+proceed while auth implementation is underway.
+
+- [ ] Specify RACR JMAP types/capabilities, immutable-versus-local fields, exact
+  signed-byte carriage, account isolation, identifiers and provider-transfer reset
+  or continuity rules. Reuse current domain services and mailbox storage.
+- [ ] Implement authenticated Session discovery and read-only message query/get
+  with explicit limits and supported capabilities.
+- [ ] Implement durable changes/tombstones and resynchronization; prove two clients
+  converge after create/update/delete, missed events and expired change cursors.
+- [ ] Implement read/trash state, drafts and required relationship/Grant workflows;
+  prove concurrent edits are detected and owner consent cannot be bypassed.
+- [ ] Implement submission with durable idempotency; prove an ambiguous retry sends
+  one logical message and acceptance remains distinct from recipient delivery.
+- [ ] Move reference clients to the supported profile; document interoperability
+  boundaries without claiming generic JMAP Mail client support.
+
+### 6. JMAP events and Web Push
+
+- [ ] Implement connected state-change events and encrypted Web Push subscriptions
+  with VAPID; advertise only supported notification capabilities.
+- [ ] Prove reconnect and duplicate/lost notifications converge through JMAP sync;
+  enforce subscription authorization, destination validation, expiry and revocation.
+- [ ] Verify payload minimization and bounded retries; prove push delivery neither
+  changes read state nor substitutes for RACR delivery evidence.
+
+### 7. Publication and interoperability completion
+
+Inventory starts in phase 0; finalize names after wire/capability decisions, before
+calling those profiles stable. Each earlier phase still updates its spec immediately.
+
+- [ ] Complete media-type/extension inventory, registration templates and necessary
+  allocation policies; align exact signed names across specifications and codecs.
+- [ ] Complete applicable registration submissions and track their actual status;
+  do not label provisional values registered or imply IETF adoption.
+- [ ] Review security/privacy and ACE/CWT-derived authority cases for every new
+  profile, including downgrade, migration and adversarial-provider scenarios.
+- [ ] Record independent client/provider or codec interoperability evidence with
+  its limits; update draft references and inventories consistently.
+
+### 8. Long-term MLS conversations
+
+- [ ] Specify the client threat model, device credentials, membership/epoch binding,
+  encrypted-body format, history access and recovery, including web-code delivery.
+- [ ] Implement one complete encrypted-conversation path with client-held keys and
+  ciphertext retrieval, preserving recipient consent and required metadata checks.
+- [ ] Prove multi-device/offline delivery, removals, state loss, key updates and
+  provider migration; document plaintext search/validation and deduplication changes.
+- [ ] Publish interoperability vectors and security-review evidence before claiming
+  the encrypted profile complete.
+
+### Completion evidence for each shipped phase
+
+Repeat these gates in each phase's completion record; checking one phase does not
+establish completion of the others.
+
+- [ ] Behavior and acceptance cases pass at the affected boundaries; link commands,
+  results and relevant positive/negative interoperability vectors.
+- [ ] Specs, schemas, current-version inventory and applicable draft references
+  match the implementation; unresolved decisions are explicit.
+- [ ] Record revision/PR, cutover or migration notes and material limitations.
+  Local checks, merged work and production deployment are distinct statuses;
+  this checklist alone does not authorize a production release.

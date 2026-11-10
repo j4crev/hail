@@ -385,18 +385,16 @@ func TestAccountHistoryInteroperability(t *testing.T) {
 			if interopHash(raw) != v["digestHex"] {
 				t.Fatal("manifest digest")
 			}
-			prefix := fmt.Sprintf("hail-migration-snapshot-v%.0f\x00", m["version"])
-			input := append([]byte(prefix), interopHex(t, v["digestHex"].(string))...)
 			key := interopHex(t, v["publicKeyHex"].(string))
 			sig := interopHex(t, v["signatureHex"].(string))
-			if !ed25519.Verify(key, input, sig) {
+			if !verifySnapshotHash(sig, raw, key, kind, m["did"].(string)+"#hail-messaging") {
 				t.Fatal("snapshot signature")
 			}
 			mutated := append(append([]byte{}, raw...), 10)
 			if interopHash(mutated) != v["jsonWhitespaceMutationDigestHex"] {
 				t.Fatal("mutation digest")
 			}
-			if ed25519.Verify(key, append([]byte(prefix), interopHex(t, interopHash(mutated))...), sig) {
+			if verifySnapshotHash(sig, mutated, key, kind, m["did"].(string)+"#hail-messaging") {
 				t.Fatal("reserialized manifest accepted")
 			}
 			for _, domain := range []string{"connection", "conversation"} {

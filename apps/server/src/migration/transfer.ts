@@ -1,3 +1,4 @@
+import {signSnapshot,inspectSnapshotSignature,verifySnapshotSignature} from './snapshot-signature.js';
 import {ATTACHMENT_TABLES,collectAttachmentHistory,validateAttachmentHistory} from './attachment-history.js';
 import {collectConversationHistory,conversationHistoryDigest,type ConversationHistory} from './conversation-history.js';
 import { createHash } from "node:crypto";
@@ -25,7 +26,6 @@ import {validateSnapshotConnections} from "./connection-snapshot.js";
 import {verifyConnectionHistoryAuthority} from "./connection-history-verification.js";
 import {encodeBase64Url} from "@racrproto/codec";
 
-const context = (version: 2 | 3 | 5 | 7) => new TextEncoder().encode(`hail-migration-snapshot-v${version}\0`);
 
 export const TRANSFER_TABLES = [
   ...ATTACHMENT_TABLES,
@@ -78,15 +78,6 @@ interface ExportRow {
 }
 
 function digest(bytes: Uint8Array): Uint8Array { return new Uint8Array(createHash("sha256").update(bytes).digest()); }
-
-function signatureInput(hash: Uint8Array, version: 2 | 3 | 5 | 7): Uint8Array<ArrayBuffer> {
-  const prefix = context(version);
-  const message = new Uint8Array(prefix.length + hash.length);
-  message.set(prefix);
-  message.set(hash, prefix.length);
-  return message;
-}
-export {signatureInput as transferSnapshotSignatureInput};
 
 function decodeHex(value: unknown, label: string): Uint8Array {
   if (typeof value !== "string" || !/^\\x(?:[0-9a-f]{2})+$/i.test(value)) {
@@ -389,6 +380,8 @@ export class MigrationTransferService {
           FROM provider_migration_exports WHERE transfer_id = ${fence.transferId}
         `;
         if (!existing[0]) throw new Error("Exported migration snapshot is missing");
+        const retainedManifest=validateTransferManifest(existing[0].manifest_bytes);
+        inspectSnapshotSignature(existing[0].signature,existing[0].manifest_bytes,retainedManifest.version,retainedManifest.did);
         return { bytes: new Uint8Array(existing[0].manifest_bytes), digest: new Uint8Array(existing[0].manifest_digest),
           signature: new Uint8Array(existing[0].signature), sourceMessagingPublicKey: existing[0].source_messaging_public_key };
       }
@@ -413,7 +406,7 @@ export class MigrationTransferService {
       let signature: Uint8Array;
       try {
         const key = await importEd25519PrivateKey(secret);
-        signature = new Uint8Array(await crypto.subtle.sign("Ed25519", key, signatureInput(hash, manifest.version)));
+        signature = await signSnapshot(bytes,manifest.version,manifest.did,key);
       } finally { secret.fill(0); }
       await tx`
         INSERT INTO provider_migration_exports (transfer_id, did, manifest_bytes, manifest_digest,
@@ -432,18 +425,16 @@ export class MigrationTransferService {
     operationBytes: Uint8Array, destinationBinding: Uint8Array): Promise<TransferManifest> {
     const hash = digest(snapshot.bytes);
     if (hash.length !== 32 || !Buffer.from(hash).equals(Buffer.from(snapshot.digest)) ||
-      snapshot.signature.length !== 64) throw new Error("Transfer digest or signature has an invalid shape");
+      snapshot.signature.length > 1024) throw new Error("Transfer digest or signature has an invalid shape");
     const manifest = validateTransferManifest(snapshot.bytes);
+    inspectSnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did);
     if (manifest.destinationServiceBase !== this.serviceBase) throw new Error("Snapshot names another destination");
     const resolved = await this.resolver.resolve(manifest.did);
     if (resolved.did !== manifest.did || resolved.serviceBase !== manifest.sourceServiceBase ||
       resolved.messagingDidKey !== snapshot.sourceMessagingPublicKey) {
       throw new Error("Current PLC state does not authenticate the source snapshot");
     }
-    const key = await ed25519PublicKeyFromDidKey(snapshot.sourceMessagingPublicKey);
-    if (!await crypto.subtle.verify("Ed25519", key, Uint8Array.from(snapshot.signature), signatureInput(hash, manifest.version))) {
-      throw new Error("Migration snapshot source signature is invalid");
-    }
+    await verifySnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did,snapshot.sourceMessagingPublicKey);
     const consent = await verifyPortableMigrationConsent(userConsent, resolved.identityDidKey, Math.floor(Date.now() / 1000));
     const custody = manifest.tables.portable_custody_evidence[0]!;
     if (destinationBinding.length < 1 || destinationBinding.length > 16_384) {

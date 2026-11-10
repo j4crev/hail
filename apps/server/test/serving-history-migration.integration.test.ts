@@ -19,7 +19,7 @@ integration("current-schema serving metadata and immutable retirement history",(
   const retired=async()=>{
     // Synthetic current-schema rows exercise archival byte preservation; full transfers verify signed artifacts.
     const id=randomUUID(),did=`did:plc:${Array.from(randomBytes(24),b=>"abcdefghijklmnopqrstuvwxyz234567"[b%32]).join("")}`,transfer=randomUUID();
-    const address=`history-${id}@source.example.com`,manifest=randomBytes(512),digest=new Uint8Array(createHash("sha256").update(manifest).digest()),signature=randomBytes(64);
+    const address=`history-${id}@source.example.com`,manifest=randomBytes(512),digest=new Uint8Array(createHash("sha256").update(manifest).digest()),signature=randomBytes(215);
     await db.sql`INSERT INTO provider_accounts (id,tenant_id,canonical_address,did,onboarding_state,activated_at,activation_binding_digest,activation_verification_mode)
       VALUES (${id},${randomUUID()},${address},${did},'active',now(),${randomBytes(32)},'public')`;
     const credential={token:`racr_${encodeBase64Url(randomBytes(32))}`};

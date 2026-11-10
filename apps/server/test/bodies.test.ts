@@ -97,3 +97,30 @@ describe("detached body", () => {
     expect(await failed.text()).toBe(await ordinary.text());
   });
 });
+
+it('never permits shared caching of body or attachment successes and protected failures',async()=>{
+ const goodHash=createHash('sha256').update(token).digest();
+ const lookup=vi.fn(async(_digest:Uint8Array,hash:Uint8Array)=>Buffer.from(hash).equals(goodHash)?{bytes,digest}:null);
+ const app=new Hono();registerBodyRoutes(app,{retrieve:lookup,retrieveAttachment:async(_body:Uint8Array,digest:Uint8Array,hash:Uint8Array)=>lookup(digest,hash)} as unknown as BodyStore);
+ // A compliant shared cache stores neither the authorized success nor the
+ // negative response: each principal must reach authorization on every request.
+ const shared=new Map<string,Response>();
+ const cached=async(url:string,auth:string)=>{
+  const prior=shared.get(url);if(prior)return prior.clone();
+  const r=await app.request(url,{headers:{Authorization:auth}});
+  if(!/no-store/.test(r.headers.get('cache-control')??''))shared.set(url,r.clone());
+  return r;
+ };
+ for(const url of [path,`${path}/attachments/${encodeBase64Url(digest)}`]){
+  for(const [auth,status] of [[headers.Authorization,200],[`Bearer ${encodeBase64Url(new Uint8Array(32))}`,404],[headers.Authorization,200]] as const){
+   const r=await cached(url,auth);expect(r.status).toBe(status);expect(r.headers.get('cache-control')).toContain('no-store');
+  }
+ }
+ expect(shared.size).toBe(0);expect(lookup).toHaveBeenCalledTimes(6);
+ lookup.mockImplementation(async()=>{throw new Error('lookup unavailable');});
+ expect((await cached(path,headers.Authorization)).headers.get('cache-control')).toContain('no-store');
+ const unavailable=setup('missing-body');
+ for(const request of [{headers},{method:'POST'},{headers:{...headers,Accept:'application/json'}}]){
+  expect((await unavailable.app.request(path,request)).headers.get('cache-control')).toContain('no-store');
+ }
+});

@@ -55,6 +55,7 @@ it('links the managed v8 chain and separates handover roles and activation diges
 for(const kind of ['portable','managed'] as const){it('imports the fixed actual '+kind+' export shape, hashes and original signature',async()=>{
  const v=await fixture(kind+'-history'),raw=new Uint8Array(Buffer.from(v.manifestBase64,'base64url'));
  const snapshot={bytes:raw,digest:bytes(v.digestHex),signature:bytes(v.signatureHex),sourceMessagingPublicKey:v.sourceMessagingPublicKey};
+ expect(snapshot.signature.length).toBeGreaterThan(64);
  // Validation only: never rewrite the frozen fixture during unit tests.
  expect(process.env.HAIL_WRITE_HISTORY_VECTORS).not.toBe('1');await assertExportConformance(snapshot,kind);
  const m=JSON.parse(new TextDecoder().decode(raw));
