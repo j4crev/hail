@@ -41,6 +41,10 @@ export class MonitorSigner {
       new TextEncoder().encode(alertId))).digest("base64url");
   }
 
+  registrationToken(bytes: Uint8Array): string {
+    return createHash("sha256").update(this.sign(new TextEncoder().encode("hail.monitor-provider-credential.v1\0"), bytes)).digest("base64url");
+  }
+
   signAlert(bytes: Uint8Array): Uint8Array { return this.sign(ALERT_CONTEXT, bytes); }
   signEmailBindingRequest(bytes: Uint8Array): Uint8Array {
     return this.sign(new TextEncoder().encode(EMAIL_BINDING_CONTEXT), bytes);

@@ -1,0 +1,29 @@
+{
+  admin off
+}
+# Example for a host-local Cloudflare Tunnel. Keep this listener loopback-only.
+# Other ingress providers must derive the client IP from their own trusted source.
+:8080 {
+  bind 127.0.0.1
+  @api {
+    host enroll.monitor.example
+    method POST
+    path /api/v1/onboarding /api/v1/onboarding/stop /api/v1/providers/register
+  }
+  handle @api {
+    reverse_proxy 127.0.0.1:3001 {
+      header_up X-Hail-Monitor-Client-IP {http.request.header.CF-Connecting-IP}
+    }
+  }
+  @incidents {
+    host enroll.monitor.example
+    method GET POST
+    path /incidents/*
+  }
+  handle @incidents {
+    reverse_proxy 127.0.0.1:3001
+  }
+  handle {
+    respond 404
+  }
+}

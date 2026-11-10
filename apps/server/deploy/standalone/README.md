@@ -124,7 +124,7 @@ PUBLIC_SELF_SERVICE_ONBOARDING=true
 SIGNUP_EMAIL_ORIGIN=https://alerts.monitor.example.com
 SIGNUP_EMAIL_TOKEN=<independent 32-byte base64url secret>
 SIGNUP_MONITOR_API_ORIGIN=https://enroll.monitor.example.com
-SIGNUP_MONITOR_TOKEN=<independent 32-byte base64url secret>
+SIGNUP_MONITOR_TOKEN=<credential issued by monitor provider registration>
 SIGNUP_MONITOR_PUBLIC_KEY=did:key:z...
 PUBLIC_ALPHA_SIGNUP=true
 ALPHA_SIGNUP_INVITE_KEY=<independent 32-byte base64url secret>
@@ -132,6 +132,11 @@ ALPHA_SIGNUP_MONITOR_ORIGIN=https://monitor.example.com
 ```
 
 See the [monitor deployment guide](../../../plc-monitor/deploy/public/README.md) if you operate that service.
+For a shared monitor, follow its [self-service provider registration](../../../plc-monitor/deploy/public/provider-registration.md)
+to obtain your own credential and monitor key/origins. Registration verifies control
+of your provider API and alert-receiver origins; user security-email verification
+still occurs during signup. Do not generate an unrelated token and expect the monitor
+to accept it, or reuse another provider's credential.
 Complete the [first administrator ceremony](#first-administrator-vault-to-dashboard) below.
 For server-only use, complete CLI signup/activation and use the issued account
 credential; the browser passkey/dashboard steps require adding a web client.

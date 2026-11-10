@@ -1,3 +1,4 @@
+import { ProviderAdmissionError } from "../src/providers.js";
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import { P256Keypair } from "@atproto/crypto";
 import { signOperation } from "@did-plc/lib";
@@ -8,12 +9,17 @@ import { createMonitorEnrollmentApi, monitorEnrollmentConfig } from "../src/enro
 import { MonitorSigner } from "../src/signing.js";
 import { OnboardingMonitorPending } from "../src/monitor.js";
 
+it("matches the published provider registration document vector", async () => {
+  const { registrationDocument } = await import("../src/provider-registration.js");
+  const vector = await Bun.file(new URL("../../../spec/vectors/monitor-provider-registration.json", import.meta.url)).json();
+  expect(await registrationDocument({ ...vector.request, monitorApiOrigin: vector.document.monitorApiOrigin })).toEqual(vector.document);
+});
+
 it("keeps the listener off by default and validates every enrollment declaration before startup", () => {
   expect(monitorEnrollmentConfig({ MONITOR_ORIGIN: "https://monitor.example.com" })).toBeUndefined();
-  const env = { MONITOR_ENROLLMENT_TOKEN: encodeBase64Url(randomBytes(32)), MONITOR_ENROLLMENT_PROVIDER: "https://provider.example.com",
-    MONITOR_ENROLLMENT_ALERT_ORIGIN: "https://alerts.example.com", MONITOR_ORIGIN: "https://monitor.example.com", PLC_DIRECTORY_URL: "https://plc.directory" };
+  const env = { MONITOR_API_HOST: "127.0.0.1", MONITOR_ORIGIN: "https://monitor.example.com", PLC_DIRECTORY_URL: "https://plc.directory" };
   expect(monitorEnrollmentConfig(env)).toMatchObject({ hostname: "127.0.0.1", port: 3001 });
-  for (const change of [{ MONITOR_ENROLLMENT_TOKEN: undefined }, { MONITOR_ENROLLMENT_TOKEN: "bad" },
+  for (const change of [{ MONITOR_ENROLLMENT_TOKEN: "bad" },
     { MONITOR_ENROLLMENT_PROVIDER: "http://provider.example.com" }, { MONITOR_ENROLLMENT_ALERT_ORIGIN: "https://alerts.example.com/path" },
     { MONITOR_ORIGIN: undefined }, { MONITOR_API_HOST: "example.com" }, { MONITOR_API_PORT: "03001" }, { MONITOR_API_PORT: "80" },
     { PLC_DIRECTORY_URL: "http://private-plc.example.com" }])
@@ -25,7 +31,7 @@ it("authenticates and bounds requests and refuses a provider-signed genesis with
   const pollDid = vi.fn(), attestOnboarding = vi.fn();
   const config = { token: encodeBase64Url(randomBytes(32)), providerOrigin: "https://provider.example.com", alertOrigin: "https://alerts.example.com",
     monitorOrigin: "https://monitor.example.com", hostname: "127.0.0.1", port: 3001 };
-  const api = createMonitorEnrollmentApi(config, { enroll, pollDid, attestOnboarding } as never, signer, request);
+  const api = createMonitorEnrollmentApi(config, { enroll, pollDid, attestOnboarding } as never, signer, credentials(config), request);
   const invoke = (body: string, token = config.token) => api.fetch(new Request("https://monitor.example.com/api/v1/onboarding", {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body,
   }));
@@ -63,7 +69,7 @@ it("authenticates and validates managed stop requests without accepting arbitrar
   const signer = new MonitorSigner(generateKeyPairSync("ed25519").privateKey), stopManaged = vi.fn();
   const config = { token: encodeBase64Url(randomBytes(32)), providerOrigin: "https://provider.example.com", alertOrigin: "https://alerts.example.com",
     monitorOrigin: "https://monitor.example.com", hostname: "127.0.0.1", port: 3001 };
-  const api = createMonitorEnrollmentApi(config, { stopManaged } as never, signer);
+  const api = createMonitorEnrollmentApi(config, { stopManaged } as never, signer, credentials(config));
   const { cidForCbor } = await import("@atproto/common");
   const body = { did: `did:plc:${"a".repeat(24)}`, operationCid: (await cidForCbor({ test: true })).toString() };
   const invoke = (value: unknown, token = config.token) => api.fetch(new Request(`${config.monitorOrigin}/api/v1/onboarding/stop`, {
@@ -74,7 +80,33 @@ it("authenticates and validates managed stop requests without accepting arbitrar
     expect((await invoke(invalid)).status).toBe(400);
   expect(stopManaged).not.toHaveBeenCalled();
   expect((await invoke(body)).status).toBe(204);
-  expect(stopManaged).toHaveBeenCalledWith(body.did, body.operationCid, config.providerOrigin, `${config.alertOrigin}/hail/signup`);
+  expect(stopManaged).toHaveBeenCalledWith(body.did, body.operationCid, config.providerOrigin, `${config.alertOrigin}/hail/signup`, "provider-id");
   stopManaged.mockRejectedValue(new Error("Independent enrollment"));
   expect((await invoke(body)).status).toBe(409);
+});
+
+
+function credentials(config: { token: string; providerOrigin: string; alertOrigin: string }) {
+  return { async authenticate(request: Request) {
+    if (request.headers.get("authorization") !== `Bearer ${config.token}`)
+      throw new ProviderAdmissionError(401, "Unauthorized");
+    return { id: "provider-id", provider_origin: config.providerOrigin, alert_origin: config.alertOrigin,
+      requests_per_minute: 60, max_identities: 100, enrollments_per_day: 20 };
+  } };
+}
+
+it("bounds pending authentication before database work can fill an unbounded queue", async () => {
+  const signer = new MonitorSigner(generateKeyPairSync("ed25519").privateKey);
+  let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const authenticate = vi.fn(async () => { await waiting; throw new ProviderAdmissionError(401, "Unauthorized"); });
+  const api = createMonitorEnrollmentApi({ monitorOrigin: "https://monitor.example", hostname: "127.0.0.1", port: 3001 },
+    {} as never, signer, { authenticate });
+  const invoke = () => api.fetch(new Request("https://monitor.example/api/v1/onboarding", { method: "POST" }));
+  const pending = [invoke(), invoke(), invoke(), invoke()];
+  expect((await invoke()).status).toBe(429);
+  expect(authenticate).toHaveBeenCalledTimes(4);
+  release();
+  expect((await Promise.all(pending)).every(response => response.status === 401)).toBe(true);
+  expect((await invoke()).status).toBe(401);
 });

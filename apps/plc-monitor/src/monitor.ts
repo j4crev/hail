@@ -1,3 +1,4 @@
+import { ProviderAdmissionError } from "./providers.js";
 import { validateAudit, assertAuditContinuity } from "./audit.js";
 import { operationDetail } from "./operation-detail.js";
 import { randomUUID } from "node:crypto";
@@ -22,7 +23,7 @@ export class PlcMonitor {
   constructor(private readonly sql: SQL, private readonly plc: MonitorPlcClient,
     private readonly now: () => Date = () => new Date()) {}
 
-  async enroll(did: string, expectedCid: string, alertWebhookUrl: string, reviewed?: DocumentData): Promise<void> {
+  async enroll(did: string, expectedCid: string, alertWebhookUrl: string, reviewed?: DocumentData, providerId?: string): Promise<void> {
     if (!/^did:plc:[a-z2-7]{24}$/.test(did) || !/^b[a-z2-7]+$/.test(expectedCid)) {
       throw new Error("Monitor DID or expected PLC CID is not canonical");
     }
@@ -34,16 +35,25 @@ export class PlcMonitor {
     }
     const enrolledAt = this.now();
     await this.sql.begin(async (tx) => {
+      // Bound total ongoing work and serialize quota checks with insertion.
+      if (providerId) await tx`SELECT pg_advisory_xact_lock(686169156)`;
+      const provider = providerId ? (await tx`SELECT * FROM monitor_enrollment_providers
+        WHERE id=${providerId} AND enabled FOR UPDATE`)[0] : undefined;
+      if (providerId && (!provider || provider.provider_origin + "/hail" !== current.state.services.hail?.endpoint ||
+        provider.alert_origin + "/hail/signup" !== alertWebhookUrl))
+        throw new ProviderAdmissionError(403, "Provider enrollment disabled or mismatched");
       // Serialize initial enrollment and exact retries without taking the cursor
       // lock before watched rows (polling locks watched rows before the cursor).
       await tx`SELECT pg_advisory_xact_lock(686169155, hashtext(${did}))`;
       const prior = (await tx<{ expected_cid: string; expected_state: unknown; alert_webhook_url: string;
-        bootstrap_cid: string | null; bootstrap_state: unknown; stopped_at: Date | null }[]>`
-        SELECT watched.expected_cid,watched.expected_state,watched.alert_webhook_url,watched.stopped_at,
+        bootstrap_cid: string | null; bootstrap_state: unknown; stopped_at: Date | null; enrollment_provider_id: string | null }[]>`
+        SELECT watched.expected_cid,watched.expected_state,watched.alert_webhook_url,watched.stopped_at,watched.enrollment_provider_id,
           bootstrap.operation_cid AS bootstrap_cid,bootstrap.reviewed_state AS bootstrap_state
         FROM monitored_dids watched LEFT JOIN monitor_bootstrap_checkpoints bootstrap ON bootstrap.did=watched.did
         WHERE watched.did=${did} FOR UPDATE OF watched`)[0];
       if (prior) {
+        if (providerId && prior.enrollment_provider_id !== providerId)
+          throw new ProviderAdmissionError(409, "Identity belongs to a different enrollment");
         if (prior.stopped_at) throw new Error("Monitoring was stopped for this identity");
         const expected = typeof prior.expected_state === "string" ? JSON.parse(prior.expected_state) : prior.expected_state;
         const bootstrap = typeof prior.bootstrap_state === "string" ? JSON.parse(prior.bootstrap_state) : prior.bootstrap_state;
@@ -54,10 +64,19 @@ export class PlcMonitor {
         }
         return; // Never reset coverage, alerts, approvals or the original checkpoint.
       }
-      await tx`INSERT INTO monitored_dids (did, expected_cid, expected_state, alert_webhook_url,
+      if (provider) {
+        const [usage] = await tx`SELECT
+          count(*) FILTER (WHERE stopped_at IS NULL)::integer AS total,
+          count(*) FILTER (WHERE enrollment_provider_id=${providerId!} AND stopped_at IS NULL)::integer AS active,
+          count(*) FILTER (WHERE enrollment_provider_id=${providerId!} AND enrolled_at>clock_timestamp()-interval '24 hours')::integer AS recent
+          FROM monitored_dids`;
+        if (usage!.total >= 1000 || usage!.active >= provider.max_identities || usage!.recent >= provider.enrollments_per_day)
+          throw new ProviderAdmissionError(429, "Enrollment capacity reached; existing monitoring continues");
+      }
+      await tx`INSERT INTO monitored_dids (did, expected_cid, expected_state, alert_webhook_url, enrollment_provider_id,
         enrolled_at, last_verified_cid, last_verified_at, last_audit, coverage_since)
         VALUES (${did}, ${expectedCid}, ${JSON.stringify(current.state)}::jsonb,
-          ${alertWebhookUrl}, ${enrolledAt}, ${expectedCid}, ${enrolledAt},
+          ${alertWebhookUrl}, ${providerId ?? null}, ${enrolledAt}, ${expectedCid}, ${enrolledAt},
           ${JSON.stringify(current.audit)}::jsonb, ${enrolledAt})`;
       if (reviewed !== undefined) {
         await tx`INSERT INTO monitor_bootstrap_checkpoints (did, operation_cid, reviewed_state, reviewed_at)
@@ -68,16 +87,20 @@ export class PlcMonitor {
     });
   }
 
-  // Only the managed signup enrollment at the pinned provider/receiver is in scope.
+  // Only the authenticated provider's retained managed enrollment is in scope.
   // Retain a tombstone and audit history so old enrollment retries cannot restart it.
-  async stopManaged(did: string, operationCid: string, providerOrigin: string, alertWebhookUrl: string): Promise<void> {
+  async stopManaged(did: string, operationCid: string, providerOrigin: string, alertWebhookUrl: string, providerId?: string): Promise<void> {
     await this.sql.begin(async tx => {
+      if (providerId && !(await tx`SELECT id FROM monitor_enrollment_providers
+        WHERE id=${providerId} AND enabled AND provider_origin=${providerOrigin}
+          AND alert_origin || '/hail/signup'=${alertWebhookUrl} FOR SHARE`).length)
+        throw new ProviderAdmissionError(403, "Provider enrollment disabled or mismatched");
       await tx`SELECT pg_advisory_xact_lock(686169155, hashtext(${did}))`;
-      const row = (await tx`SELECT b.operation_cid,b.reviewed_state,w.alert_webhook_url
+      const row = (await tx`SELECT b.operation_cid,b.reviewed_state,w.alert_webhook_url,w.enrollment_provider_id
         FROM monitored_dids w JOIN monitor_bootstrap_checkpoints b ON b.did=w.did
         WHERE w.did=${did} FOR UPDATE OF w`)[0];
       const state = row && (typeof row.reviewed_state === "string" ? JSON.parse(row.reviewed_state) : row.reviewed_state);
-      if (!row || row.operation_cid !== operationCid || row.alert_webhook_url !== alertWebhookUrl ||
+      if (!row || providerId && row.enrollment_provider_id !== providerId || row.operation_cid !== operationCid || row.alert_webhook_url !== alertWebhookUrl ||
         state?.services?.hail?.type !== "HailMessaging" || state.services.hail.endpoint !== `${providerOrigin}/hail`)
         throw new Error("Managed enrollment does not match");
       await tx`UPDATE monitored_dids SET stopped_at=coalesce(stopped_at,clock_timestamp()),poll_ready=false WHERE did=${did}`;

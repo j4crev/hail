@@ -1,68 +1,25 @@
+import { PinnedHttpsClient } from "./public-http.js";
 import type { IncidentCapabilities } from "./incident-capabilities.js";
-import { lookup as dnsLookup } from "node:dns/promises";
-import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
-import ipaddr from "ipaddr.js";
 import type { SQL } from "bun";
 import { encodeBase64Url } from "@racrproto/codec";
-import { assertWebhookUrl } from "./monitor.js";
 import type { MonitorSigner } from "./signing.js";
 
 export interface AlertTransport {
   send(url: string, bytes: Uint8Array, signature: Uint8Array, signer: string): Promise<number>;
 }
 
-type DnsResolver = (hostname: string, options: { all: true; verbatim: true }) =>
-  Promise<readonly { address: string; family: number }[]>;
-
-export function publicAddress(value: string): boolean {
-  let parsed: ipaddr.IPv4 | ipaddr.IPv6;
-  try { parsed = ipaddr.parse(value); } catch { return false; }
-  if (parsed.kind() === "ipv6") {
-    const ipv6 = parsed as ipaddr.IPv6;
-    if (ipv6.isIPv4MappedAddress()) parsed = ipv6.toIPv4Address();
-    else if (!ipv6.match(ipaddr.parse("2000::"), 3)) return false;
-  }
-  return parsed.range() === "unicast";
-}
-
+export { publicAddress } from "./public-http.js";
 export class PinnedHttpsAlertTransport implements AlertTransport {
-  constructor(private readonly resolve: DnsResolver = dnsLookup) {}
-
-  async send(rawUrl: string, bytes: Uint8Array, signature: Uint8Array, signer: string): Promise<number> {
-    const url = assertWebhookUrl(rawUrl);
-    let timeout!: ReturnType<typeof setTimeout>;
-    const addresses = await Promise.race([
-      this.resolve(url.hostname, { all: true, verbatim: true }),
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new Error("Alert DNS lookup timed out")), 5000);
-      }),
-    ]).finally(() => clearTimeout(timeout));
-    if (!addresses.length || addresses.some((address) => !publicAddress(address.address) ||
-      (address.family !== 4 && address.family !== 6) || isIP(address.address) !== address.family)) {
-      throw new Error("Alert webhook DNS is not exclusively public");
-    }
-    const selected = addresses[0]!;
-    return new Promise<number>((resolve, reject) => {
-      const outgoing = httpsRequest({ protocol: "https:", hostname: url.hostname,
-        port: url.port ? Number(url.port) : 443, method: "POST", path: url.pathname,
-        servername: url.hostname, agent: false, family: selected.family,
-        lookup: (_host, _opts, callback) => callback(null, selected.address, selected.family),
-        headers: { "Content-Type": "application/json", "Content-Length": String(bytes.length),
-          "X-Hail-Monitor-Key": signer, "X-Hail-Monitor-Signature": encodeBase64Url(signature) },
-      }, (response) => {
-        let length = 0;
-        response.on("data", (chunk: Buffer) => {
-          length += chunk.length;
-          if (length > 4096) outgoing.destroy(new Error("Alert response exceeds its limit"));
-        });
-        response.on("end", () => { clearTimeout(timer); resolve(response.statusCode ?? 500); });
-        response.on("error", reject);
-      });
-      const timer = setTimeout(() => outgoing.destroy(new Error("Alert webhook timed out")), 10_000);
-      outgoing.on("error", (error) => { clearTimeout(timer); reject(error); });
-      outgoing.end(bytes);
+  private readonly client: PinnedHttpsClient;
+  constructor(resolve?: ConstructorParameters<typeof PinnedHttpsClient>[0]) {
+    this.client = new PinnedHttpsClient(resolve);
+  }
+  async send(url: string, bytes: Uint8Array, signature: Uint8Array, signer: string): Promise<number> {
+    const response = await this.client.post(url, bytes, {
+      "X-Hail-Monitor-Key": signer, "X-Hail-Monitor-Signature": encodeBase64Url(signature),
     });
+    await response.body?.cancel();
+    return response.status;
   }
 }
 

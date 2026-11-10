@@ -102,13 +102,13 @@ Automatic enrollment is optional and disabled without the declarations below.
 Manual reviewed enrollment remains available. Same-operator monitoring must retain
 its reduced-assurance label rather than claiming independent coverage.
 
-The existing monitor process can optionally serve an authenticated private API.
+The existing monitor process can optionally serve a multi-provider HTTPS API.
 Configure the monitor's protected environment with:
 
 ```dotenv
-MONITOR_ENROLLMENT_TOKEN=<random canonical 32-byte base64url service secret>
-MONITOR_ENROLLMENT_PROVIDER=https://your-provider.example
-MONITOR_ENROLLMENT_ALERT_ORIGIN=https://alerts.your-monitor.example
+MONITOR_API_HOST=0.0.0.0
+MONITOR_API_PORT=3001
+MONITOR_API_ORIGIN=https://enroll.monitor.example.com
 ```
 
 `MONITOR_ORIGIN` remains the monitor identity origin used in signed attestations.
@@ -119,7 +119,7 @@ the existing worker starts without an API listener.
 The listener defaults to `127.0.0.1:3001`. `MONITOR_API_HOST` can select loopback
 or `0.0.0.0` for a private container network; `MONITOR_API_PORT` can select a
 nonprivileged port. The checked-in Compose file deliberately publishes **no new
-ports**. Before deployment, review HTTPS termination, provider-only ingress and
+ports**. Before deployment, review HTTPS termination, authenticated ingress and
 any loopback container-port mapping. Never expose the plaintext listener or put
 the service secret in browser code, URLs or logs.
 
@@ -127,7 +127,7 @@ On the provider, retain its existing signup-email configuration and add:
 
 ```dotenv
 SIGNUP_MONITOR_API_ORIGIN=https://enroll.monitor.example.com
-SIGNUP_MONITOR_TOKEN=<same secret as MONITOR_ENROLLMENT_TOKEN>
+SIGNUP_MONITOR_TOKEN=<individual credential returned by registration>
 SIGNUP_MONITOR_PUBLIC_KEY=did:key:z...
 ```
 
@@ -136,6 +136,13 @@ identity origin. The public key must match the account's retained monitor key;
 the attestation origin must match its retained monitor origin. These declarations
 require signup email and strict public PLC authority; leaving all three empty
 keeps the provider orchestration endpoint disabled.
+
+Providers use the [self-service registration guide](provider-registration.md) to
+prove control of their provider and alert-receiver HTTPS origins and obtain an
+individual credential. Credentials are stored hashed in the monitor database.
+Disabling a provider credential leaves its existing monitoring and alerts active.
+This version serves Hail managed enrollment across providers; it does not add
+arbitrary DID subscriptions or replace the owner-signed genesis requirements.
 
 ### Ceremony
 
@@ -147,12 +154,12 @@ keeps the provider orchestration endpoint disabled.
    The provider looks up the owner-authorized genesis itself and binds the
    verified destination before contacting the monitor. It never accepts a
    browser-selected DID, CID, monitor key, webhook or PLC operation here.
-4. The provider calls the private monitor's `POST /api/v1/onboarding` with its
+4. The provider calls the monitor's `POST /api/v1/onboarding` with its
    enrollment service secret and `{signupId, signupHash, operation}`. No vault,
    recovery secret, browser token or account API credential goes to the monitor.
 5. The monitor validates the genesis, top-owner signature, four distinct roles
-   and pinned provider endpoint. It independently checks the exact verified
-   email binding at the pinned receiver using its existing monitor signing key
+   and the authenticated provider's registered endpoint. It independently checks the exact verified
+   email binding at that provider's registered receiver using its existing monitor signing key
    and a purpose-separated, five-minute request. It does not receive the
    provider's email-service secret or rely on a submitted `emailVerified` flag.
 6. The monitor validates the canonical DID audit and enrolls the complete reviewed
@@ -180,8 +187,8 @@ New activation continues to use the existing public read-back and address checks
 
 ### Pause and recovery
 
-To disable automatic enrollment, remove the
-provider monitor declarations and monitor API declarations; preserve the existing
+To disable a provider's automatic enrollment, disable its credential using
+`monitor:providers disable ID`; preserve the existing
 monitor key, database, polling, notifier and bound consumer webhook routes. Do
 not downgrade a consumer webhook to `/hail` or remove the receiver's consumer
 route while enrolled identities depend on it. Never reset a cursor or generate
@@ -192,22 +199,53 @@ a replacement DID to recover from an ambiguous API response.
 The base Compose publishes no API port. For automatic enrollment, bind the monitor
 API to `0.0.0.0:3001` inside the container and add only a host-loopback port mapping
 in your private deployment overlay. Put a loopback reverse proxy in front of it and
-route a host Cloudflare Tunnel to that proxy. Preserve the enrollment Host, POST
-method and exact `/api/v1/onboarding` and `/api/v1/onboarding/stop` paths; all other requests should be denied.
-Keep provider admission restrictions and the service-token check. The current API
-pins one provider; it is not a multi-provider enrollment service.
+route your HTTPS ingress to that proxy. Preserve the enrollment Host, POST
+method and exact `/api/v1/onboarding`, `/api/v1/onboarding/stop`, and
+`/api/v1/providers/register` paths. Keep the service-token check for enrollment and
+stop; registration instead proves control of both HTTPS origins. Provider IP
+allowlists are no longer required. Preserve the separate incident UI routes.
 
-Trust `CF-Connecting-IP` only on the connector's private loopback boundary. Account
-for the provider's public IPv4 and IPv6 egress addresses when configuring admission.
+For Cloudflare, trust `CF-Connecting-IP` only on the connector's private loopback
+boundary. See [the example](Caddyfile.enrollment.example). Set
+`MONITOR_TRUST_PROXY=true` only when the backend is isolated and that proxy always
+overwrites `X-Hail-Monitor-Client-IP` from a trusted source. Other HTTPS proxies must
+derive that header from their verified client address; never pass a caller-supplied
+value through. Without trusted-proxy mode, the actual connecting IP is used.
 Bypass caching and browser challenges for the enrollment hostname/path; never require
 an interactive Access login for provider requests. Keep the backend and origin ports
 unreachable directly from the public network.
 
 From the actual provider container, verify trusted TLS and unauthenticated `401`,
 then authenticated invalid-payload `400` using its protected service token. Do not
-print the token or create an identity as a connectivity probe. Requests outside the
-permitted source policy should be refused before enrollment. Reverify after changing
+print the token or create an identity as a connectivity probe. Verify a second
+provider cannot enroll or stop the first provider's identities. Reverify after changing
 networking or recreating containers.
+
+### Upgrade from a single-provider installation
+
+Back up the database, key, environment and overlays first. Stop the old worker
+before importing ownership. Using the new monitor image with the old protected
+environment still available, run `bun src/cli/providers.ts import-legacy` as a
+one-off command with the normal database/key/storage overlays. It migrates the
+schema, hashes the existing service token, and attaches only reviewed enrollments
+whose original provider endpoint and `/hail/signup` receiver both match. Manual
+enrollments, original checkpoints, stopped records and notifications remain intact.
+The command is idempotent and refuses a conflicting existing provider registration.
+
+Then remove the three `MONITOR_ENROLLMENT_*` settings from the effective runtime
+environment and Compose overrides, retain the listener settings, set the public API
+origin, and start the new worker. Startup refuses the obsolete declarations to avoid
+silently running the wrong credential model. Existing providers retain their token;
+they do not need to re-enroll users. Update ingress to remove provider-IP admission,
+add the registration route, and overwrite the trusted client-IP header if enabled.
+Verify both IP families, valid/invalid credential handling and retained polling.
+
+Roll back application/configuration together if needed. Preserve the additive
+provider tables and ownership column rather than running the destructive schema
+rollback; the prior worker ignores them and uses its saved single-provider settings.
+Once other providers have enrolled, the old single-provider worker cannot serve
+their management requests: prefer a forward fix or explicitly pause new enrollment.
+Never reset the monitor database or signing key as part of this upgrade.
 
 ## Backups and existing Haili installation
 
@@ -236,10 +274,10 @@ migration 8 and the built browser bundle, then explicitly configure
 `MONITOR_INCIDENT_ORIGIN` as a canonical HTTPS origin on this monitor's tunnel.
 The existing private API listener serves the incident pages as well as enrollment.
 No new plaintext/public container port is needed. The incident origin must be
-reachable by users, without the provider-only source-IP admission rule.
+reachable by users, independently of enrollment credentials.
 
-Keep `/api/v1/onboarding` and `/api/v1/onboarding/stop` under their existing
-provider-IP/method/host restrictions. Add a separate host-specific matcher for
+Keep `/api/v1/onboarding` and `/api/v1/onboarding/stop` under their authenticated
+method/host restrictions. Add a separate host-specific matcher for
 `/incidents/*` and only GET/POST; proxy it to the same loopback backend. All other
 paths remain denied. Use `configure-incidents.py --check` then `--apply` through
 separately approved privileged access on an installed host. The script retains
