@@ -366,13 +366,15 @@ this grants no new SSH or sudo access. The invitation contains a bearer capabili
 so keep it out of logs and share it only with the intended administrator.
 
 ```bash
+umask 077
 read -r -p 'Existing provider SSH user for invitation retrieval: ' invitation_owner
 invitation_home=$(getent passwd "$invitation_owner" | cut -d: -f6)
 test -n "$invitation_home" && test -d "$invitation_home"
 invitation_host_dir=$(mktemp -d "$invitation_home/hail-admin-invite.XXXXXX")
 invitation_container_dir=$(docker exec "$provider_container" mktemp -d /tmp/hail-admin-invite.XXXXXX)
 docker exec "$provider_container" bun src/cli/create-signup-invitation.ts "$invitation_container_dir/invitation.json"
-docker cp "$provider_container:$invitation_container_dir/invitation.json" "$invitation_host_dir/invitation.json"
+docker exec "$provider_container" cat "$invitation_container_dir/invitation.json" \
+  > "$invitation_host_dir/invitation.json"
 chown -R "$invitation_owner:$(id -gn "$invitation_owner")" "$invitation_host_dir"
 chmod 700 "$invitation_host_dir"
 chmod 600 "$invitation_host_dir/invitation.json"
@@ -380,6 +382,11 @@ docker exec "$provider_container" rm "$invitation_container_dir/invitation.json"
 docker exec "$provider_container" rmdir "$invitation_container_dir"
 printf 'Private invitation file to download: %s/invitation.json\n' "$invitation_host_dir"
 ```
+
+The reference image uses a temporary filesystem at `/tmp`. Read the invitation
+through `docker exec` as shown: `docker cp` may not see files in that mount. The
+redirect writes directly into the protected host directory without printing the
+capability in the terminal.
 
 Return to your local terminal and download that file into the private admin directory.
 Enter its printed **path**, not the invitation token:

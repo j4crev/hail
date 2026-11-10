@@ -63,6 +63,15 @@ connector token permits connector operation, not DNS or tunnel configuration
 changes. Both new routes must preserve their own Host header and target the
 loopback Caddy listener at `http://127.0.0.1:8080`.
 
+The new provider/GUI are now installed at commit
+`3202fb74c79a81eebd50f5d3b9c3e5156a635206` from publication run `42748266990`.
+The installed deployment wrapper completed successfully, retaining a verified
+working initial release. Local hostname routing and readiness passed. The first
+new encrypted provider backup passed off-host download/hash verification,
+authenticated decryption and full PostgreSQL 18 restoration. The new administrator
+recovery vault is prepared and backed up encrypted off-host, but its identity is
+not published. The operator must complete the browser passkey ceremony.
+
 Do not treat the replacement as complete yet: first administrator enrollment,
 dedicated-monitor reset/provider pin, public cutover, final SSH lockdown and
 retirement of the Hetzner deployment remain separate verification steps.
