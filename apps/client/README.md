@@ -74,7 +74,8 @@ for the optional Compose overlay, first-account dependencies and runtime brandin
 Copy `.env.example` for local configuration. `HAIL_WEB_CLIENT_PROVIDER` is required;
 there is no default hosted provider. `HAIL_WEB_CLIENT_API_ORIGIN` optionally selects
 server-side transport, while `HAIL_WEB_CLIENT_ORIGIN` selects the browser origin.
-Use the documented same-origin deployment for browser authentication.
+The browser API bridge keeps authentication requests on the browser origin; see
+[separate provider and browser origins](#separate-provider-and-browser-origins).
 `HAIL_WEB_CLIENT_NAME`, `HAIL_WEB_CLIENT_LOGO_PATH` and
 `HAIL_WEB_CLIENT_FAVICON_PATH` customize the public brand without rebuilding.
 Logo/favicon paths must be served on the same origin, for example from a read-only
@@ -504,3 +505,26 @@ cursor semantics are unchanged. There is no revision-token or delta protocol.
 Run `bun run --cwd apps/client test:mailbox` for the fictional-provider browser
 regression, and `bun run --cwd apps/client test` for cache race, expiry, isolation
 and history-merge tests.
+
+### Separate provider and browser origins
+
+The public Haili profile serves the GUI at `https://haili.app` and the provider at
+`https://svr.haili.app`. `HAIL_WEB_CLIENT_PROVIDER` identifies the public API;
+`HAIL_WEB_CLIENT_API_ORIGIN` remains the private server-to-server transport;
+`HAIL_WEB_CLIENT_ORIGIN` pins the browser/passkey origin. Set
+`HAIL_NATIVE_ADDRESS_DOMAIN=haili.app` to retain native signup addresses.
+
+The GUI's `/api/*` bridge forwards the host-only `hail_session` cookie and
+request Authorization headers (including scoped signup tokens) to the provider,
+and permits only JSON responses; it preserves the browser's actual Origin
+for CSRF validation. It rejects raw media routes and does not enable CORS.
+Avatar and attachment routes return no-store redirects to short-lived provider
+media capabilities. CSP permits images from the configured provider origin.
+CLI login still starts at the selected provider, which redirects browser-only
+entry points to the GUI. Credential metadata always binds the API origin.
+See the [coordinated cutover procedure](../server/deploy/public/README.md#haili-split-origin-cutover).
+
+`bun run test:origins` builds the app and exercises its actual HTTP bridge against
+a fictional provider on a separate loopback origin. It checks login cookie scope,
+signup Authorization forwarding, media redirects, rejected raw-media/HTML proxying,
+and capability revocation. It uses no public accounts or services.

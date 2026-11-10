@@ -51,3 +51,8 @@ it("requests only fixed same-origin endpoints without redirects or cache and doe
   try{await signupRequest("/api/v1/signup",{},token,refused);}catch(error){expect(error).toBeInstanceOf(SignupRequestError);expect(String(error)).not.toContain("secret-vendor-diagnostic");}
   await expect(signupRequest("/api/v1/signup",{},token,async()=>new Response('{"error":"busy"}',{status:202}))).rejects.toMatchObject({status:202});
 });
+
+it("accepts the configured native address domain separately from the API hostname",()=>{
+  expect(validSignupAddress("alice@haili.app","https://svr.haili.app",undefined,"haili.app")).toBe(true);
+  expect(validSignupAddress("alice@svr.haili.app","https://svr.haili.app",undefined,"haili.app")).toBe(false);
+});

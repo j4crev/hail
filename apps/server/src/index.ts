@@ -97,7 +97,7 @@ const transport = new SafeHttpsTransport();
 const profileVerifier = new SenderProfileVerifier(resolver, transport.fetch, transport.validateTarget, undefined, onboardingRepository);
 const encryptor=new KeyEncryptor(config.keyEncryptionKey);
 const connections=process.env.CONNECTION_PREVIEW==="true"&&config.passkeys?new AccountConnections(database.sql,encryptor,resolver,
-  new PasskeyAuth(database.sql,config.passkeys.rpId,config.passkeys.origin,undefined,config.sessionPolicy),config.publicOrigin,
+  new PasskeyAuth(database.sql,config.passkeys.rpId,config.passkeys.origin,undefined,config.sessionPolicy,config.publicOrigin),config.publicOrigin,
   new RemoteConnectionReview(database.sql,resolver,transport.fetch,transport.validateTarget,config.hailServiceBase),config.sessionPolicy):undefined;
 const connectionAuthority=new ConnectionMessagingAuthority(database.sql,resolver,config.hailServiceBase,connections?.federation);
 const connectionOrchestration=connections?new ConnectionTransferOrchestration(database.sql,encryptor,resolver,config.hailServiceBase,transport.fetch,transport.validateTarget,connections.federation):undefined;
@@ -325,21 +325,21 @@ const app = createApp(config, schemaRehearsal ? {
   ...(config.alphaSignup?(()=>{
     const policy={profile:"reduced-assurance-alpha-v1" as const,monitorOrigin:config.alphaSignup.monitorOrigin,monitorPublicKey:config.signupMonitor!.publicKey};
     const onboarding=new PublicOnboarding(database.sql,plc,resolver,new KeyEncryptor(config.keyEncryptionKey),config.plcDirectoryUrl,
-      config.hailServiceBase,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),policy);
+      config.hailServiceBase,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),policy,config.nativeAddressDomain);
     return {signup:new SignupCoordinator(database.sql,onboarding,new SignupMonitorService(database.sql,new SignupEmailClient(config.signupEmail!),
-      new SignupMonitorClient(config.signupMonitor!)),config.publicOrigin,policy,config.alphaSignup.invitationKey,undefined,config.sessionPolicy)};
+      new SignupMonitorClient(config.signupMonitor!)),config.publicOrigin,policy,config.alphaSignup.invitationKey,new CustomDomains(database.sql,config.publicOrigin,undefined,undefined,config.nativeAddressDomain),config.sessionPolicy,config.nativeAddressDomain,config.passkeys?.origin)};
   })():{}),
-  ...(config.passkeys?{passkeys:new PasskeyAuth(database.sql,config.passkeys.rpId,config.passkeys.origin,undefined,config.sessionPolicy)}:{}),
+  ...(config.passkeys?{passkeys:new PasskeyAuth(database.sql,config.passkeys.rpId,config.passkeys.origin,undefined,config.sessionPolicy,config.publicOrigin)}:{}),
   ...(process.env.POC_ACCOUNT_ACCESS === "true" || publicManaged ?
     { accountAccess: { access: new AccountAccess(database.sql, resolver, config.publicOrigin), sql: database.sql } } : {}),
   ...(process.env.PUBLIC_SELF_SERVICE_ONBOARDING === "true" ? (()=>{
     if(config.nodeEnv!=="production"||!config.publicPlcAuthority)throw new Error("Public self-service onboarding requires production strict public PLC authority");
     return {selfServiceOnboarding:{sql:database.sql,...(config.alphaSignup?{invitationKey:config.alphaSignup.invitationKey}:{}),profile:"strict-public-v1" as const,
       onboarding:new PublicOnboarding(database.sql,plc,resolver,new KeyEncryptor(config.keyEncryptionKey),config.plcDirectoryUrl,
-        config.hailServiceBase,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery)),provider:config.publicOrigin}};
+        config.hailServiceBase,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),undefined,config.nativeAddressDomain),nativeAddressDomain:config.nativeAddressDomain,browserOrigin:config.passkeys?.origin,provider:config.publicOrigin}};
   })() : process.env.POC_SELF_SERVICE_ONBOARDING === "true" ? {selfServiceOnboarding:{sql:database.sql,
     onboarding:new PrivatePocOnboarding(database.sql,plc,new KeyEncryptor(config.keyEncryptionKey),config.plcDirectoryUrl,config.hailServiceBase),
-    activation:new ActivationService(onboardingRepository,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),config.hailServiceBase,"public"),provider:config.publicOrigin,profile:"private-poc" as const}} : {}),
+    activation:new ActivationService(onboardingRepository,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),config.hailServiceBase,"public"),nativeAddressDomain:config.nativeAddressDomain,browserOrigin:config.passkeys?.origin,provider:config.publicOrigin,profile:"private-poc" as const}} : {}),
   accountApi: { accounts: new AccountApiRepository(database.sql,config.sessionPolicy), grants: grantRepository,
      ...(connections?{connections}:{}),
     ...(managedAuthorization&&managedDelivery&&managedFence&&managedExporter?{managedTransfer:new ManagedAccountTransfer(
@@ -348,7 +348,7 @@ const app = createApp(config, schemaRehearsal ? {
       if(config.nodeEnv!=="production"||!config.publicPlcAuthority||config.plcDirectoryUrl!=="https://plc.directory")
         throw new Error("Public custody transitions require production strict public PLC authority");
       return {custodyTransition:new SameProviderCustodyTransition(database.sql,plc,resolver,new KeyEncryptor(config.keyEncryptionKey),
-        config.hailServiceBase,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery))};})():{}),
+        config.hailServiceBase,new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),undefined,undefined,config.nativeAddressDomain)};})():{}),
     ...(publicManaged||process.env.POC_SELF_SERVICE_TRANSFER==="true"?{transfer:new AccountTransfer(database.sql,
       new TransferGrantSubmission(database.sql,resolver,config.hailServiceBase,onboardingRepository,new KeyEncryptor(config.keyEncryptionKey),
         new TransferInvitationService(database.sql,resolver,config.hailServiceBase),invitationDelivery,transferRateLimit),
@@ -356,7 +356,7 @@ const app = createApp(config, schemaRehearsal ? {
       {fence:new MigrationFenceService(database.sql,resolver,config.hailServiceBase),snapshots:new MigrationTransferService(database.sql,onboardingRepository,
         new KeyEncryptor(config.keyEncryptionKey),resolver,config.hailServiceBase)})}:{}),
     binding:new AccountBinding(database.sql,resolver,new KeyEncryptor(config.keyEncryptionKey),config.publicOrigin,
-       new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery)),
+       new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),undefined,config.nativeAddressDomain),
      messaging,publications,
     avatarProfiles:onboardingRepository,
     profiles:new SenderProfileService(onboardingRepository,new KeyEncryptor(config.keyEncryptionKey),resolver,config.hailServiceBase),
@@ -366,7 +366,7 @@ const app = createApp(config, schemaRehearsal ? {
       profileVerifier,
       config.hailServiceBase) },
   discoveryStore: onboardingRepository,
-  customDomains: new CustomDomains(database.sql, config.publicOrigin),
+  customDomains: new CustomDomains(database.sql, config.publicOrigin,undefined,undefined,config.nativeAddressDomain),
   senderProfileStore: onboardingRepository,
   grantReceiver: new GrantReceiver(
     onboardingRepository,

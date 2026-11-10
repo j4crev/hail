@@ -9,6 +9,7 @@
     "build": "vite build",
     "start": "HOST=127.0.0.1 node build",
     "test": "vitest run",
+    "test:origins": "bun run build && bun scripts/check-origin-separation.ts",
     "test:browser": "bun scripts/check-browser-signup.ts",
     "test:wizard": "bun run build && bun scripts/check-browser-wizard.ts",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

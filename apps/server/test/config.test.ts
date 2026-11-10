@@ -69,6 +69,15 @@ describe("loadConfig", () => {
     });
   });
 
+  it("separates API origin, native address domain and existing passkey identity",()=>{
+    const config=loadConfig({...validEnvironment,PUBLIC_ORIGIN:"https://svr.haili.app",HAIL_SERVICE_BASE:"https://svr.haili.app/hail",
+      NATIVE_ADDRESS_DOMAIN:"haili.app",PASSKEY_AUTH:"true",PASSKEY_ORIGIN:"https://haili.app",PASSKEY_RP_ID:"haili.app"});
+    expect(config.nativeAddressDomain).toBe("haili.app");expect(config.publicOrigin).toBe("https://svr.haili.app");
+    expect(config.passkeys).toEqual({origin:"https://haili.app",rpId:"haili.app"});
+    for(const domain of ["https://haili.app","haili.app/path",".haili.app","haili..app","-haili.app"])
+      expect(()=>loadConfig({...validEnvironment,NATIVE_ADDRESS_DOMAIN:domain})).toThrow();
+  });
+
   it("pins passkeys to an explicit RP and browser origin",()=>{
     expect(loadConfig({...validEnvironment,PASSKEY_AUTH:"true",PASSKEY_ORIGIN:"http://localhost:5173",PASSKEY_RP_ID:"localhost"}).passkeys)
       .toEqual({origin:"http://localhost:5173",rpId:"localhost"});

@@ -133,6 +133,12 @@ export function createApp(
       passkeyRequired:["account browser-login","operator administration"]});}
     catch{return context.json({error:"Provider capabilities unavailable"},503);}
   });
+  if(config.passkeys&&config.passkeys.origin!==config.publicOrigin){
+    for(const path of ['/auth/authorize','/auth/recover'])app.get(path,context=>{
+      context.header('Cache-Control','no-store');context.header('Referrer-Policy','no-referrer');
+      return context.redirect(`${config.passkeys!.origin}${path}${new URL(context.req.url).search}`,303);
+    });
+  }
   const protectedSchedule = new ProtectedResponseSchedule();
   if(dependencies.selfServiceOnboarding)registerSelfServiceOnboarding(app,dependencies.selfServiceOnboarding);
   if(dependencies.signupEmail)registerSignupEmailRoutes(app,dependencies.signupEmail.sql,dependencies.signupEmail.client,config.passkeys?.origin??config.publicOrigin);

@@ -40,13 +40,21 @@ not select an image by a mutable tag alone.
 ## 1. Configure the server
 
 Use a Linux host with Docker Engine and the Compose plugin, a public domain,
-and a stable public IP address. Point the domain's A/AAAA records at this host.
+and a stable public IP address. Use a provider hostname such as `svr.example.com`;
+if adding the GUI, also point a distinct browser hostname such as `example.com`
+at this host. Point their A/AAAA records at the host.
 Allow inbound TCP 80/443 (UDP 443 is optional for HTTP/3); restrict SSH to your
 administration network. The supplied Caddy terminates HTTPS and obtains
 certificates automatically. The database and provider have no host-published
 ports. Do not expose PostgreSQL or the provider's HTTP port directly.
 
-From a reviewed repository checkout:
+Install Git, OpenSSL, Docker Engine and its Compose plugin using your Linux
+distribution's supported installation procedure. Verify `docker version` and
+`docker compose version` through your existing privileged administration access.
+Check out the exact source commit recorded in the publication artifact, so the
+Compose files and images describe the same release.
+
+From that reviewed repository checkout:
 
 ```bash
 cd apps/server/deploy/standalone
@@ -69,10 +77,15 @@ provider-held operational keys. No Haili private endpoint or token is required.
 
 ### DNS discovery for your provider
 
-Publish one TXT record, substituting your actual lowercase domain:
+Set `PROVIDER_DOMAIN=svr.example.com` for API/federation/media and
+`NATIVE_ADDRESS_DOMAIN=example.com` for addresses such as `admin@example.com`.
+For the optional GUI, set `WEB_CLIENT_DOMAIN=example.com`. The GUI and native
+address domain may match; the provider and GUI origins must differ.
+
+Publish one TXT record at your **address domain**, substituting your values:
 
 ```dns
-_hail-provider.provider.example.com. TXT "v=hail1; provider=provider.example.com"
+_hail-provider.example.com. TXT "v=hail1; provider=svr.example.com"
 ```
 
 Custom address domains point their `_hail-provider` record at this provider too;
@@ -90,7 +103,8 @@ docker compose --env-file .env -f compose.yaml up -d --wait
 ```
 
 Check `https://YOUR_DOMAIN/health/ready` from another network. `/` returns 404
-until you attach a web client; that is expected for a server-only deployment.
+on the provider hostname, including when a web client is attached. That is expected;
+the optional GUI has its own hostname.
 Migrations run at startup. PostgreSQL 18 uses the persistent `provider_db` volume.
 Do not remove that volume to upgrade an application.
 
@@ -136,7 +150,7 @@ pre-launch; this packaging split does not promise version-stable contracts.
 ## 4. Optionally add the reference web client
 
 Set `HAIL_WEB_CLIENT_IMAGE` to the **separate client digest** in the same release
-artifact, then run:
+artifact. Set a distinct `WEB_CLIENT_DOMAIN`, configure its DNS, then run:
 
 ```bash
 docker compose --env-file .env -f compose.yaml -f compose.web-client.yaml config --quiet
@@ -144,18 +158,25 @@ docker compose --env-file .env -f compose.yaml -f compose.web-client.yaml pull
 docker compose --env-file .env -f compose.yaml -f compose.web-client.yaml up -d --wait
 ```
 
-The overlay configures `WEB_CLIENT_ORIGIN=http://web-client:3000`; the provider
-forwards only non-API page requests. Both services share the public HTTPS origin,
-which preserves passkey, cookie and Origin checks. The client uses the private
-`http://provider:3000` transport for its server-side API calls. Neither container
-is exposed directly. Do not interpret this setup as support for arbitrary
-cross-origin browser authentication.
+The overlay selects `Caddyfile.web-client`: API/federation/media requests on
+`PROVIDER_DOMAIN` go to the provider, and `WEB_CLIENT_DOMAIN` goes to the GUI.
+It configures passkeys for the browser hostname and keeps the provider's public
+API origin separate. No GUI pages are served on the provider origin.
+The GUI uses private `http://provider:3000` transport. Neither container is
+exposed directly. The browser's `/api/*` bridge preserves Origin and scoped
+Authorization headers, forwards the host-only session, and returns JSON only.
+Uploaded avatars/attachments use short-lived provider capabilities; the browser
+session cookie is not shared with the provider hostname or sibling subdomains.
 
-For a different web client, set `WEB_CLIENT_ORIGIN` to that client's internal
-origin using your own overlay, or route pages at your ingress. Keep provider-owned
-`/api`, `/hail`, `/.well-known` and `/health` paths directed to the provider.
-Browser implementations must implement the documented authentication and Origin
-requirements; native applications can use the CLI/account-credential workflows.
+Visit `https://WEB_CLIENT_DOMAIN/` for the app; check provider readiness at
+`https://PROVIDER_DOMAIN/health/ready`. A fresh account's passkey recovery URL
+must point to the browser hostname, while its CLI credential's `provider` must
+point to the API hostname. Keep API redirects disabled in native clients.
+
+For a different web client, route its pages at its own origin and implement its
+authentication and Origin checks. Do not expose uploaded media through the app
+origin or allow the media origin to read authenticated JSON responses via CORS.
+Native applications use the account-credential workflows without browser cookies.
 
 ### Branding
 
@@ -254,7 +275,9 @@ example, a provider origin might be `https://mail.example.org`.
 
 ```bash
 read -r -p 'Absolute path to your hail checkout: ' hail_repo
-read -r -p 'Provider HTTPS origin: ' provider_origin
+read -r -p 'Provider API HTTPS origin (e.g. https://svr.example.com): ' provider_origin
+read -r -p 'Native address domain from NATIVE_ADDRESS_DOMAIN (e.g. example.com): ' address_domain
+read -r -p 'Browser HTTPS origin (e.g. https://example.com): ' browser_origin
 read -r -p 'Monitor identity HTTPS origin: ' monitor_origin
 read -r -p 'Verified monitor public signing key (did:key:...): ' monitor_key
 read -r -p 'Monitor SSH destination (user@hostname-or-IP): ' monitor_ssh
@@ -266,7 +289,7 @@ provider_domain=$(bun -e '
     throw new Error("Use a canonical HTTPS provider origin without a port");
   console.log(url.hostname);
 ' "$provider_origin")
-admin_address="admin@$provider_domain"
+admin_address="admin@$address_domain"
 admin_dir="$HOME/.local/share/hailproto/admin-$provider_domain"
 
 printf 'Account: %s\nPrivate directory: %s\nCLI: %s\n' \
@@ -559,7 +582,7 @@ xdg-open "$(jq -r '.url' "$admin_dir/passkey-enrollment.json")"
 On macOS, use `open` instead of `xdg-open`; on another platform, open that file's
 `url` value privately in your browser. Do not share the enrollment link.
 
-Complete the passkey prompt, then visit your provider's homepage and
+Complete the passkey prompt, then visit your browser origin (`browser_origin`) and
 sign in with that passkey. The recovery secret is not your login password. The
 enrollment link is single-use and expires after ten minutes. If it expires,
 follow [owner-proof recovery workflow](../../../cli/docs/account-access-recovery.md)
@@ -585,14 +608,14 @@ docker exec "$provider_container" \
 active account with an enrolled passkey. It is separate from the reserved-address
 authorization in step 3. The grant is local to this provider and serving generation.
 
-Refresh your provider's `/admin` page. It should now show the invitation form.
+Refresh `/admin` at your browser origin. It should now show the invitation form.
 If it still returns 403, check that the grant address, signed-in account and
 provider match. If creation requires a recent login, sign in again: invitation
 creation requires passkey verification within the last ten minutes.
 
 ### Everyday use and recovery
 
-Sign in on your provider’s homepage, then open `/admin` or
+Sign in on your browser hostname, then open `/admin` or
 **Provider administration** in the sidebar. Enter an email address to send an
 invitation, or leave it blank to create a private link. Invitations last seven
 days and can be used once. Anyone holding the link can use it; the delivery email
@@ -628,3 +651,70 @@ image does not roll back database migrations or erase newly accepted writes.
 The scripts under `deploy/public` are Haili-specific operations, not a generic
 installer or required provider code. Use your own service supervision and reviewed
 backup/restore procedures. Keep monitoring available outside the provider host.
+
+## Replacing a disposable pre-launch provider
+
+A fresh install creates new accounts, DIDs, credentials, relationships, and
+passkeys. It does not move old identities or import their state. Keep old recovery
+material and backups; public PLC history is permanent. An old vault bound to a DID
+is not an unbound vault for a new signup, even if the new account uses the same
+human-readable address. Clear stale browser session/signup state for this app and
+use a new private CLI state directory.
+
+Before reusing a host:
+
+1. Inventory the active Compose project, all overlays, database/storage volumes,
+   image digests, secrets, backup jobs, ingress and monitoring. Record which
+   accounts will be retired. Stop application writers before the final backup.
+2. Make an encrypted off-host archive of the database, configuration and recovery
+   material, and prove the database dump restores on a disposable instance of the
+   same PostgreSQL major. Preserve the original volumes and encryption keys.
+3. Select fresh database storage explicitly. The supplied Compose project is named
+   `hail-provider`; a previous installation with that name will reuse its volumes.
+   For an independent replacement, use a new `--project-name` on **every** Compose
+   command and verify its resolved volume names before startup. Never use
+   `down --volumes` to make an installation appear fresh.
+4. Decide which existing service owns ports 80/443 and the public hostnames before
+   starting Caddy. Follow this guide's direct HTTPS path, or adapt ingress for your
+   existing proxy using the requirements below. Keep the old application stopped
+   so it cannot accept writes while the new service owns those names.
+5. Follow the installation and first-administrator steps above. Adapt existing
+   backup and operations tooling to the selected project, service names and full
+   overlay list before enabling routine jobs. Verify a new off-host backup and
+   restore before retiring the archived deployment.
+
+Keep old data archived until the new install and backups are verified. Releasing
+an address at a new DID does not notify old contacts or replace their saved
+relationships. Application image rollback cannot restore the retired accounts;
+restoring the previous installation is a separate data/configuration recovery.
+
+### Optional reverse proxy or tunnel
+
+A proxy or tunnel is an alternative ingress deployment, not a signup dependency.
+Publish both provider and browser hostnames and preserve the original Host header
+when routing to Caddy. Bind its HTTP listener to loopback when the connector runs
+on the same host; restrict it to the proxy network otherwise. Configure TLS at the
+public edge and secure any non-loopback upstream transport.
+
+Trust client-address headers only from that explicitly configured proxy. Caddy
+must replace `X-Hail-Trusted-Client-IP` before forwarding requests; direct callers
+must not be able to impersonate the proxy. Disable caching and browser challenges
+for API/federation/authentication traffic. Verify both hostnames from outside the
+server and confirm uploaded media is served only on the provider origin.
+
+Provider-specific tunnel installation, DNS records and firewall rules belong in
+that operator's site configuration. The [Haili operations notes](../../../../agents/haili-operations.md)
+record that deployment's Cloudflare setup and installed wrapper constraints;
+those are not prerequisites for an independent provider.
+
+A reset of the dedicated test PLC monitor is a separate operation. Follow
+[archive and restart monitoring](../../../plc-monitor/deploy/public/reset-test-monitor.md)
+before enrolling the new identities. Set its enrollment-provider pin to the new
+API origin; preserve its key unless deliberately rotating that key everywhere it
+is trusted. The provider and monitor resets do not clear the external email
+receiver's state.
+
+The current provider-transfer profile still assumes native address domains match
+service hostnames. Transfers to/from the split native-domain profile remain
+unsupported; leave transfer features disabled. This fresh-install procedure does
+not bypass that protocol constraint.

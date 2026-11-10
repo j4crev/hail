@@ -53,7 +53,7 @@ export class PublicOnboarding {
   constructor(private readonly sql: SQL, private readonly plc: PlcDirectoryClient,
     private readonly resolver: HailDidResolver, private readonly encryptor: KeyEncryptor,
     registryOrigin: string, private readonly serviceBase: string, private readonly verifier: AddressVerificationService,
-    private readonly alphaMonitoring?: AlphaMonitoringPolicy) {
+    private readonly alphaMonitoring?: AlphaMonitoringPolicy,private readonly nativeDomain=new URL(serviceBase).hostname) {
     if (registryOrigin !== "https://plc.directory" || serviceBase !== `${new URL(serviceBase).origin}/hail`) {
       throw new Error("Public onboarding requires canonical public PLC and provider Hail services");
     }
@@ -79,7 +79,7 @@ export class PublicOnboarding {
     }
     const address = canonicalizeHailAddress(addressInput);
     const sql = transaction ?? this.sql;
-    const custom = address.split("@")[1] !== new URL(this.serviceBase).hostname;
+    const custom = address.split("@")[1] !== this.nativeDomain;
     if (custom) {
       if (!transaction || !signupHash || !this.alphaMonitoring || profile !== "managed") {
         throw new Error("Custom-domain onboarding requires an authorized signup transaction");

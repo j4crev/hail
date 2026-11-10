@@ -7,11 +7,11 @@ export class CustomDomainAuthorityError extends Error {
 
 // Call within the publication transaction to hold the domain registration lock.
 export async function requireCustomDomainAuthority(tx:SQL,accountId:string,address:string,origin:string,
-  discover:ProviderDiscovery=discoverProvider) {
+  discover:ProviderDiscovery=discoverProvider,nativeDomain=new URL(origin).hostname) {
   if(!(await tx`SELECT id FROM provider_accounts WHERE id=${accountId} AND address_released_at IS NULL AND closed_at IS NULL`).length)
     throw new CustomDomainAuthorityError(409,"Account no longer owns this address");
   const domain=address.split("@")[1]!,host=new URL(origin).hostname;
-  if(domain===host)return; // Native publication does not depend on DNS delegation.
+  if(domain===nativeDomain)return; // Native publication does not depend on DNS delegation.
   // Original account admission establishes provenance. The administrator's
   // login, generation and expired issuance token do not control this identity.
   const registered=await tx`SELECT domain.id FROM account_custom_domains domain

@@ -54,6 +54,16 @@ integration("browser authorization code and PKCE",()=>{
       .rejects.toMatchObject({status:401});
   });
 
+  it("binds CLI URLs and credentials to the API origin while retaining the browser RP",async()=>{
+    const split=new PasskeyAuth(db.sql,"example.com",origin,undefined,undefined,"https://svr.example.com");
+    const input=await prepare(),request=await split.prepareAuthorization(input.input);
+    expect(new URL(request.authorizationUrl).origin).toBe("https://svr.example.com");
+    expect(split.origin).toBe(origin);expect(split.rpId).toBe("example.com");
+    await split.completeAuthorization(session,request.requestId,input.state,input.code);
+    const credential=await split.exchangeAuthorization({clientId:"racr-cli-v1",redirectUri:input.redirectUri,code:input.code,verifier:input.verifier,token:secret("racr")});
+    expect(credential.provider).toBe("https://svr.example.com");
+  });
+
   it("rejects wrong verifier, account, generation, redirect, expiry and stale verification",async()=>{
     const wrong=await prepare();await expect(passkeys.completeAuthorization({...session,passkey_verified_at:new Date(Date.now()-11*60_000)},wrong.requestId,wrong.state,wrong.code))
       .rejects.toMatchObject({status:403});

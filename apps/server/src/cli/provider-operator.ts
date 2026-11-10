@@ -8,7 +8,7 @@ const config=loadConfig(),db=new ProviderDatabase(config.databaseUrl);
 try{
   await db.migrate();
   const canonical=canonicalizeHailAddress(address);
-  if(canonical.split("@")[1]!==new URL(config.publicOrigin).hostname)throw new Error("Account must belong to this provider");
+  if(canonical.split("@")[1]!==(config.nativeAddressDomain??new URL(config.publicOrigin).hostname))throw new Error("Account must belong to this provider");
   if(action==="grant"){
     const rows=await db.sql`INSERT INTO provider_operators(account_id,serving_generation)
       SELECT a.id,g.generation FROM provider_accounts a JOIN account_serving_generations g ON g.account_id=a.id WHERE canonical_address=${canonical} AND address_released_at IS NULL AND onboarding_state='active'

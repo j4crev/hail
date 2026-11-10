@@ -41,6 +41,6 @@ async function loadAccount(cookies?:Cookies,url?:URL) {
 export async function senderAvatars(client: AccountApiClient, senderDids: Set<string>) {
   // Browser image requests run after page rendering; no API/identity wait here.
   return new Map([...senderDids].filter(did=>/^did:plc:[a-z2-7]{24}$/.test(did)).map(did=>[did,{
-    src:`/api/v1/account/senders/${encodeURIComponent(did)}/avatar/image`,width:44,height:44,
+    src:`/media/avatars/${encodeURIComponent(did)}`,width:44,height:44,
   }]));
 }

@@ -40,9 +40,9 @@ export class CustomDomains {
   private readonly origin: string;
   constructor(private readonly sql: SQL, origin: string,
     private readonly txt: typeof lookupTxt = lookupTxt,
-    private readonly discover: ProviderDiscovery = discoverProvider) {
+    private readonly discover: ProviderDiscovery = discoverProvider,private readonly nativeDomain=new URL(origin).hostname) {
     this.host = new URL(origin).hostname; this.origin = new URL(origin).origin;
-    this.standalone = new StandaloneDomains(sql, this.origin, txt, discover);
+    this.standalone = new StandaloneDomains(sql, this.origin, txt, discover,nativeDomain);
   }
 
   private async writer(tx: SQL, session: AccountApiSession) {
@@ -65,7 +65,7 @@ export class CustomDomains {
 
   async start(session: AccountApiSession, input: string) {
     const domain = canonicalDomain(input);
-    if (domain === this.host) throw new CustomDomainError(400, "The provider's native domain is already managed by the provider.");
+    if (domain === this.nativeDomain) throw new CustomDomainError(400, "The provider's native domain is already managed by the provider.");
     const token = randomBytes(32).toString("base64url"), hash = tokenHash(token);
     return this.sql.begin(async tx => {
       await this.writer(tx, session);

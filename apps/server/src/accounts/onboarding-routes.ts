@@ -12,7 +12,7 @@ import { accountRequestBytes } from "./routes.js";
 import {clientAddress,FixedWindowRateLimit} from "../http/rate-limit.js";
 
 export interface SelfServiceOnboarding { sql: SQL; onboarding: PrivatePocOnboarding | PublicOnboarding;
-  activation?: ActivationService; provider: string; profile?: "private-poc" | "strict-public-v1"; invitationKey?:string; }
+  activation?: ActivationService; provider: string; nativeAddressDomain?:string|undefined; browserOrigin?:string|undefined; profile?: "private-poc" | "strict-public-v1"; invitationKey?:string; }
 
 export function registerSelfServiceOnboarding(app: Hono, dependencies: SelfServiceOnboarding) {
   const rateLimit=new FixedWindowRateLimit();
@@ -45,7 +45,7 @@ export function registerSelfServiceOnboarding(app: Hono, dependencies: SelfServi
           typeof input.signupHash !== "string" || input.backupVerified !== true || !["owner-controlled","managed"].includes(input.custody as string)) return context.json({error:"Invalid preparation"},400);
         const hash=decodeBase64Url(input.signupHash);if(hash.length!==32)return context.json({error:"Invalid signup hash"},400);
         if(input.invitation!==undefined&&(typeof input.invitation!=="string"||input.invitation.length>2048))return context.json({error:"Invalid invitation"},400);
-        if(input.address.split("@")[1]?.toLowerCase()!==new URL(dependencies.provider).hostname)return context.json({error:"Choose an address at this provider"},400);
+        if(input.address.split("@")[1]?.toLowerCase()!==(dependencies.nativeAddressDomain??new URL(dependencies.provider).hostname))return context.json({error:"Choose an address at this provider"},400);
         const digest=new Uint8Array(createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(input).sort(([a],[b])=>a.localeCompare(b))))).digest());
         await registration.admit(hash,digest,"cli",input.invitation as string??"");
         if(dependencies.profile==="strict-public-v1") {
@@ -99,7 +99,7 @@ export function registerSelfServiceOnboarding(app: Hono, dependencies: SelfServi
         }),capability=rows[0];
         if(!capability||capability.account_id!==id)throw new Error("Enrollment token conflicts");
         enrollment={type:"racr.passkey-enrollment",version:1,provider:dependencies.provider,accountId:id,token:input.enrollmentToken,
-          url:`${dependencies.provider}/auth/recover#token=${encodeURIComponent(input.enrollmentToken)}`,expiresAt:capability.expires_at.toISOString()};
+          url:`${dependencies.browserOrigin??dependencies.provider}/auth/recover#token=${encodeURIComponent(input.enrollmentToken)}`,expiresAt:capability.expires_at.toISOString()};
       }
       return context.json({did:result.did,credential:{type:"racr.api-credential",version:1,provider:dependencies.provider,...credential},...(enrollment?{enrollment}:{})});
     } catch(error) { if(error instanceof RegistrationError)return context.json({error:error.message},error.status); return context.json({error:"Signup not completed; retain artifacts and retry the same request"},409); }

@@ -41,7 +41,7 @@ export class SignupCoordinator {
   constructor(private readonly sql:SQL,private readonly onboarding:PublicOnboarding,private readonly monitor:SignupMonitorService,
     private readonly origin:string,private readonly policy:AlphaMonitoringPolicy,invitationKey:string,
     private readonly domains:CustomDomains=new CustomDomains(sql,origin),
-    private readonly sessionPolicy: Readonly<SessionPolicy> = DEFAULT_SESSION_POLICY){this.registration=new RegistrationPolicy(sql,origin,invitationKey);}
+    private readonly sessionPolicy: Readonly<SessionPolicy> = DEFAULT_SESSION_POLICY,private readonly nativeDomain=new URL(origin).hostname,private readonly browserOrigin=origin){this.registration=new RegistrationPolicy(sql,origin,invitationKey);}
   get domainSetup(){return this.domains.standalone;}
   private readonly registration:RegistrationPolicy;
 
@@ -80,7 +80,7 @@ export class SignupCoordinator {
       throw new SignupError(400);
     let address:string;
     try{address=canonicalizeHailAddress(input.address);}catch{throw new SignupError(400,"Invalid address");}
-    const custom=address.split("@")[1]!==new URL(this.origin).hostname;
+    const custom=address.split("@")[1]!==this.nativeDomain;
     if(custom!==hasAuthorization)throw new SignupError(400,"Custom addresses require exact-address authorization");
     if(custom)await this.domains.checkAddressAuthorization(input.addressAuthorization as string,address);
     else await this.registration.check(input.invitation);
@@ -112,7 +112,7 @@ export class SignupCoordinator {
     if(equal(enrollmentHash,signupHash))throw new SignupError(400,"Passkey enrollment and signup authority must be separate");
     const request:SignupRequest={address:canonicalizeHailAddress(input.address),recoveryKey:input.recoveryKey,identityKey:input.identityKey,
       enrollmentHash:input.enrollmentHash,invitationDigest:createHash("sha256").update(input.invitation).digest("base64url")};
-    const custom=request.address.split("@")[1]!==new URL(this.origin).hostname;
+    const custom=request.address.split("@")[1]!==this.nativeDomain;
     if(custom!==(typeof authorization==="string"))throw new SignupError(400,"Custom addresses require exact-address authorization");
     if(custom)request.addressAuthorizationDigest=createHash("sha256").update(authorization as string).digest("base64url");
     const digest=new Uint8Array(createHash("sha256").update(JSON.stringify(request)).digest());
@@ -270,7 +270,7 @@ export class SignupCoordinator {
             enrollment_expires_at=${expires},enrollment_generation=${generation.generation} WHERE id=${id}`;
           current.enrollment_expires_at=expires;
         }
-        return {...await this.summary(current),state:"passkey-enrollment",enrollment:{url:`${this.origin}/auth/recover#token=${encodeURIComponent(enrollmentToken)}`,
+        return {...await this.summary(current),state:"passkey-enrollment",enrollment:{url:`${this.browserOrigin}/auth/recover#token=${encodeURIComponent(enrollmentToken)}`,
           expiresAt:current.enrollment_expires_at!.toISOString()}};
       });
     }finally{

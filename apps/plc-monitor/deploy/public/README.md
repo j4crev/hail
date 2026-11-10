@@ -263,3 +263,12 @@ older runtimes. Disable public incident ingress when rolling back to a runtime
 without incident routes. Preserve signing keys so
 outstanding deterministic links and retry payloads remain stable. Preserve the
 receiver's existing email routing, recipient verification and durable deduplication.
+
+## Retiring a dedicated test provider
+
+A fresh provider installation does not clear this monitor or the public PLC
+registry. To start a dedicated test monitor with no old watches, follow
+[archive and restart monitoring](reset-test-monitor.md). It retains the existing
+PostgreSQL storage and signing key, archives the old database, and creates an
+empty replacement. Do not use it on a shared monitor with identities that still
+need coverage. External email receiver state has its own lifecycle.

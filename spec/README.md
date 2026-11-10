@@ -68,7 +68,9 @@ from subscription Grants. Their messages MUST NOT contain a category.
 The optional [RACR client profile](client-api.md) defines CLI provider
 interoperability, authentication-method-neutral browser authorization and the
 account API boundary. It is not required for federation. The reference web
-client retains its passkey-specific browser contract.
+client retains its passkey-specific browser contract. The profile also documents
+its optional scoped media-capability extension and separation of browser, API,
+and native address origins, including the remaining provider-transfer limitation.
 
 ## Reference client namespace
 

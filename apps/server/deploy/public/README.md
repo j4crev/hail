@@ -43,7 +43,7 @@ public endpoint. Correct persistent cloud-init aliases as well as `/etc/hosts`.
 Publish this TXT record for your native address domain, substituting your domain:
 
 ```dns
-_hail-provider.haili.app. TXT "v=hail1; provider=haili.app"
+_hail-provider.haili.app. TXT "v=hail1; provider=svr.haili.app"
 ```
 
 Use one record, the exact lowercase format above, and a public hostname without
@@ -65,7 +65,7 @@ honors DNS TTLs; no application cache or scheduled domain checks are used.
 
 For a custom domain hosted by this provider, the same record names your provider
 instead of the custom domain, for example
-`_hail-provider.example.com TXT "v=hail1; provider=haili.app"`. Domain registration
+`_hail-provider.example.com TXT "v=hail1; provider=svr.haili.app"`. Domain registration
 also requires the provider-issued `_hail-domain-verify` challenge. After verification,
 Settings → Custom domains can authorize a separate signup for an exact custom
 address without an additional invitation, even in invite-only mode. General
@@ -87,12 +87,14 @@ Edit the private `.env`:
 
 | Setting | Value |
 | --- | --- |
-| `PROVIDER_DOMAIN` | Your public DNS name, without scheme or path |
+| `PROVIDER_DOMAIN` | Provider API/media hostname, e.g. `svr.haili.app` |
+| `WEB_CLIENT_DOMAIN` | Distinct browser hostname, e.g. `haili.app`; also the existing passkey RP ID |
+| `NATIVE_ADDRESS_DOMAIN` | Native account domain, e.g. `haili.app`; independent of API hostname |
 | `PROVIDER_ID` | A stable local identifier for this provider |
 | `PLC_PROVIDER_OPERATORS` | JSON array naming the actual operator, e.g. `["example-operator"]` |
 | `DB_PASSWORD` | Independent random database secret |
 | `KEY_ENCRYPTION_KEY` | Independent 32-byte base64url key for retained operational keys |
-| `PASSKEY_AUTH` | `true`; RP ID/origin derive from your provider domain |
+| `PASSKEY_AUTH` | `true`; RP ID/origin derive from `WEB_CLIENT_DOMAIN` |
 | `PASSKEY_SESSION_IDLE_SECONDS` | `604800` (7 days); successful authenticated requests reset this deadline |
 | `PASSKEY_SESSION_ABSOLUTE_SECONDS` | `2592000` (30 days); database and cookie lifetime for new logins |
 | `CONNECTION_PREVIEW` | Explicit `true` or `false`; the supplied profile defaults to `true` |
@@ -156,7 +158,7 @@ separately rehearsed dump/restore migration and preservation proof.
 
 ## 4. Configure HTTPS ingress
 
-Create a Cloudflare Tunnel for your provider hostname and run its connector as a
+Create Cloudflare Tunnel ingress entries for both provider and web-client hostnames and run its connector as a
 host service with a protected tunnel credential. Publish the hostname through the
 tunnel's proxied CNAME, routing to **HTTP `127.0.0.1:8080`** with your provider
 hostname as HTTP Host Header. Remove obsolete direct-origin A/AAAA records.
@@ -341,3 +343,57 @@ Deploy refuses insufficient storage (3 GiB before pulls, 1 GiB afterward).
 See [bounded retention and installation](../../../../agents/release-process.md#bounded-local-image-retention).
 These commands never prune volumes, backups or build cache. Publishing application
 images alone does not update the root-owned operations wrapper.
+
+## Haili split-origin cutover
+
+The operator has chosen a **fresh installation** using the
+[new-provider guide](../standalone/README.md#replacing-a-disposable-pre-launch-provider).
+The checklist below applies only if retaining existing identities instead.
+
+The public profile now requires `PROVIDER_DOMAIN=svr.haili.app`,
+`WEB_CLIENT_DOMAIN=haili.app`, and `NATIVE_ADDRESS_DOMAIN=haili.app`.
+They are distinct roles: API/federation/media, browser/passkeys, and addresses.
+Configure both Cloudflare hostnames to the same loopback tunnel listener. The
+DNS record alone is insufficient: the tunnel must accept the new hostname and
+preserve Host. Set `_hail-provider.haili.app TXT "v=hail1; provider=svr.haili.app"`.
+Custom domains must likewise delegate to the new provider hostname.
+
+This is a coordinated cutover, **not a routine image-only rollout**:
+
+1. Inventory existing PLC service endpoints, account credentials, custom-domain
+   authorizations, pending signups/invitations and in-progress transfers. Back up
+   the database, recovery material and current environment/ingress configuration.
+2. Rehearse signed PLC service-endpoint updates to `https://svr.haili.app/hail`
+   for retained identities, including dependent published profiles and active
+   relationships. DNS and SQL edits cannot replace owner-authorized signed PLC
+   operations. Do not change public DNS while these preparations are incomplete.
+3. Pending signup/invitation and custom-domain issuance records bind the old
+   provider origin; finish or explicitly retire/reissue them. Retained delegated
+   domain registrations need a separately reviewed data transition. Do not
+   silently rewrite ownership proofs. CLI users obtain new credential files
+   bound to `https://svr.haili.app`; do not relax credential-origin validation.
+4. Preserve existing passkey RP ID/origin `haili.app` / `https://haili.app` and
+   host-only session cookies. Set the three environment values above. Keep the
+   current public-registration setting, database/image overlays and volumes.
+5. Apply the reviewed tunnel/Caddy configuration through existing privileged
+   access, coordinated with the verified provider/GUI images. The installed
+   application wrapper recreates only provider and GUI: it does **not** reload
+   Caddy or add the new Caddy environment value. A separate ingress recreation
+   is required; do not change wrapper privileges to accomplish it.
+6. Verify both hosts, unchanged passkeys and registration policy, JSON API calls,
+   CLI browser login, address discovery, and authenticated avatar/attachment
+   redirects whose final URL is `svr.haili.app`. Raw media requests on `haili.app`
+   must fail. The original `/health/ready` remains a JSON-only ingress route for
+   the installed operations wrapper.
+
+No automatic account/PLC migration is included in the application change.
+Provider transfers still have a protocol limitation: destination native domains
+are tied to service hostnames, and source fencing rejects delegated-domain
+addresses. Keep transfers disabled for the split Haili profile until that
+interoperability decision is implemented and rehearsed; do not bypass the checks.
+Same-provider custody changes use the explicit native address domain.
+
+Before signed identity changes, rollback restores the old images, three-origin
+configuration and ingress together. After signed changes, image rollback alone
+is insufficient: review identity and endpoint reachability before reversal.
+Never restore an old database over new writes. Keep prior images and backups.

@@ -34,7 +34,7 @@ export class PasskeyError extends Error {
 export class PasskeyAuth {
   constructor(private readonly sql:SQL,readonly rpId:string,readonly origin:string,
     private readonly verifyRegistration:typeof verifyRegistrationResponse=verifyRegistrationResponse,
-    readonly sessionPolicy: Readonly<SessionPolicy> = DEFAULT_SESSION_POLICY){}
+    readonly sessionPolicy: Readonly<SessionPolicy> = DEFAULT_SESSION_POLICY,readonly providerOrigin=origin){}
 
   private management(session:AccountApiSession){
     if(session.scopes.includes("credentials:write")||session.passkey_verified_at&&
@@ -157,14 +157,14 @@ export class PasskeyAuth {
         if(prior[0].client_id!==input.clientId||prior[0].redirect_uri!==redirectUri||prior[0].state!==state||
           prior[0].code_challenge!==codeChallenge||JSON.stringify(priorScopes)!==JSON.stringify(scopes)||prior[0].expires_at.getTime()<=Date.now())
           throw new PasskeyError(409);
-        return {requestId:prior[0].id,authorizationUrl:`${this.origin}/auth/authorize?request=${prior[0].id}&state=${state}#code=${code}`,
+        return {requestId:prior[0].id,authorizationUrl:`${this.providerOrigin}/auth/authorize?request=${prior[0].id}&state=${state}#code=${code}`,
           expiresAt:prior[0].expires_at.toISOString()};
       }
       const id=randomUUID(),inserted=await tx<{expires_at:Date}[]>`INSERT INTO account_browser_authorizations
         (id,client_id,redirect_uri,state,code_hash,code_challenge,scopes,expires_at)
         VALUES(${id},${input.clientId},${redirectUri},${state},${tokenHash(code)},${codeChallenge},
           (${JSON.stringify(scopes)}::text)::jsonb,now()+interval '5 minutes') RETURNING expires_at`;
-      return {requestId:id,authorizationUrl:`${this.origin}/auth/authorize?request=${id}&state=${state}#code=${code}`,
+      return {requestId:id,authorizationUrl:`${this.providerOrigin}/auth/authorize?request=${id}&state=${state}#code=${code}`,
         expiresAt:inserted[0]!.expires_at.toISOString()};
     });
   }
@@ -224,7 +224,7 @@ export class PasskeyAuth {
       const credential=await tx<{expires_at:Date}[]>`SELECT expires_at FROM account_api_credentials WHERE id=${credentialId}
         AND account_id=${row.account_id} AND token_hash=${tokenHash(token)} AND revoked_at IS NULL AND expires_at>now()`;
       if(!credential[0])throw new PasskeyError(401);
-      return {type:"racr.api-credential",version:1,provider:this.origin,accountId:row.account_id,credentialId,token,
+      return {type:"racr.api-credential",version:1,provider:this.providerOrigin,accountId:row.account_id,credentialId,token,
         scopes,expiresAt:credential[0].expires_at.toISOString()};
     });}catch(error){if(uniqueConflict(error))throw new PasskeyError(409);throw error;}
   }
