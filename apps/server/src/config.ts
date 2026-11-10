@@ -206,14 +206,14 @@ export function loadConfig(environment: Environment = Bun.env): AppConfig {
   if(alphaGate!==undefined&&alphaGate!==""&&alphaGate!=="true"&&alphaGate!=="false")throw new Error("PUBLIC_ALPHA_SIGNUP must be true or false");
   let alphaSignup:AppConfig["alphaSignup"];
   if(alphaGate==="true"){
-    if(nodeEnv!=="production"||!signupEmail||!signupMonitor||!passkeys||passkeys.origin!==publicOrigin||!publicPlcAuthority||
+    if(nodeEnv!=="production"||!signupEmail||!signupMonitor||!passkeys||!publicPlcAuthority||
       ["POC_ACCOUNT_ACCESS","POC_SELF_SERVICE_ONBOARDING","POC_SELF_SERVICE_TRANSFER","POC_SELF_SERVICE_RETURN","POC_MANAGED_TRANSFER","POC_SCHEMA_REHEARSAL"]
         .some(name=>environment[name]==="true"))
       throw new Error("Alpha signup requires production passkeys, email, automatic monitoring and strict PLC authority");
     const invitationKey=required(environment,"ALPHA_SIGNUP_INVITE_KEY"),monitorOrigin=required(environment,"ALPHA_SIGNUP_MONITOR_ORIGIN");
     decodeBase64Url(invitationKey,32);
     if([signupEmail.token,signupMonitor.token,keyEncryptionKey].includes(invitationKey))throw new Error("Invitation signing requires an independent key");
-    if(!canonicalPlcReadOrigin(monitorOrigin)||new URL(monitorOrigin).hostname===publicOriginUrl.hostname)
+    if(!canonicalPlcReadOrigin(monitorOrigin)||[publicOriginUrl.hostname,new URL(passkeys.origin).hostname].includes(new URL(monitorOrigin).hostname))
       throw new Error("Alpha signup requires an external canonical HTTPS monitor identity");
     alphaSignup={invitationKey,monitorOrigin};
   }else if(environment.ALPHA_SIGNUP_INVITE_KEY||environment.ALPHA_SIGNUP_MONITOR_ORIGIN)throw new Error("Alpha signup declarations require PUBLIC_ALPHA_SIGNUP=true");

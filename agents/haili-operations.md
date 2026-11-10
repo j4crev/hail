@@ -17,7 +17,8 @@ rather than migrating existing accounts. Use the
 `svr.haili.app` (provider/media), `haili.app` (browser/passkeys), and native address
 domain `haili.app`. Retain host-only browser cookies and scoped media tickets.
 The operator has authorized an agent to perform the fresh installation on the
-existing server and archive/reset the dedicated test monitor (2026-11-09). Follow
+replacement Hostinger server and archive/reset the dedicated test monitor
+(2026-11-09). Follow
 the new-provider guide, correcting verified gaps as installation proceeds. This
 authorization does not broaden SSH/sudo access or permit deleting recovery material.
 Record actual installation evidence before claiming production has been replaced.
@@ -30,6 +31,41 @@ which preserves its old database and signing key. External alert-receiver state
 is separate. The installed Haili wrappers and database/ingress overlays do not
 automatically manage a new standalone Compose project; review operational tooling
 and ingress deliberately during installation, without broadening privileges.
+
+### Hostinger replacement in progress (2026-11-10 UTC)
+
+The replacement host is `haili-hostinger`, public IP `2.25.253.153`, Tailscale
+`100.99.115.0`, with `tag:haili-provider`. The existing workspace host-key pin is
+under the public IP; use `HostKeyAlias=2.25.253.153` for private SSH. Key-based
+`hailops` login is verified. Public TCP 22/80/443 is blocked on IPv4 and IPv6;
+private administration and the new Cloudflare connector remain healthy. Root key
+SSH is temporarily retained on the private network for installation and must be
+disabled after operations tooling and console recovery are verified.
+
+The old `hailproto.app`/`hailproto.dev` proof-of-concept stack is archived and
+stopped (13 containers, restart disabled). All four database dumps restored with
+identical table row counts. Its encrypted off-host archive passed checksum and
+authenticated decryption checks. Original volumes, images and recovery material
+remain retained; do not prune them as part of this installation.
+
+Use `/opt/hail` and the `deploy/public` site profile on this new host so the
+reviewed Haili operations and backup tools retain their expected service names.
+Follow the generic guide's secret generation, discovery, signup and administrator
+ceremony, substituting this profile only for its direct-ingress Compose commands.
+Use the PostgreSQL 18 overlay and immutable release overlay on every command.
+Initial setup follows the site's **fresh installation** commands; routine
+`hail-provider-ops deploy` requires an already running provider/GUI pair and a
+working backup, so it cannot bootstrap an empty host.
+
+Keep both public hostname routes on their current targets until replacement
+readiness, backup restoration and monitor configuration are verified. The new
+connector token permits connector operation, not DNS or tunnel configuration
+changes. Both new routes must preserve their own Host header and target the
+loopback Caddy listener at `http://127.0.0.1:8080`.
+
+Do not treat the replacement as complete yet: first administrator enrollment,
+dedicated-monitor reset/provider pin, public cutover, final SSH lockdown and
+retirement of the Hetzner deployment remain separate verification steps.
 
 ## Pre-launch development policy — developers and agents
 

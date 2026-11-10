@@ -161,7 +161,8 @@ separately rehearsed dump/restore migration and preservation proof.
 Create Cloudflare Tunnel ingress entries for both provider and web-client hostnames and run its connector as a
 host service with a protected tunnel credential. Publish the hostname through the
 tunnel's proxied CNAME, routing to **HTTP `127.0.0.1:8080`** with your provider
-hostname as HTTP Host Header. Remove obsolete direct-origin A/AAAA records.
+and browser hostnames preserved as the HTTP Host Header on their respective routes.
+Do not force both routes to use the provider hostname. Remove obsolete direct-origin A/AAAA records.
 
 Configure HTTPS enforcement and cache bypass for dynamic application traffic.
 Disable browser-only challenges for `/api`, `/hail`, `/.well-known`, `/health`
@@ -203,7 +204,7 @@ From another network:
 
 ```bash
 curl --fail --silent --show-error https://your-provider.example/health/ready
-curl --fail --silent --show-error https://your-provider.example/
+curl --fail --silent --show-error https://your-browser.example/
 ```
 
 Verify the tunnel connector is ready, requests are not cached/challenged, and direct
