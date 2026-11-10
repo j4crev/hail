@@ -1,3 +1,4 @@
+import { EnrollmentProviders } from "../../plc-monitor/src/providers.js";
 import { AccountLifecycle } from "../src/accounts/lifecycle.js";
 import { cleanAccountMonitor } from "../src/accounts/monitor-cleanup.js";
 import { exerciseCustomDomainPublication } from "./client-support/custom-domain-publication.js";
@@ -101,8 +102,10 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
     const registered = await onboarding.register(prepared.accountId, new TextEncoder().encode(JSON.stringify(genesis.operation)), new Uint8Array());
     expect(registered.state).toBe("address-staged"); expect(logs.size).toBe(1);
 
+    const providers = new EnrollmentProviders(monitorDb.sql);
+    await providers.create(providerOrigin, alertOrigin, monitorToken);
     let monitor = new PlcMonitor(monitorDb.sql, monitorPlc);
-    let api = createMonitorEnrollmentApi({ token: monitorToken, providerOrigin, alertOrigin, monitorOrigin, hostname: "127.0.0.1", port: 3001 }, monitor, signer, receiverFetch);
+    let api = createMonitorEnrollmentApi({ monitorOrigin, hostname: "127.0.0.1", port: 3001 }, monitor, signer, providers, receiverFetch);
     let loseMonitorReply = false, tamperSignature = false, monitorCalls = 0;
     const monitorFetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const request = new Request(url, init); expect(new URL(request.url).origin).toBe(monitorOrigin); monitorCalls++;
@@ -162,7 +165,7 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
     expect((await repository.getAccount(prepared.accountId)).state).toBe("address-staged");
     // Rebuild service instances as after a monitor process restart; keep all retained evidence.
     monitor = new PlcMonitor(monitorDb.sql, monitorPlc);
-    api = createMonitorEnrollmentApi({ token: monitorToken, providerOrigin, alertOrigin, monitorOrigin, hostname: "127.0.0.1", port: 3001 }, monitor, signer, receiverFetch);
+    api = createMonitorEnrollmentApi({ monitorOrigin, hostname: "127.0.0.1", port: 3001 }, monitor, signer, providers, receiverFetch);
     const ready = await enrollment(); expect(ready.status).toBe(200);
     const result = await ready.json() as { state: string; attestation: { payload: string; signature: string } };
     expect(result.state).toBe("ready"); expect(await fingerprint()).toBe(baseline);

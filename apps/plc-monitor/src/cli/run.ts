@@ -1,3 +1,6 @@
+import { SourceAdmission } from "../admission.js";
+import { createProviderRegistrationApi } from "../provider-registration.js";
+import { EnrollmentProviders } from "../providers.js";
 import { IncidentCapabilities } from "../incident-capabilities.js";
 import { IncidentService, createIncidentApi } from "../incidents.js";
 import { incidentStyles } from "../incident-page.js";
@@ -26,9 +29,23 @@ const incidentApi = incidents ? createIncidentApi(incidents, new IncidentService
 }) : undefined;
 const notifier = new MonitorNotifier(database.sql, signer, new PinnedHttpsAlertTransport(), () => new Date(), incidents);
 if (enrollment) {
-  const api = createMonitorEnrollmentApi(enrollment, monitor, signer);
-  Bun.serve({ hostname: enrollment.hostname, port: enrollment.port, maxRequestBodySize: 32_768, fetch: request => new URL(request.url).pathname.startsWith("/incidents/") && incidentApi
-    ? incidentApi.fetch(request) : api.fetch(request) });
+  const providers = new EnrollmentProviders(database.sql);
+  const registration = createProviderRegistrationApi(providers, signer, enrollment.monitorOrigin, undefined, enrollment.apiOrigin);
+  const api = createMonitorEnrollmentApi(enrollment, monitor, signer, providers);
+  const admission = new SourceAdmission();
+  Bun.serve({ hostname: enrollment.hostname, port: enrollment.port, maxRequestBodySize: 32_768,
+    async fetch(request, server) {
+      const path = new URL(request.url).pathname;
+      if (path.startsWith("/incidents/") && incidentApi) return incidentApi.fetch(request);
+      const source = Bun.env.MONITOR_TRUST_PROXY === "true"
+        ? request.headers.get("X-Hail-Monitor-Client-IP") ?? "unknown"
+        : server.requestIP(request)?.address ?? "unknown";
+      if (!admission.take(source, path === "/api/v1/providers/register"))
+        return Response.json({ error: "Source request limit reached" }, { status: 429,
+          headers: { "Retry-After": "60", "Cache-Control": "no-store" } });
+      return path === "/api/v1/providers/register" ? registration.fetch(request) : api.fetch(request);
+    },
+  });
 }
 console.info(JSON.stringify({ event: "monitor-started", monitorDidKey: signer.publicDidKey,
   deploymentProfile: Bun.env.MONITOR_DEPLOYMENT_PROFILE ?? "unspecified", enrollmentApi: enrollment ? "reduced-assurance-alpha-v1" : "disabled" }));

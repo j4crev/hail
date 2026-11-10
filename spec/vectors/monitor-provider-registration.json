@@ -1,0 +1,19 @@
+{
+  "description": "Public test secret only; evaluate expiry at now=1999999900",
+  "now": 1999999900,
+  "request": {
+    "providerOrigin": "https://provider.example",
+    "alertOrigin": "https://alerts.example",
+    "registrationSecret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expiresAt": 2000000000
+  },
+  "document": {
+    "type": "hail.monitor-provider-registration",
+    "version": 1,
+    "monitorApiOrigin": "https://monitor.example",
+    "providerOrigin": "https://provider.example",
+    "alertOrigin": "https://alerts.example",
+    "registrationHash": "DwBzhbb51LfusnSGBa_hqYSgo7-j8BTQnip4TOnlzRo",
+    "expiresAt": 2000000000
+  }
+}

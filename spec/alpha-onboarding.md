@@ -3,6 +3,10 @@
 Status: approved early-product direction; local reference implementation in
 progress. Not a claim of production portable/managed onboarding conformance.
 
+The reference monitor's provider registration and service-credential authorization
+are specified in [monitor providers](monitor-providers.md). Individual provider
+credentials do not replace owner-signed genesis or verified consumer-email binding.
+
 The identifier `reduced-assurance-alpha-v1` distinguishes an early managed-account
 onboarding deployment that uses a monitor under the provider operator's control.
 It does not change federation objects, canonical PLC registration, key roles or
@@ -122,11 +126,11 @@ No extra or duplicate fields are allowed. `did` must be canonical `did:plc`;
 `operationCid` must be a canonical CID with DAG-CBOR codec and SHA-256 multihash.
 The APIs are:
 
-- Monitor: `/api/v1/onboarding/stop`, authenticated with the configured enrollment
-  bearer secret, on the restricted provider ingress. Maximum body: 1024 bytes.
-  The retained bootstrap CID must match; the reviewed bootstrap's Hail service
-  must match the configured provider, and the alert destination must equal the
-  configured receiver's `/hail/signup`. These checks scope removal to the managed
+- Monitor: `/api/v1/onboarding/stop`, authenticated with the individual provider's
+  enrollment bearer credential. Maximum body: 1024 bytes.
+  The retained bootstrap CID and enrollment owner must match. The reviewed
+  bootstrap's Hail service must name the authenticated provider, and the alert
+  destination must equal its registered receiver's `/hail/signup`. These checks scope removal to the managed
   signup integration, including existing enrollments. An independent webhook or
   missing bootstrap is refused. Repeated stops of the same enrollment succeed.
 - Email receiver: `/signup-email/remove-monitoring`, authenticated with the

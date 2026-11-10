@@ -16,7 +16,7 @@ export async function authenticated(request: Request, secret: string | undefined
   return difference === 0;
 }
 
-export async function boundedBody(message: Pick<Request, "body" | "headers">, maximum = 65_536): Promise<Uint8Array | null> {
+export async function boundedBody(message: Pick<Request, "body" | "headers">, maximum = 65_536, timeoutMs = 10_000): Promise<Uint8Array | null> {
   const declared = message.headers.get("Content-Length");
   if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > maximum)) {
     await message.body?.cancel().catch(() => {}); return null;
@@ -24,12 +24,14 @@ export async function boundedBody(message: Pick<Request, "body" | "headers">, ma
   if (!message.body) return null;
   const reader = message.body.getReader(), parts: Uint8Array[] = [];
   let length = 0, done = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); });
   try {
     while (true) {
-      const next = await reader.read(); if (next.done) { done = true; break; }
+      const next = await Promise.race([reader.read(), timeout]); if (!next) return null; if (next.done) { done = true; break; }
       length += next.value.length; if (length > maximum) return null; parts.push(next.value);
     }
-  } finally { if (!done) await reader.cancel().catch(() => {}); }
+  } finally { clearTimeout(timer!); if (!done) void reader.cancel().catch(() => {}); }
   if (!length) return null;
   const bytes = new Uint8Array(length); let offset = 0;
   for (const part of parts) { bytes.set(part, offset); offset += part.length; }
