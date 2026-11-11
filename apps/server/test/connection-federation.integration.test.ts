@@ -104,6 +104,9 @@ import {PortableMigrationActivation} from '../src/migration/activation.js';
 import {signPortableMigrationConsent} from '../src/migration/consent.js';
 import {encode as encodeDagCbor} from '@ipld/dag-cbor';
 
+// The full case exercises three providers, message delivery, migration and return.
+// It takes 70–80 seconds locally; allow CI headroom without relaxing assertions
+// or the bounded network/worker deadlines within the fixture.
 it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss","shared conversations"])("federates independent providers: %s",async(mode)=>{
   const admin=new SQL(process.env.DATABASE_URL!),users=[] as User[],providers=[] as Provider[];
   type User={id:string;did:string;address:string;managed:boolean;keys:Awaited<ReturnType<typeof generateAccountKeys>>;session:AccountApiSession;token:string;
@@ -1276,4 +1279,4 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     }
   }catch(error){console.error("Federation fixture stage",portabilityStage,"HTTP outcomes",requests.slice(-12).map(r=>({provider:r.target.origin,path:r.path,status:r.status})));throw error;}
   finally{for(const p of providers){await p.db.close();await admin.unsafe(`DROP SCHEMA "${p.schema}" CASCADE`);}await admin.close();}
-},90000);
+},180000);
