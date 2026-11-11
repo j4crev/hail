@@ -103,7 +103,7 @@ integration('JMAP Grant and relationship domain projections',()=>{
    await tx`INSERT INTO account_conversation_preferences(account_id,allow_introductions) VALUES(${owner.account_id},true)`;
    await tx`INSERT INTO connection_conversation_preferences(account_id,connection_id,epoch,allow_introductions) VALUES(${owner.account_id},${connectionId},1,false)`;
    await tx`INSERT INTO conversation_descriptors(creator_did,conversation_id,descriptor_hash,descriptor_cose,participants,created_at,admission_until,signing_key,signing_evidence)
-    VALUES(${owner.did},${conversationId},${randomBytes(32)},${randomBytes(40)},${[owner.did,freshDid(),freshDid()]},clock_timestamp(),clock_timestamp()+interval '1 day','fixture','{}')`;
+    VALUES(${owner.did},${conversationId},${randomBytes(32)},${randomBytes(40)},ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify([owner.did,freshDid(),freshDid()])}::text::jsonb)),clock_timestamp(),clock_timestamp()+interval '1 day','fixture','{}')`;
    await tx`INSERT INTO conversation_memberships(account_id,creator_did,conversation_id,state) VALUES(${owner.account_id},${owner.did},${conversationId},'active')`;
   });
   const loaded=await snapshot(owner,'HailRelationship');expect(loaded.list).toHaveLength(3);

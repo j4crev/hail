@@ -14,7 +14,8 @@ export async function draftTransferFixture(sql:SQL,account:string){
   await sql`INSERT INTO account_message_preferences(account_id,trash_enabled,theme,show_header_images,start_screen) VALUES(${account},true,'dark',false,'inbox')`;
   for(const id of [active,trashed,removed])await sql`INSERT INTO account_message_drafts(account_id,id,content,trashed_at)
     VALUES(${account},${id},${JSON.stringify(id===trashed?{...contentVectors.valid.find(v=>v.name==='builder-unfinished-header-description')!.content,attachments:content.attachments}:content)}::text::jsonb,CASE WHEN ${id===trashed} THEN clock_timestamp()-interval '2 days' ELSE NULL END)`;
-  const rows=(db:SQL)=>db<{row:Record<string,unknown>}[]>`SELECT to_jsonb(d) AS row FROM account_message_drafts d WHERE account_id=${account} ORDER BY id`;
+  // Compare persisted rows, not runtime-specific SQL result metadata.
+  const rows=async(db:SQL)=>Array.from(await db<{row:Record<string,unknown>}[]>`SELECT to_jsonb(d) AS row FROM account_message_drafts d WHERE account_id=${account} ORDER BY id`);
   let expected=await rows(sql);
   const assert=async(db:SQL)=>{
     expect(await rows(db)).toEqual(expected);
