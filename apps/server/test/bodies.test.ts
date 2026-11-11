@@ -1,3 +1,4 @@
+import {ProtectedResponseSchedule} from "../src/http/protected-schedule.js";
 import { createHash } from "node:crypto";
 import { decodePayload, encodeBase64Url } from "@racrproto/codec";
 import { Hono } from "hono";
@@ -17,7 +18,8 @@ const headers = { Authorization: `Bearer ${encodeBase64Url(token)}`, Accept: "ap
 function setup(result: Awaited<ReturnType<BodyStore["retrieve"]>>) {
   const retrieve = vi.fn<BodyStore["retrieve"]>(async () => result);
   const app = new Hono();
-  registerBodyRoutes(app, { retrieve } as unknown as BodyStore);
+  registerBodyRoutes(app, { retrieve, recipient:async()=>recipient } as unknown as BodyStore,{verify:async()=>true},
+    new ProtectedResponseSchedule({minimumResponseMs:10,processingDeadlineMs:1000,maxInFlight:128,maxPerSource:128}));
   return { app, retrieve };
 }
 
@@ -101,7 +103,7 @@ describe("detached body", () => {
 it('never permits shared caching of body or attachment successes and protected failures',async()=>{
  const goodHash=createHash('sha256').update(token).digest();
  const lookup=vi.fn(async(_digest:Uint8Array,hash:Uint8Array)=>Buffer.from(hash).equals(goodHash)?{bytes,digest}:null);
- const app=new Hono();registerBodyRoutes(app,{retrieve:lookup,retrieveAttachment:async(_body:Uint8Array,digest:Uint8Array,hash:Uint8Array)=>lookup(digest,hash)} as unknown as BodyStore);
+ const app=new Hono();registerBodyRoutes(app,{recipient:async()=>recipient,retrieve:lookup,retrieveAttachment:async(_body:Uint8Array,digest:Uint8Array,hash:Uint8Array)=>lookup(digest,hash)} as unknown as BodyStore,{verify:async()=>true},new ProtectedResponseSchedule({minimumResponseMs:10,processingDeadlineMs:1000,maxInFlight:128,maxPerSource:128}));
  // A compliant shared cache stores neither the authorized success nor the
  // negative response: each principal must reach authorization on every request.
  const shared=new Map<string,Response>();
@@ -123,4 +125,15 @@ it('never permits shared caching of body or attachment successes and protected f
  for(const request of [{headers},{method:'POST'},{headers:{...headers,Accept:'application/json'}}]){
   expect((await unavailable.app.request(path,request)).headers.get('cache-control')).toContain('no-store');
  }
+});
+
+it('never downgrades to token-only access or reveals negotiation/storage failures without proof',async()=>{
+  for(const proof of [undefined,{verify:async()=>false}]){
+    const app=new Hono(),retrieve=vi.fn(async()=>"missing-body" as const);
+    registerBodyRoutes(app,{recipient:async()=>recipient,retrieve} as unknown as BodyStore,proof,
+      new ProtectedResponseSchedule({minimumResponseMs:10,processingDeadlineMs:1000,maxInFlight:32}));
+    const response=await app.request(path,{headers:{...headers,Accept:'application/json'}});
+    expect(response.status).toBe(404);expect(retrieve).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({type:'about:blank',title:'Not Found',status:404});
+  }
 });

@@ -62,6 +62,12 @@ export class BodyRepository implements BodyStore {
     });
   }
 
+  async recipient(digest: Uint8Array, tokenHash: Uint8Array, now: number): Promise<string | null> {
+    const row = (await this.sql<{recipient_did:string}[]>`SELECT recipient_did FROM body_authorizations
+      WHERE token_hash=${tokenHash} AND body_digest=${digest} AND status='active' AND expires_at>=${now}`)[0];
+    return row?.recipient_did ?? null;
+  }
+
   async retrieveAttachment(bodyDigest:Uint8Array,digest:Uint8Array,tokenHash:Uint8Array,now:number):Promise<StoredBody|"missing-body"|null>{
     const body=await this.retrieve(bodyDigest,tokenHash,now);
     if(body===null||body==='missing-body')return body;

@@ -117,7 +117,8 @@ profiles above or establish conformance to the planned standards.
 The [phase 1 completion record](../agents/standards-phase-1.md) covers bounded
 Content-Digest dictionaries, private caching, safe download headers and real TLS
 hostname tests. These HTTP changes do not introduce a signed format version;
-retrieval still uses the current bearer profile, not HTTP Message Signatures.
+phase 3 now additionally requires [RFC 9421 recipient proof](retrieval-signatures.md)
+for body and attachment retrieval, with durable replay rejection and no bearer-only fallback.
 
 The [phase 2 implementation record](../agents/standards-phase-2.md) replaces
 ordinary envelope and snapshot signatures with RFC 9995 hash COSE_Sign1.

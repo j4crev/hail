@@ -279,3 +279,11 @@ queue fairness history (`delivery_scheduling`) are excluded from both
 portable and managed snapshots. The target recomputes byte accounting and starts
 its own fair scheduling history; signed envelopes, replay decisions, attempts,
 and retry deadlines remain in the existing history representations.
+
+## Provider-local retrieval replay state
+
+`body_request_nonces` is not logical account history and is not exported. Keep
+unexpired nonce state at its serving origin across restarts and account transfers.
+Changing sender origins requires fresh target-bound signatures; replacing storage
+at the same origin requires preserving replay state or the quarantine described
+in [retrieval signatures](retrieval-signatures.md#retry-rotation-and-migration).

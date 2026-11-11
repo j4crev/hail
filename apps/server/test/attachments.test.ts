@@ -1,3 +1,4 @@
+import {signTestRetrieval} from "./support/retrieval-signing.js";
 import {createHash} from 'node:crypto';
 import {expect,it,vi} from 'vitest';
 import {encodePayload,type HailEnvelope} from '@racrproto/codec';
@@ -6,13 +7,15 @@ import {BodyRetriever} from '../src/delivery/retriever.js';
 import {validateAttachmentBytes} from '../src/bodies/attachments.js';
 const data=new TextEncoder().encode('log entry\n'),file={filename:'test.log',media_type:'text/plain' as const,size:data.length,digest:{algorithm:'sha-256' as const,value:createHash('sha256').update(data).digest()}};
 const body=encodePayload('hail.body.spt-2',{version:1,profile:'spt-2',blocks:[],attachments:[file]});
-const envelope={from:'did:plc:'+'a'.repeat(24),body:{profile:'spt-2',media_type:'application/hail-body+cbor',size:body.length,digest:{algorithm:'sha-256',value:bodyDigest(body)},access:{token:new Uint8Array(32)}}} as HailEnvelope;
+const envelope={to:'did:plc:'+'b'.repeat(24),from:'did:plc:'+'a'.repeat(24),body:{profile:'spt-2',media_type:'application/hail-body+cbor',size:body.length,digest:{algorithm:'sha-256',value:bodyDigest(body)},access:{token:new Uint8Array(32)}}} as HailEnvelope;
 const response=(bytes:Uint8Array,type:string)=>new Response(Uint8Array.from(bytes),{headers:{'Content-Type':type}});
-function setup(attachment:Response){const fetch=vi.fn().mockResolvedValueOnce(response(body,'application/hail-body+cbor')).mockResolvedValueOnce(attachment);return {fetch,retriever:new BodyRetriever({resolve:async()=>({serviceBase:'https://sender.example/hail'})} as never,fetch,async()=>{})};}
+function setup(attachment:Response){const fetch=vi.fn().mockResolvedValueOnce(response(body,'application/hail-body+cbor')).mockResolvedValueOnce(attachment);return {fetch,retriever:new BodyRetriever({resolve:async()=>({serviceBase:'https://sender.example/hail'})} as never,fetch,async()=>{},signTestRetrieval)};}
 it('retrieves files before reporting success, without a reader request to the sender',async()=>{
   const {retriever,fetch}=setup(response(data,'application/octet-stream'));
   const result=await retriever.retrieve(envelope);expect(result).toEqual({kind:'success',bytes:Uint8Array.from(body),attachments:[data]});
-  expect(fetch.mock.calls[1]![0].url).toContain('/attachments/');expect(fetch.mock.calls[1]![0].headers.get('authorization')).toBe(fetch.mock.calls[0]![0].headers.get('authorization'));
+  expect(fetch.mock.calls[1]![0].url).toContain('/attachments/');
+  expect(fetch.mock.calls[1]![0].headers.get('signature-input')).not.toBe(fetch.mock.calls[0]![0].headers.get('signature-input'));
+  expect(fetch.mock.calls[1]![0].headers.get('signature')).not.toBe(fetch.mock.calls[0]![0].headers.get('signature'));expect(fetch.mock.calls[1]![0].headers.get('authorization')).toBe(fetch.mock.calls[0]![0].headers.get('authorization'));
 });
 it('retries missing/interrupted bytes and rejects corruption and compressed files',async()=>{
   expect((await setup(new Response(null,{status:503})).retriever.retrieve(envelope)).kind).toBe('retry');

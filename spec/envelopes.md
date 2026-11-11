@@ -351,7 +351,7 @@ v0 rules:
 - `available_until` MUST NOT exceed `created_at + 2678400` (31 days).
 - `access.expires_at` MUST NOT exceed `created_at + 2678400` either. Reject an overlong promise rather than silently truncating signed fields.
 - `access` is a closed object containing only `type`, `token`, and `expires_at`.
-- `access.type` is the exact string `bearer`.
+- `access.type` is the exact string `bearer`. This identifies the token representation, not bearer-only authority: HTTP retrieval also requires the [recipient signature profile](retrieval-signatures.md).
 - `access.token` is exactly 32 cryptographically random bytes generated for this recipient envelope. The HTTP Bearer credential uses its unpadded base64url rendering.
 - `access.expires_at` is no earlier than `available_until` and therefore covers the complete envelope clock-tolerance window.
 

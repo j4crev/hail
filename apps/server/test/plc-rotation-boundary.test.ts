@@ -1,3 +1,4 @@
+import {signTestRetrieval} from "./support/retrieval-signing.js";
 import { cidForCbor } from "@atproto/common";
 import { P256Keypair } from "@atproto/crypto";
 import { formatDidDoc, signOperation, validateOperationLog, type DocumentData } from "@did-plc/lib";
@@ -103,7 +104,7 @@ describe("validated PLC rotation and service migration fixture", () => {
       }
       return new Response(Uint8Array.from(body), { headers: { "Content-Type": "application/hail-body+cbor" } });
     };
-    const result = await new BodyRetriever(validated, fetchBody, async () => {}).retrieve(envelope);
+    const result = await new BodyRetriever(validated, fetchBody, async () => {}, signTestRetrieval).retrieve(envelope);
     expect(result).toEqual({ kind: "success", bytes: body });
     expect(fetched).toEqual([
       `${oldBase}/bodies/${Buffer.from(envelope.body.digest.value).toString("base64url")}`,

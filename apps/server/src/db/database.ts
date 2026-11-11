@@ -252,6 +252,7 @@ const migrations: readonly Migration[] = [
   {version:108,name:"monitor-handoff",url:new URL("../../migrations/0108_monitor_handoff.sql",import.meta.url)},
   {version:109,name:"hash-snapshot-signatures",url:new URL("../../migrations/0109_hash_snapshot_signatures.sql",import.meta.url)},
   {version:110,name:"provider-authentication",url:new URL("../../migrations/0110_provider_authentication.sql",import.meta.url)},
+  {version:111,name:"body-request-nonces",url:new URL("../../migrations/0111_body_request_nonces.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

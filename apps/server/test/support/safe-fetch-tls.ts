@@ -1,3 +1,4 @@
+import {signTestRetrieval} from "./retrieval-signing.js";
 // Run in a fresh Bun process: test-only trust and socket routing cannot leak into
 // other suites. Only the dial address changes; TLS/SNI/hostname validation is real.
 import assert from 'node:assert/strict';
@@ -56,7 +57,7 @@ try {
  assert.equal(connected,calls+1,'redirect must not trigger a second request');
  const path=`/hail/bodies/${'A'.repeat(43)}/attachments/${'B'.repeat(43)}`;
  const headers={Authorization:`Bearer ${'C'.repeat(43)}`};
- assert.equal(await (await transport.fetchBody(new Request(`https://localhost.example.com${path}`,{headers}))).text(),'verified');
+ assert.equal(await (await transport.fetchBody(await signTestRetrieval(new Request(`https://localhost.example.com${path}`,{headers}),`did:plc:${"a".repeat(24)}`))).text(),'verified');
  for(const suffix of ['?token=secret','/extra','/../other']) {
   await assert.rejects(transport.fetchBody(new Request(`https://localhost.example.com${path}${suffix}`,{headers})),/canonical body GET/);
  }

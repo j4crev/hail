@@ -1,3 +1,4 @@
+import type {BodyRequestVerifier} from "./bodies/request-proof.js";
 import {RegistrationPolicy} from "./onboarding/registration.js";
 import {OperatorStatistics} from "./operator/stats.js";
 import {registerOperatorRoutes} from "./operator/routes.js";
@@ -74,6 +75,7 @@ export interface AppDependencies {
   senderProfileStore?: SenderProfileStore;
   grantReceiver?: GrantReceiver;
   bodyStore?: BodyStore;
+  bodyProof?: BodyRequestVerifier;
   envelopeReceiver?: EnvelopeReceiver;
   deliveryStatusSigner?: DeliveryStatusSigner;
   deliveryStatusReceiver?: DeliveryStatusReceiver;
@@ -171,7 +173,7 @@ export function createApp(
   if (dependencies.grantReceiver) {
     registerGrantRoutes(app, config.hailServiceBase, dependencies.grantReceiver);
   }
-  if (dependencies.bodyStore) registerBodyRoutes(app, dependencies.bodyStore);
+  if (dependencies.bodyStore) registerBodyRoutes(app, dependencies.bodyStore, dependencies.bodyProof);
   if (dependencies.envelopeReceiver) registerEnvelopeRoutes(app, dependencies.envelopeReceiver,
     dependencies.deliveryStatusSigner, protectedSchedule);
   if (dependencies.deliveryStatusReceiver) registerDeliveryStatusRoutes(app, dependencies.deliveryStatusReceiver,

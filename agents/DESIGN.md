@@ -509,7 +509,7 @@ implementation burden and ecosystem compatibility, not just new features.
 
 Retain recipient-specific bearer tokens for cheap rejection and add mandatory
 [RFC 9421 HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html)
-in the next retrieval profile. The token selects a current authorization record;
+in the current retrieval profile. The token selects a current authorization record;
 the signature proves possession of the authorized recipient's messaging key.
 Neither alone permits retrieval in that profile. This limits token-leakage damage
 without forcing unauthenticated requests through expensive PLC/key verification.
@@ -520,12 +520,11 @@ before resolving the record's recipient key. A valid token is not permission to
 choose an arbitrary DID or key-resolution URL. Rate-limit even valid-token
 failures: a leaked token still permits attempts at expensive verification.
 
-Specify signed method, target and Authorization field, key role, freshness and
-replay handling, attachments, migration and key rotation. Keep authorization
-failures concealed until both checks pass; the existing token-only boundary for
-revealing storage failures must move accordingly. Test uniform response behavior
-for a valid token with a missing/invalid signature. No silent fallback to
-bearer-only retrieval is allowed once the new profile applies. HTTPS, immutable
+The [implemented retrieval profile](../spec/retrieval-signatures.md) defines the
+signed method, target and Authorization field, freshness, replay state and
+rotation/migration behavior. Failures stay concealed until both proofs pass;
+a valid token with a missing/invalid signature receives the same generic response.
+No bearer-only fallback is supported. HTTPS, immutable
 body digest checks and availability commitments remain necessary.
 
 ### RFC 9995 envelope and transfer evaluation
@@ -781,43 +780,43 @@ RACR defines the application profile: mandatory token plus signature, authorized
 recipient key, covered components, replay policy and concealed failure behavior.
 Those authorization/privacy choices are not supplied by the RFC alone.
 
-Before implementation, finish the first checklist item as a concrete wire profile:
-exact signature algorithm and components, timestamp tolerance, nonce/replay scope
-and persistence, retry signing, and key-rotation/provider-transfer behavior.
-The main direction is already decided: use the authorized recipient's messaging
-key, require both proofs, and reject cheap token failures first. These remaining
-technical choices can be proposed and resolved during phase 3 design work; they
-do not require another product-direction decision or depend on phase 4.
+Implemented by the [retrieval signature profile](../spec/retrieval-signatures.md):
+Ed25519 over method, full target URI and Authorization; 60-second signatures,
+30-second clock skew, fresh random 32-byte nonces and durable provider-wide replay
+rejection. Token checks precede recipient-key resolution. Body and attachment
+requests both require the proofs; no bearer-only downgrade is supported.
 
 Existing guidance to carry into that profile (do not reopen established choices):
 
-| Choice | Existing guidance | What phase 3 still specifies |
+| Choice | Existing guidance | Profile coverage |
 | --- | --- | --- |
-| Key and algorithm | [Body proof of possession](../spec/bodies.md#future-proof-of-possession) names recipient `#hail-messaging`; [DID key profile](../spec/did-profile.md#v0-key-algorithm-and-encoding) requires Ed25519 | RFC 9421 key identifier/algorithm parameters and constrained key lookup |
+| Key and algorithm | [Body proof of possession](../spec/bodies.md#recipient-proof-of-possession) names recipient `#hail-messaging`; [DID key profile](../spec/did-profile.md#v0-key-algorithm-and-encoding) requires Ed25519 | RFC 9421 key identifier/algorithm parameters and constrained key lookup |
 | Request binding and authorization | [Retrieval design](#retrieval-tokens-and-http-signatures) requires method, target and Authorization coverage, token-first lookup and both proofs | Exact covered-component list and signature parameters; do not reuse COSE numeric algorithm labels as HTTP parameters |
 | Privacy | [Body authorization](../spec/bodies.md#retrieval-authorization) conceals failures; the retrieval design moves disclosure until both proofs pass | Uniform signature-failure scheduling and resource bounds |
 | Attachments | [Attachment retrieval](../spec/attachments.md) binds files to an authorized body, shares token/fence rules, prohibits redirects and restarts retries from byte zero | Sign the exact attachment target under the same proof requirement |
 | Retries and routing | [Retry ownership](../spec/delivery-state.md#retry-ownership) sets deadlines/backoff; [endpoint refresh](../spec/http-binding.md#redirects-and-endpoint-refresh) permits only authenticated endpoint changes | Fresh signature/nonce behavior on retries and changed targets |
 | Rotation and transfer | [Key rotation](../spec/did-profile.md#key-rotation) rejects removed keys for new operations; continuity uses fenced state transfer | How request replay state and in-flight retrievals behave across restart/transfer |
 
-No complete retrieval-signature freshness/replay profile exists yet; the
-[baseline inventory](standards-baseline.md#3-token-plus-http-signature-retrieval)
-explicitly lists it as planned. The existing
-[300-second envelope tolerance](../spec/envelopes.md#timestamp-validation) is a
-precedent, not a defined HTTP-signature validity window. Decide signature maximum
-age, clock tolerance, nonce uniqueness scope, replay retention/atomicity and
-restart persistence together. Also settle re-signing on retry, key refresh and
-target change. Existing message replay rules do not automatically answer request
-replay handling.
+The implementation uses the existing bounded response schedule and delivery
+backoff. Concealed `404` responses trigger routing refresh and fresh-signature
+retries through the effective delivery deadline, because slow/unavailable key
+verification is deliberately indistinguishable from invalid authorization.
+Replay state survives restart, is not copied as account history, and is retained
+at its serving origin. The profile specifies same-origin storage replacement.
 
-- [ ] Specify the RFC 9421 profile: covered method/target/Authorization, recipient
+- [x] Specify the RFC 9421 profile: covered method/target/Authorization, recipient
   key role, freshness, replay state, retries, attachments and migration behavior.
-- [ ] Implement cheap token rejection before recipient-key resolution and require
+- [x] Implement cheap token rejection before recipient-key resolution and require
   both token and recipient proof; preserve concealed failures until both pass.
-- [ ] Prove leaked tokens fail without the recipient key, wrong recipients and
+- [x] Prove leaked tokens fail without the recipient key, wrong recipients and
   substituted paths fail, and malformed/missing signatures cannot reveal validity.
-- [ ] Prove legitimate retries, restarts, attachments and key/provider changes work;
+- [x] Prove legitimate retries, restarts, attachments and key/provider changes work;
   bound expensive attempts and prohibit bearer-only downgrade in the new profile.
+
+Evidence: [request vector](../spec/vectors/retrieval-signature.json),
+[signature tests](../apps/server/test/retrieval-signature.test.ts),
+[database/HTTP proof](../apps/server/test/retrieval-signature.integration.test.ts),
+and the signed connection-federation, attachment and TLS transport suites.
 
 ### 4. Provider authentication, enterprise SSO and optional client access
 

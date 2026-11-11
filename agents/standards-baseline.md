@@ -117,26 +117,26 @@ record before implementation or a conditional N/A completion.
 
 ### 3. Token plus HTTP-signature retrieval
 
-**Current behavior and reuse.** The body authorization repository already binds
-sender, recipient, message, digest, token hash and expiry; the public service
-contract returns bytes/missing-body/null, not a recipient-key proof. Extend that
-boundary for cheap lookup followed by signature validation before storage-error
-disclosure. Reuse the phase 1 retriever and transport, PLC messaging-key resolution,
-delivery retry worker and attachment authorization. Transport header allowlists
-must deliberately admit signature headers in the new retrieval profile.
+**Implemented.** [RFC 9421 retrieval profile](../spec/retrieval-signatures.md)
+requires the existing token plus current recipient messaging-key proof. Cheap
+local token lookup precedes DID resolution. Bodies and attachments share the
+profile, concealed failure schedule and fresh-signature retry behavior. The
+HTTPS transport explicitly allows and requires signature headers. Migration 0111
+adds provider-local, durable and atomically consumed replay nonces; rollback
+refuses unexpired state. No signed-envelope field or token migration is needed.
 
-**Spec/schema/vector owners.** `spec/bodies.md`, `spec/attachments.md`,
-`spec/http-binding.md`, `spec/did-profile.md`, `spec/delivery-state.md`,
-`spec/envelopes.md`, and transfer/history documents if authorization records change.
-A **planned** retrieval-signature profile and request vectors must define covered
-components, key selection, replay/freshness, failure schedule, retry and rotation;
-update CDDL only if the chosen envelope negotiation changes signed fields.
+**Spec/schema/vector owners.** `spec/retrieval-signatures.md`, `spec/bodies.md`,
+`spec/attachments.md`, `spec/http-binding.md`, `spec/delivery-state.md` and
+`spec/account-history.md`. [Request vector](../spec/vectors/retrieval-signature.json)
+defines the exact signature base, parameters and independent Ed25519 result.
 
-**Existing tests and missing proof.** Phase 1 retrieval/error tests and
-`attachments.integration.test.ts` are starting points. Add missing/invalid signature
-concealment, stolen-token/wrong-recipient/path substitution, bounded valid-token
-failures, replay/retry, restart, key rotation and provider-change cases. Existing
-bearer retrieval success is not proof of this profile.
+**Proof.** `retrieval-signature.test.ts` compares Node crypto and WebCrypto and
+rejects malformed/duplicate parameters, substituted components and freshness
+violations. `retrieval-signature.integration.test.ts` proves token-first lookup,
+missing/wrong proof concealment, atomic replay, restart, key/origin changes and
+attachment target binding. Connection federation and TLS suites exercise the
+actual signed outbound path. A concealed 404 now retries until the effective
+delivery deadline rather than claiming definitive permanent authorization failure.
 
 ### 4. Authentication and authorization
 

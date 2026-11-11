@@ -73,7 +73,7 @@ Accept-Encoding: identity
 
 Digests and tokens use canonical unpadded base64url. The body token authorizes
 only files declared by that body's authenticated metadata. A digest alone is
-not authority. Requests use the same active-token, expiry, migration-fence,
+not authority. Each request MUST use a fresh [recipient HTTP signature](retrieval-signatures.md) covering its exact attachment target. Requests use the same active-token, expiry, migration-fence,
 current PLC service resolution, and uniform unauthorized-404 behavior as body
 retrieval. Query parameters are prohibited. The sender's body availability
 commitment includes every declared file for the same period.
@@ -93,7 +93,7 @@ Existing body delivery reasons apply to the complete message: corrupt or
 oversized files use `body-integrity-failed`; interrupted transfer uses
 `body-transfer-interrupted`; 429 uses `sender-rate-limited`; authenticated
 unavailability/503 uses `body-temporarily-unavailable`. Refresh sender discovery
-after 404 as for bodies; unresolved authorization failure is terminal. Provider
+after 404 as for bodies; retry concealed failures with fresh signatures within the delivery deadline. Provider
 resource failures remain retryable within the envelope delivery deadline.
 
 ## Retention, downloads, and portability

@@ -290,6 +290,7 @@ body-descriptor = {
   "access": bearer-access
 }
 
+; Token representation only: current HTTP retrieval also requires RFC 9421 proof.
 bearer-access = {
   "type": "bearer",
   "token": bearer-token,

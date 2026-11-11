@@ -58,7 +58,7 @@ export class SafeHttpsTransport {
       if (request.headers.has(name)) throw new Error(`Discovery request must not send ${name}`);
     }
     const allowedHeaders = bodyRetrieval
-      ? new Set(["accept", "accept-encoding", "authorization"])
+      ? new Set(["accept", "accept-encoding", "authorization", "signature-input", "signature"])
       :
       request.method === "GET"
         ? new Set(["accept", "accept-encoding", "if-none-match"])
@@ -75,6 +75,8 @@ export class SafeHttpsTransport {
     if (bodyRetrieval && !/^Bearer [A-Za-z0-9_-]{43}$/.test(request.headers.get("authorization") ?? "")) {
       throw new Error("Body retrieval requires a canonical bearer credential");
     }
+    if (bodyRetrieval && (!request.headers.get("signature-input") || !request.headers.get("signature")))
+      throw new Error("Body retrieval requires a recipient HTTP signature");
     const requestBody =
       request.method !== "GET" ? new Uint8Array(await request.arrayBuffer()) : undefined;
 

@@ -1,3 +1,4 @@
+import {BodyRequestSigner,BodyRequestVerifier} from "../src/bodies/request-proof.js";
 import {signSnapshot} from '../src/migration/snapshot-signature.js';
 import {collectConversationHistory,conversationHistoryDigest,reconstructConversations} from '../src/migration/conversation-history.js';
 import {CustomDomains} from "../src/accounts/custom-domains.js";
@@ -314,12 +315,12 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       const statuses=new DeliveryStatusReceiver(sql,accounts,resolver,p.origin+'/hail'),signer=new DeliveryStatusSigner(sql,accounts,p.encryptor,resolver,p.origin+'/hail');
       const service=new EnvelopeService(accounts,new GrantRepository(sql),envelopes,p.encryptor,resolver,p.origin+'/hail',undefined,authority);
       const messaging=new AccountMessaging(sql,bodies,envelopes,service,(sender,id)=>submitEnvelope(sender,id,envelopes,resolver,statuses,{fetch:network,validateTarget:validate},authority));
-      const publications=new AccountPublications(sql,messaging,authority),delivery=new DeliveryRepository(sql,authority),retriever=new BodyRetriever(resolver,network,validate);
+      const publications=new AccountPublications(sql,messaging,authority),delivery=new DeliveryRepository(sql,authority),retriever=new BodyRetriever(resolver,network,validate,new BodyRequestSigner(sql,accounts,p.encryptor,resolver,p.origin+'/hail').sign);
       // Lifecycle tests wait for actual work, not the fixed admission lease; budget/privacy behavior has dedicated tests.
       const schedule=new ProtectedResponseSchedule({minimumResponseMs:mode==='shared conversations'?750:1,processingDeadlineMs:10000,maxInFlight:128,maxPerSource:128});
       const grants=new GrantRepository(sql),grantService=new GrantService(accounts,grants,p.encryptor,resolver,{async verify(){throw new Error('No fixture subscription discovery');}},{async verify(){throw new Error('No fixture publisher profile');}},p.origin+'/hail');
       registerAccountApiRoutes(p.app,p.accounts,grants,grantService,p.origin,messaging,undefined,undefined,undefined,undefined,undefined,undefined,p.origin,publications);
-      registerBodyRoutes(p.app,bodies);
+      registerBodyRoutes(p.app,bodies,new BodyRequestVerifier(sql,resolver,p.origin),new ProtectedResponseSchedule({minimumResponseMs:750,processingDeadlineMs:10000,maxInFlight:128,maxPerSource:128}));
       registerEnvelopeRoutes(p.app,new EnvelopeReceiver(accounts,envelopes,resolver,p.origin+'/hail',undefined,authority),mode==='shared conversations'?signer:undefined,schedule);
       return {accounts,bodies,envelopes,authority,service,messaging,publications,delivery,retriever,worker:new DeliveryWorker(delivery,retriever),statuses,signer,schedule};
     };

@@ -261,7 +261,11 @@ The recipient may enter `on-hold`, but local constraints do not extend sender co
 
 #### `body-authorization-failed`
 
-The body service rejects the signed bearer authorization while it should still be valid. Because the envelope and token are immutable, the same envelope cannot repair this failure. If retrieval instead remains pending until the access expiration becomes the effective deadline, the terminal reason is `delivery-expired`.
+Reserved for a definitive authorization failure established independently of a
+concealed HTTP response. The current token-plus-signature retrieval profile MUST
+NOT infer this reason from `404`: slow verification, key rotation or temporary
+lookup failure can produce that response. Retry within the effective deadline;
+exhaustion produces `delivery-expired`.
 
 #### `body-integrity-failed`
 
@@ -312,7 +316,7 @@ The HTTP binding defines exact status-code handling. The POC uses these semantic
 | Interrupted or truncated body response | `on-hold`: `body-transfer-interrupted` |
 | `429` rate limit with or without `Retry-After` | `on-hold`: `sender-rate-limited` |
 | Temporary local resource shortage | `on-hold`: `receiver-resource-constrained` |
-| Uniform `404` authorization rejection after the required sender-DID refresh and any changed-endpoint retry | `failed`: `body-authorization-failed` |
+| Uniform `404` after sender-DID refresh and any changed-endpoint retry | `on-hold`: `body-temporarily-unavailable`; fresh nonce/signature on retry, then `delivery-expired` at the effective deadline |
 | Size or digest mismatch | `failed`: `body-integrity-failed` |
 | Invalid or non-deterministic CBOR or invalid SPT document | `failed`: `body-invalid` |
 | Unsupported required representation | `failed`: `body-unsupported` |

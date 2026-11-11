@@ -220,10 +220,11 @@ Recipient-specific retrieval authorization covered by the envelope signature.
 
 ## Retrieval Authorization
 
-The current alpha requires a recipient-specific, per-envelope opaque bearer token.
-Recipient DID and message ID scope the authorization record; they do not prove
-the HTTP requester's identity. Possession of the token authorizes retrieval of
-its bound body until expiration, subject to the authorization's active status.
+The current alpha requires both a recipient-specific, per-envelope opaque token
+and [RFC 9421 recipient proof](retrieval-signatures.md). Recipient DID and message
+ID scope the authorization record. Token possession alone does not authorize
+retrieval; the requester must also prove possession of the recipient's current
+`#hail-messaging` key.
 
 The sender generates exactly 256 bits of cryptographically secure random data and places those 32 bytes in the envelope. The same token may be reused for retries of the same envelope but must not be reused for another recipient or unrelated envelope. HTTP renders it with unpadded base64url.
 
@@ -249,7 +250,12 @@ GET /hail/bodies/{digest}
 Authorization: Bearer base64url-random-token
 Accept: application/hail-body+cbor
 Accept-Encoding: gzip
+Signature-Input: hail=("@method" "@target-uri" "authorization");...
+Signature: hail=:...:
 ```
+
+The signature fields above are abbreviated; use the exact
+[retrieval signature profile](retrieval-signatures.md#exact-signature-profile).
 
 The POC uses the Bearer authentication scheme syntax defined by RFC 6750 without adopting OAuth token issuance or authorization flows.
 
@@ -261,17 +267,15 @@ The sender accepts retrieval only when:
 - the requested body digest matches the authorized body
 - the authorization has not expired
 - the token is presented over HTTPS
+- the required recipient HTTP signature passes freshness and atomic replay checks
 
-Missing, malformed, invalid, unknown, mismatched, and expired tokens receive the uniform `404` response defined by the HTTP binding without revealing whether the body digest exists. The recipient performs the HTTP binding's one required sender-DID refresh before classifying that response as permanent, because provider migration may move the same authorization record to a newly authenticated endpoint. A missing committed body may return `503` only after the token and requested digest match an active, unexpired authorization record.
-
-An authorization lookup failure does not establish authorization and MUST use the
-same concealed `404` outcome and bounded response schedule. Once token, digest,
-active status and expiry have been verified, a storage/fence-read failure or
-unavailable/corrupt stored body MAY return retryable `503`. A known retired source
-still returns `404` to trigger authenticated endpoint refresh. Consequently a
-lookup outage can cause a legitimate request to fail after the mandatory refresh;
-the concealed result is not proof that its token was invalid. Operators should
-monitor storage availability independently of secret-bearing request contents.
+Missing or invalid tokens and recipient signatures, replay, failed key resolution
+and pre-authorization lookup failures share a concealed `404`. The recipient
+refreshes sender routing, then retries with a fresh signature within the delivery
+deadline. A concealed response is not proof of permanent authorization failure.
+Only after both proofs pass may missing/corrupt body bytes or a temporary source
+fence disclose retryable `503`; a retired source uses `404` to trigger endpoint
+refresh. See [the complete failure schedule](retrieval-signatures.md#concealment-and-resource-limits).
 
 ## Signatures Versus Encryption
 
@@ -281,21 +285,12 @@ The token could be encrypted to a recipient public key, but Hail v0 does not oth
 
 For the POC, HTTPS protects the envelope in transit and the sender's `#hail-messaging` signature authenticates the token and body descriptor.
 
-## Future Proof Of Possession
+## Recipient Proof Of Possession
 
-Bearer authorization is intentionally simple but possession of a stolen token permits retrieval until expiration.
-
-A future profile may additionally require the recipient server to sign the retrieval request with its DID-authorized `#hail-messaging` key using RFC 9421 HTTP Message Signatures. That would bind retrieval to proof of recipient key possession rather than token possession alone.
-
-Possible future flow:
-
-```text
-recipient-specific body authorization in signed envelope
-  + bearer token or capability identifier
-  + HTTP request signed by recipient #hail-messaging
-```
-
-This is deferred until the shared Hail HTTP signature profile is specified.
+The required [RFC 9421 retrieval profile](retrieval-signatures.md) combines the
+envelope-bound token with a request signed by the recipient's current messaging
+key. The same profile covers body and attachment requests. This transport proof
+does not replace envelope signatures or the recipient's body integrity checks.
 
 ## Shared Bodies
 
@@ -348,7 +343,7 @@ Retrieval uses `GET`. The relative operation path, no-trailing-slash rule, and e
 
 An envelope does not carry a full body URL. This prevents envelopes from directing recipient servers to arbitrary networks or hosts.
 
-v0 retrieval does not follow redirects. A provider migration is represented by updating the DID's `#hail` service and is handled by the canonical endpoint comparison and DID re-resolution rules in the HTTP binding, not HTTP redirection. A retry at a newly authenticated endpoint uses the same digest and signed bearer authorization, subject to its original validity period.
+v0 retrieval does not follow redirects. A provider migration is represented by updating the DID's `#hail` service and is handled by the canonical endpoint comparison and DID re-resolution rules in the HTTP binding, not HTTP redirection. A retry at a newly authenticated endpoint uses the same digest and token within its original validity period, with a fresh signature covering the new target and a new nonce.
 
 ## Retrieval Response
 
@@ -487,7 +482,7 @@ Delivery state, retry ownership, and reason codes are defined in [delivery-state
 - body unavailable after commitment ends: permanent failure
 - size, digest, media type, or schema mismatch: permanent integrity failure
 
-The exact HTTP status mapping and disclosure-safe RFC 9457 behavior are defined in the Hail HTTP binding. In particular, an authorization failure uses a uniform `404` and becomes permanent only when the required sender-DID refresh leaves the endpoint unchanged or a retry at the changed authenticated endpoint also returns `404`. Other changed-endpoint results retain their ordinary retry classification. A temporarily missing committed body under valid authorization uses retryable `503`, and rate limiting uses retryable `429`.
+The exact HTTP status mapping and disclosure-safe RFC 9457 behavior are defined in the Hail HTTP binding. In particular, a uniform `404` triggers sender-DID refresh and bounded retries with fresh signatures until the effective delivery deadline; it does not prove permanent authorization failure. A temporarily missing committed body under valid authorization uses retryable `503`, and rate limiting uses retryable `429`.
 
 ## Privacy And Analytics
 
@@ -519,7 +514,7 @@ A body digest may be guessable when content is public or predictable. Retrieval 
 
 ### Token Enumeration
 
-At least 256 random token bits make online guessing infeasible. The sender must rate-limit failures. Before successful token-and-digest authorization, a `429` may be selected only by a source-wide or service-wide limit independent of token validity, authorization-record existence, and body existence; otherwise the request receives the uniform `404`. After valid authorization, an authorization-scoped limit may return `429`, and only a caller presenting valid authorization for the requested digest may receive `503` for a temporarily missing committed body.
+At least 256 random token bits make online guessing infeasible. The sender must rate-limit failures. Before successful token-and-signature authorization, a `429` may be selected only by a source-wide or service-wide limit independent of token validity, authorization-record existence, and body existence; otherwise the request receives the uniform `404`. After valid authorization, an authorization-scoped limit may return `429`, and only a caller presenting both valid proofs for the requested digest may receive `503` for a temporarily missing committed body.
 
 ### Decompression Bombs
 
@@ -547,6 +542,7 @@ The proof of concept implements:
 - recipient pull from the authenticated sender Hail service
 - one random 256-bit bearer token per recipient envelope
 - token presentation in the HTTP `Authorization` header
+- mandatory [RFC 9421 recipient proof](retrieval-signatures.md) and durable replay rejection
 - one stored body shared by many authorization records
 - recipient caching and digest deduplication
 - no redirects or arbitrary body URLs
@@ -557,7 +553,6 @@ The proof of concept implements:
 
 Deferred:
 
-- RFC 9421 recipient proof of possession
 - end-to-end encryption
 - asset formats beyond bundled static PNG images
 - attachment formats beyond PNG/JPEG/WebP/PDF/TXT/LOG

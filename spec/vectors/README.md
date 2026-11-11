@@ -140,3 +140,11 @@ authenticated metadata and deterministic body encodings. Tests use these committ
 bytes without requiring an image encoder or pixel decoder.
 
 `provider-connections.json` defines accepted and rejected unseen-connection acknowledgment bodies for the reference-provider account API. Exercised by `apps/server/test/connections.integration.test.ts`; these are not federation wire objects.
+
+## HTTP retrieval signatures
+
+[retrieval-signature.json](retrieval-signature.json) is the deterministic
+`hail-retrieval-v1` request, signature-base and Ed25519 vector. Its private seed
+is public test material only. `retrieval-signature.test.ts` verifies its exact
+bytes independently with Node crypto and WebCrypto; database/HTTP tests cover
+replay, concealed failure, rotation and endpoint changes.

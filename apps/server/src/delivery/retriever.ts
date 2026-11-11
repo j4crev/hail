@@ -57,6 +57,7 @@ export class BodyRetriever {
     private readonly resolver: HailDidResolver,
     private readonly fetchBody: DiscoveryFetch,
     private readonly validateTarget: NetworkTargetValidator,
+    private readonly signRequest: (request: Request, recipient: string) => Promise<Request>,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -69,11 +70,12 @@ export class BodyRetriever {
       const sender = await this.resolver.resolve(envelope.from);
       const first = await this.at(sender.serviceBase, envelope,attemptSignal);
       if (first.kind !== "not-found") return first;
-      // A uniform 404 is not permanent until current sender PLC service is refreshed.
+      // Concealed 404 may mean the bounded verification window elapsed. Refresh
+      // routing, then retry with a fresh signature until the delivery deadline.
       const refreshed = await this.resolver.resolve(envelope.from);
-      if (refreshed.serviceBase === sender.serviceBase) return { kind: "fail", reason: "body-authorization-failed" };
+      if (refreshed.serviceBase === sender.serviceBase) return { kind: "retry", reason: "body-temporarily-unavailable", retryAfter: null };
       const second = await this.at(refreshed.serviceBase, envelope,attemptSignal);
-      return second.kind === "not-found" ? { kind: "fail", reason: "body-authorization-failed" } : second;
+      return second.kind === "not-found" ? { kind: "retry", reason: "body-temporarily-unavailable", retryAfter: null } : second;
     } catch {
       return { kind: "retry", reason: "sender-unreachable", retryAfter: null };
     }
@@ -82,13 +84,13 @@ export class BodyRetriever {
   private async at(base: string, envelope: HailEnvelope,attemptSignal:AbortSignal): Promise<RetrievalResult | { kind: "not-found" }> {
     const url = new URL(`${base}/bodies/${encodeBase64Url(envelope.body.digest.value)}`);
     await this.validateTarget(url);
-    const response = await this.fetchBody(new Request(url, {
+    const response = await this.fetchBody(await this.signRequest(new Request(url, {
       method: "GET", redirect: "manual", signal: AbortSignal.any([attemptSignal,AbortSignal.timeout(15_000)]),
       headers: {
         Authorization: `Bearer ${encodeBase64Url(envelope.body.access.token)}`,
         Accept: "application/hail-body+cbor", "Accept-Encoding": "gzip, identity",
       },
-    }));
+    }), envelope.to));
     if (response.status === 404) { await response.body?.cancel(); return { kind: "not-found" }; }
     if (response.status === 429 || response.status === 503 || response.status >= 500) {
       await response.body?.cancel();
@@ -143,8 +145,8 @@ export class BodyRetriever {
     for(const file of bodyAttachments(bytes)){
       const attachmentUrl=new URL(`${base}/bodies/${encodeBase64Url(envelope.body.digest.value)}/attachments/${encodeBase64Url(file.digest.value)}`);
       await this.validateTarget(attachmentUrl);
-      const response=await this.fetchBody(new Request(attachmentUrl,{redirect:'manual',signal:AbortSignal.any([attemptSignal,AbortSignal.timeout(60_000)]),headers:{
-        Authorization:`Bearer ${encodeBase64Url(envelope.body.access.token)}`,Accept:'application/octet-stream','Accept-Encoding':'identity'}}));
+      const response=await this.fetchBody(await this.signRequest(new Request(attachmentUrl,{redirect:'manual',signal:AbortSignal.any([attemptSignal,AbortSignal.timeout(60_000)]),headers:{
+        Authorization:`Bearer ${encodeBase64Url(envelope.body.access.token)}`,Accept:'application/octet-stream','Accept-Encoding':'identity'}}), envelope.to));
       if(response.status!==200){
         await response.body?.cancel();
         if(response.status===404)return {kind:'not-found'};
