@@ -483,16 +483,19 @@ try{
   const screenshot=async(name:string)=>{if(!process.env.HAIL_WIZARD_SCREENSHOTS)return;await mkdir(process.env.HAIL_WIZARD_SCREENSHOTS,{recursive:true});const shot=await cdp("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});await writeFile(join(process.env.HAIL_WIZARD_SCREENSHOTS,`${process.env.HAIL_WIZARD_MOBILE==='true'?'mobile':'desktop'}-${name}.png`),Buffer.from(shot.data,"base64"));};
   const escape=async()=>{await cdp("Input.dispatchKeyEvent",{type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});await cdp("Input.dispatchKeyEvent",{type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27});};
   const pointer=async(x:number,y:number)=>{await cdp("Input.dispatchMouseEvent",{type:"mousePressed",button:"left",clickCount:1,x,y});await cdp("Input.dispatchMouseEvent",{type:"mouseReleased",button:"left",clickCount:1,x,y});};
-  const openAccount=async()=>{
+  const revealAccountTrigger=async()=>{
     if(process.env.HAIL_WIZARD_MOBILE==='true'&&!await evaluate(`document.querySelector('dialog')?.open`)){
       await evaluate(`document.querySelector('[aria-label="Open navigation"]').click()`);
       await wait(async()=>evaluate(`document.querySelector('dialog').open`),'open navigation for account menu');
     }
+  };
+  const openAccount=async()=>{
+    await revealAccountTrigger();
     await evaluate(`(()=>{const b=[...document.querySelectorAll('[aria-label="Open account menu"]')].find(b=>b.checkVisibility());b.focus();if(!document.getElementById(b.getAttribute('popovertarget')).matches(':popover-open'))b.click();})()`);await wait(async()=>evaluate(`!!document.querySelector('.account-popover:popover-open')`),"avatar opens account menu");};
   // Navigation completion may close popovers between separate CDP commands.
   // Open the visible trigger's panel and activate its link in one browser task.
   const accountLink=async(href:string)=>{
-    await openAccount();
+    await revealAccountTrigger();
     await evaluate(`(()=>{
       const button=[...document.querySelectorAll('[aria-label="Open account menu"]')].find(b=>b.checkVisibility());
       const panel=document.getElementById(button.getAttribute('popovertarget'));

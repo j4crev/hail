@@ -14,12 +14,14 @@ export interface PushDependencies {
 // Push data is a hint, never content or a navigation target. Check the current
 // browser session before showing a hint queued for a previous login/account.
 export async function handlePush(value:unknown,deps:PushDependencies):Promise<void>{
+  // Native worker fetch rejects a dependency object as its receiver.
+  const {request}=deps;
   let verification=false,reason:'http'|'network'|'response'='network',httpStatus:number|undefined;
   const report=(result:PushVerificationResult)=>deps.report?.(result).catch(()=>{});
   try{
     if(!object(value)||JSON.stringify(value).length>8192)return;
     const read=async(path:string,body?:unknown)=>{
-      const response=await deps.request(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'error',
+      const response=await request(path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'error',
         signal:AbortSignal.timeout(15_000),headers:{'X-Hail-Background':'true',...(body?{'Content-Type':'application/json'}:{})},
         ...(body?{body:JSON.stringify(body)}:{})});
       if(!response.ok){reason='http';httpStatus=response.status;throw new Error('Push authorization unavailable');}

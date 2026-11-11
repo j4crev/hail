@@ -118,6 +118,7 @@ jobs:
           OPENCODE_TMP_DIR: ${{ runner.temp }}
         run: |
           bun scripts/check-browser-signup.ts
+          bun scripts/check-browser-push.ts
           bun scripts/check-origin-separation.ts
           bun scripts/check-browser-wizard.ts
           bun scripts/check-browser-relationship-removal.ts
