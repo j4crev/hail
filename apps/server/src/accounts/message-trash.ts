@@ -65,6 +65,11 @@ export class MessageTrash {
     if(!DID.test(sender)||!ID.test(id))throw new UserGrantError(400,"Invalid message identity");
     return this.sql.begin(async tx=>{
       await this.lock(tx as SQL,session);
+      return this.removeInTransaction(tx as SQL,session,sender,id,permanent);
+    });
+  }
+  // Caller holds the account lock and migration admission for this transaction.
+  async removeInTransaction(tx:SQL,session:AccountApiSession,sender:string,id:string,permanent=false){
       const preferences=await tx<{trash_enabled:boolean}[]>`SELECT trash_enabled FROM account_message_preferences WHERE account_id=${session.account_id}`;
       if(permanent||preferences[0]?.trash_enabled===false){
         const removed=await tx<BodyReference[]>`DELETE FROM delivered_messages WHERE recipient_did=${session.did} AND sender_did=${sender} AND message_id=${id} RETURNING sender_did,body_digest,media_type,profile`;
@@ -75,22 +80,11 @@ export class MessageTrash {
       const rows=await tx`UPDATE delivered_messages SET trashed_at=COALESCE(trashed_at,clock_timestamp())
         WHERE recipient_did=${session.did} AND sender_did=${sender} AND message_id=${id} RETURNING message_id`;
       return {messageId:id,state:rows.length?"trashed":"deleted"};
-    });
   }
-  async restore(session:AccountApiSession,items:unknown){
-    if(!Array.isArray(items)||items.length<1||items.length>100||items.some(i=>!i||typeof i!=="object"||
-      Object.keys(i).some(k=>k!=="sender"&&k!=="messageId")||typeof i.sender!=="string"||!DID.test(i.sender)||typeof i.messageId!=="string"||!ID.test(i.messageId)))
-      throw new UserGrantError(400,"Choose 1 to 100 messages to restore");
-    return this.sql.begin(async tx=>{
-      await this.lock(tx as SQL,session);
-      let restored=0;
-      for(const item of items){
-        const rows=await tx`UPDATE delivered_messages SET trashed_at=NULL WHERE recipient_did=${session.did}
-          AND sender_did=${item.sender} AND message_id=${item.messageId} AND trashed_at>clock_timestamp()-interval '30 days' RETURNING message_id`;
-        restored+=rows.length;
-      }
-      return {restored};
-    });
+  async restoreInTransaction(tx:SQL,session:AccountApiSession,sender:string,id:string){
+    const rows=await tx`UPDATE delivered_messages SET trashed_at=NULL WHERE recipient_did=${session.did}
+      AND sender_did=${sender} AND message_id=${id} AND trashed_at>clock_timestamp()-interval '30 days' RETURNING message_id`;
+    return rows.length===1;
   }
   async empty(session:AccountApiSession){
     return this.sql.begin(async tx=>{

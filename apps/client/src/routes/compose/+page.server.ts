@@ -1,3 +1,4 @@
+import {readDraft,saveDraft} from '$lib/server/jmap-drafts.js';
 import {parseBuilderDraft,validateBody,plainText} from '@racrproto/content-builder/core';
 import {formAttachments} from '$lib/server/attachments.js';
 import {parseDraft,draftIdPattern} from "@racrproto/client-support/drafts";
@@ -23,7 +24,7 @@ export async function load({url,cookies}) {
   const draftId=url.searchParams.get("draft");
   if(draftId&&!draftIdPattern.test(draftId))error(400,"Invalid draft ID");
   let draft=null;
-  if(draftId){try{draft=parseDraft(await client.request(`/drafts/${draftId}`));}catch{error(404,"Draft unavailable. It may have been sent, deleted, or changed on another device.");}}
+  if(draftId){try{draft=await readDraft(client,draftId);}catch{error(404,"Draft unavailable. It may have been sent, deleted, or changed on another device.");}}
   const forwardSender=draft?.content.forward?.sender??url.searchParams.get("forwardSender"),forwardMessage=draft?.content.forward?.messageId??url.searchParams.get("forwardMessage");
   if((forwardSender||forwardMessage)&&(!forwardSender||!forwardMessage||!UUID7.test(forwardMessage)||(draft?.content.audience??url.searchParams.get("audience"))!=="connections"))error(400,"Invalid forward source");
   const kind=(draft?.content.audience??url.searchParams.get("audience"))==="connections"?"connections":"category";
@@ -61,7 +62,7 @@ export const actions={save:async({request,cookies,url})=>{
   try{
     const content=await draftForm(form);
     const attachments=await formAttachments(form,client);if(attachments.length)content.attachments=attachments;
-    const savedDraft=parseDraft(await client.request(`/drafts/${id}/save`,{revision,content}));
+    const savedDraft=await saveDraft(client,id,revision,content);
     return {savedDraft};
   }catch(cause){return fail(cause instanceof AccountApiError&&cause.status===409?409:400,{error:cause instanceof AccountApiError?"Draft could not be saved. It may have changed on another device; reopen it from Drafts before trying again.":cause instanceof Error?cause.message:"Unable to save draft."});}
 },publish:async({request,cookies,url})=>{

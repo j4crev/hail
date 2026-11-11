@@ -1,3 +1,4 @@
+import {JmapMessages} from '../src/jmap/messages.js';
 import { createLocalTlsFixture } from "./client-support/tls.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -513,14 +514,35 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect((await app.request(countsUrl+'?after=x',{headers:countsHeaders})).status).toBe(400);
     expect((await app.request(countsUrl,{method:'POST',headers:countsHeaders})).status).toBe(405);
     expect((await messaging.read(ownerSession,senderDid,id))?.isRead).toBe(false);
-    expect(await messaging.setRead(senderSession,senderDid,id,true)).toBeNull();
-    await messaging.setRead(ownerSession,senderDid,id,true);
-    await messaging.setRead(ownerSession,senderDid,id,true);
+    const jmap=new JmapMessages(db.sql,origin);
+    expect((await jmap.query(senderSession,{filter:{sender:senderDid,messageId:id}})).ids).toEqual([]);
+    const markRead=async(isRead:boolean)=>{
+      const query=await jmap.query(ownerSession,{filter:{sender:senderDid,messageId:id}});
+      // Domain-service coverage uses a synthetic browser-authorized session;
+      // HTTP authentication and bearer rejection are covered by JMAP route tests.
+      const result=await jmap.set({...ownerSession,scopes:['messages:read','messages:write'],passkey_credential_id:'fixture'},
+        {ifInState:query.queryState,update:{[query.ids[0]!]:{isRead}}});
+      expect(result.updated).toHaveProperty(query.ids[0]!,null);
+    };
+    const restoreCopies=async(items:{sender:string;messageId:string}[])=>{
+      let restored=0;
+      for(const item of items){
+        const query=await jmap.query(ownerSession,{filter:{...item,inTrash:true}});
+        if(!query.ids.length)continue;
+        const result=await jmap.set({...ownerSession,scopes:['messages:read','messages:write'],passkey_credential_id:'fixture'},
+          {ifInState:query.queryState,ifTrashEnabled:true,update:{[query.ids[0]!]:{isInTrash:false}}});
+        if(result.updated)restored++;
+        else expect(result.notUpdated).toEqual({[query.ids[0]!]:{type:'notFound'}});
+      }
+      return restored;
+    };
+    await markRead(true);
+    await markRead(true);
     expect((await messaging.read(ownerSession,senderDid,id))?.isRead).toBe(true);
     expect((await messaging.inbox(ownerSession,null)).messages.find(m=>m.messageId===id)?.isRead).toBe(true);
     expect((await messaging.inboxFeed(ownerSession,null)).messages.find(m=>m.messageId===id)?.isRead).toBe(true);
     expect(await messaging.unreadCounts(ownerSession)).toEqual({subscriptions:5,connections:0,unseenConnections:0});
-    await messaging.setRead(ownerSession,senderDid,id,false);
+    await markRead(false);
     expect(await messaging.unreadCounts(ownerSession)).toEqual({subscriptions:6,connections:0,unseenConnections:0});
     expect((await messaging.read(ownerSession,senderDid,id))?.isRead).toBe(false);
     expect(await messaging.trash.settings(ownerSession)).toEqual({trashEnabled:true,theme:null,showHeaderImages:null,startScreen:'feed'});
@@ -540,7 +562,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect(await messaging.read(senderSession,senderDid,id)).toBeNull();
     expect((await messaging.inbox(ownerSession,null)).messages.some(m=>m.messageId===id)).toBe(false);
     await messaging.trash.remove(ownerSession,senderDid,richId);
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:id},{sender:senderDid,messageId:richId}])).toEqual({restored:2});
+    expect(await restoreCopies([{sender:senderDid,messageId:id},{sender:senderDid,messageId:richId}])).toBe(2);
     expect(await messaging.read(ownerSession,senderDid,id)).not.toBeNull();
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages).toHaveLength(0);
     const sharedId="01afffff-0000-7000-8000-000000000006";
@@ -551,14 +573,14 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     await messaging.trash.remove(ownerSession,senderDid,richId);
     await db.sql`UPDATE delivered_messages SET trashed_at=clock_timestamp()-interval '30 days' WHERE message_id=${richId}`;
     expect(await messaging.read(ownerSession,senderDid,richId)).toBeNull();
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:richId}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:richId}])).toBe(0);
     expect((await messaging.trash.purgeExpired()).deleted).toBe(1);
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages.map(m=>m.messageId)).toEqual([id]);
     await messaging.trash.saveSettings(ownerSession,false);
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages).toHaveLength(0);
     await expect(db.sql.begin(tx=>tx.unsafe(rollbackTrash))).rejects.toThrow('Restore or purge Trash');
     expect(await messaging.read(ownerSession,senderDid,sharedId)).not.toBeNull(); // Shared body survives.
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:id}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:id}])).toBe(0);
     expect(await messaging.trash.remove(ownerSession,senderDid,sharedId)).toMatchObject({state:"deleted"});
     expect(await messaging.read(ownerSession,senderDid,sharedId)).toBeNull();
     const body=await db.sql`SELECT 1 FROM verified_body_provenance WHERE recipient_did=${did} AND sender_did=${senderDid}
@@ -575,12 +597,12 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     const cliDeleted=await cli(["message","delete",senderDid,imageId],"message-owner.credential.json");
     expect(cliDeleted.exit,cliDeleted.stderr).toBe(0);expect(JSON.parse(cliDeleted.stdout)).toMatchObject({messageId:imageId,state:"deleted"});
     expect(await messaging.read(ownerSession,senderDid,imageId)).toBeNull();
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:imageId}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:imageId}])).toBe(0);
     expect((await cli(["inbox","delete",senderDid,imageId],"message-owner.credential.json")).exit).toBe(0); // Retry alias.
     const trashId="01afffff-0000-7000-8000-000000000003";
     await messaging.trash.remove(ownerSession,senderDid,trashId);
     expect((await cli(["inbox","delete",senderDid,trashId],"message-owner.credential.json")).exit).toBe(0);
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:trashId}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:trashId}])).toBe(0);
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages).toHaveLength(0);
 
 

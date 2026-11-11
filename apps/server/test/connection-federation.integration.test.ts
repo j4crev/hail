@@ -1,3 +1,4 @@
+import {JmapMessages} from '../src/jmap/messages.js';
 import {BodyRequestSigner,BodyRequestVerifier} from "../src/bodies/request-proof.js";
 import {signSnapshot} from '../src/migration/snapshot-signature.js';
 import {collectConversationHistory,conversationHistoryDigest,reconstructConversations} from '../src/migration/conversation-history.js';
@@ -553,9 +554,15 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     expect((await api(c,'connection-threads/'+b.did+'/'+threadedId)).status).toBe(404);
     expect((await api(a,'connection-threads/'+b.did+'/'+threadedId+'?offset=bad')).status).toBe(400);
     expect((await api(a,'connection-inbox',{})).status).toBe(405);
-    await one.messaging.setRead(a.session,b.did,threadedId,true);
+    const jmap=new JmapMessages(first.db.sql,first.origin);
+    const markRead=async(sender:string,messageId:string)=>{
+      const query=await jmap.query(a.session,{filter:{sender,messageId}});
+      const result=await jmap.set(a.session,{ifInState:query.queryState,update:{[query.ids[0]!]:{isRead:true}}});
+      expect(result.updated).toHaveProperty(query.ids[0]!,null);
+    };
+    await markRead(b.did,threadedId);
     expect((await one.messaging.connectionInbox(a.session,null)).messages[0]).toMatchObject({messageId:localReply,conversation:{unreadCount:1}});
-    await one.messaging.setRead(a.session,c.did,localReply,true);
+    await markRead(c.did,localReply);
     expect((await one.messaging.connectionInbox(a.session,null)).messages[0]).toMatchObject({messageId:localReply,conversation:{unreadCount:0}});
     expect(await one.messaging.unreadCounts(a.session)).toMatchObject({subscriptions:0,connections:0});
     // Neither recipient can see the other recipient's private reply.
@@ -659,7 +666,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     const privateMessaging=async(user:User)=>{const k=user.keys.keys.find(k=>k.role==='hail-messaging')!,raw=await user.provider.encryptor.decrypt(user.id,k.role,k.algorithm,k.publicKey,k);
       try{return await importEd25519PrivateKey(raw);}finally{raw.fill(0);}};
     const conversationCheckpoint=await collectConversationHistory(first.db.sql,{accountId:a.id,did:a.did,sourceGeneration:1,sourceServiceBase:first.origin+'/hail'},capturedAt);
-    const manifest:TransferManifest={version:7,transferId,did:a.did,accountId:a.id,sourceServiceBase:first.origin+'/hail',destinationServiceBase:second.origin+'/hail',
+    const manifest:TransferManifest={version:9,transferId,did:a.did,accountId:a.id,sourceServiceBase:first.origin+'/hail',destinationServiceBase:second.origin+'/hail',
       destinationRotationPublicKey:d.keys.rotationDidKey,destinationMessagingPublicKey:d.keys.messagingDidKey,custodyProfile:'portable',capturedAt,sourceGeneration:1,
       conversations:conversationCheckpoint,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(conversationCheckpoint)),
       connections:checkpoint,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(checkpoint)),tables};
@@ -668,7 +675,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     expect(()=>requireConnectionHandoverComplete(manifest)).toThrow('staged only');
     await second.db.sql`INSERT INTO pending_migration_imports(transfer_id,did,source_service_base,destination_service_base,manifest_bytes,manifest_digest,
       source_messaging_public_key,signature,state,verified_plc_document,verified_plc_data,verified_plc_operation_log) VALUES(${transferId},${a.did},${manifest.sourceServiceBase},
-      ${manifest.destinationServiceBase},${manifestBytes},${snapshotDigest},${a.keys.messagingDidKey},${await signSnapshot(manifestBytes,7,a.did,await privateMessaging(a))},'staged','{}','{}','[]')`;
+      ${manifest.destinationServiceBase},${manifestBytes},${snapshotDigest},${a.keys.messagingDidKey},${await signSnapshot(manifestBytes,9,a.did,await privateMessaging(a))},'staged','{}','{}','[]')`;
     let plcCalls=0;const forbiddenPlc=async()=>{plcCalls++;throw new Error('Must not reach PLC before handover commit');};
     await expect(new PortablePlcSubmission(second.db.sql,{getOperationLog:forbiddenPlc,sendOperation:forbiddenPlc} as never,'https://plc.directory',manifest.destinationServiceBase).submit(transferId)).rejects.toThrow('staged only');
     expect(plcCalls).toBe(0);
@@ -852,7 +859,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     for(const table of ['detached_bodies','body_authorizations','sent_envelopes'] as const)moveTables[table]=await collectRows(table,'sender_account_id=$1',[b.id]);
     moveTables.sent_delivery_status=await collectRows('sent_delivery_status','sender_did=$1',[b.did]);
     const moveConversations=await collectConversationHistory(second.db.sql,{accountId:b.id,did:b.did,sourceGeneration:1,sourceServiceBase:second.origin+'/hail'},moveCapturedAt);
-    const moveBase={version:8 as const,transferId:movingTransfer,did:b.did,accountId:b.id,sourceServiceBase:second.origin+'/hail',destinationServiceBase:third.origin+'/hail',
+    const moveBase={version:10 as const,transferId:movingTransfer,did:b.did,accountId:b.id,sourceServiceBase:second.origin+'/hail',destinationServiceBase:third.origin+'/hail',
       ownerRecoveryPublicKey:b.recoveryPublicKey,sourceIdentityPublicKey:b.keys.identityDidKey,destinationRotationPublicKey:movedKeys.rotationDidKey,
       destinationIdentityPublicKey:movedKeys.identityDidKey,destinationMessagingPublicKey:movedKeys.messagingDidKey,sourceGeneration:1,custodyProfile:'managed' as const,capturedAt:moveCapturedAt,
       conversations:moveConversations,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(moveConversations)),

@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://haili.app/schemas/jmap-message-v1.json",
+  "title": "Hail JMAP complete received message projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "sender",
+    "recipient",
+    "messageId",
+    "deliveredAt",
+    "isRead",
+    "trashedAt",
+    "bodyBlobId",
+    "envelopeBlobId",
+    "envelope",
+    "isInTrash"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/definitions/id",
+      "readOnly": true
+    },
+    "sender": {
+      "type": "string",
+      "pattern": "^did:plc:[a-z2-7]{24}$",
+      "readOnly": true
+    },
+    "recipient": {
+      "type": "string",
+      "pattern": "^did:plc:[a-z2-7]{24}$",
+      "readOnly": true
+    },
+    "messageId": {
+      "type": "string",
+      "format": "uuid",
+      "readOnly": true
+    },
+    "deliveredAt": {
+      "type": "string",
+      "format": "date-time",
+      "readOnly": true
+    },
+    "isRead": {
+      "type": "boolean",
+      "description": "Mutable local read marker; writes require the account isRead capability."
+    },
+    "trashedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "readOnly": true
+    },
+    "bodyBlobId": {
+      "$ref": "#/definitions/id",
+      "readOnly": true
+    },
+    "envelopeBlobId": {
+      "$ref": "#/definitions/id",
+      "readOnly": true
+    },
+    "envelope": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "maxLength": 21846,
+      "readOnly": true
+    },
+    "isInTrash": {
+      "type": "boolean",
+      "description": "Mutable local Trash membership; trashedAt is server-set."
+    }
+  },
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,255}$"
+    }
+  }
+}

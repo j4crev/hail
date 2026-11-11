@@ -255,7 +255,7 @@ Hail defines one deterministic CBOR encoding and the COSE profile above, plus th
 
 ## Structural Schemas
 
-The draft CDDL structures for protocol objects are maintained in [hail.cddl](hail.cddl). The current transfer manifest and logical history record shapes are defined by [JSON Schema](schemas/account-history-v7-v8.json) and [account-history.md](account-history.md). They define representation-level shapes and sizes. The object specifications remain authoritative for identifier grammar, Unicode normalization, ordering, conditional presence, cross-field relationships, authorization, and state transitions until those constraints are also available in executable validators.
+The draft CDDL structures for protocol objects are maintained in [hail.cddl](hail.cddl). The current transfer manifest and logical history record shapes are defined by [JSON Schema](schemas/account-history-v9-v10.json) and [account-history.md](account-history.md). They define representation-level shapes and sizes. The object specifications remain authoritative for identifier grammar, Unicode normalization, ordering, conditional presence, cross-field relationships, authorization, and state transitions until those constraints are also available in executable validators.
 
 ## Implementation Deliverables
 

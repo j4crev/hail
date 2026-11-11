@@ -1,14 +1,14 @@
-# Logical account history: portable v7 and managed v8
+# Logical account history: portable v9 and managed v10
 
 Status: Current alpha record schema, derived from the implemented collectors and
-validated against synthetic exports. It specifies the existing manifest, not a
-new transfer version. [Transfer formats](transfer-formats.md) defines its carrier,
+validated against synthetic exports. Versions 9/10 replace 7/8 and add saved
+drafts and mailbox preferences. [Transfer formats](transfer-formats.md) defines its carrier,
 signatures and ceremony; this document defines the history inside it.
 
 ## Storage independence
 
 The normative machine-readable shape is
-[account-history-v7-v8.json](schemas/account-history-v7-v8.json), JSON Schema draft 7.
+[account-history-v9-v10.json](schemas/account-history-v9-v10.json), JSON Schema draft 7.
 It defines both manifests, both checkpoint domains, every exported record field,
 field presence, scalar/array/object types and nullability. The schema is self-contained;
 no database, ORM, TypeScript module or external schema fetch is required to use it.
@@ -89,7 +89,9 @@ schema enumerates the complete table domain; missing empty collections are inval
 | `reply_capabilities` | Capabilities issued by this DID, their single-use claim/consumption state and exact original message references |
 | `delivery_work` | Pending/terminal receiver work for this account's received envelopes and retry state |
 | `verified_body_provenance` | Verified recipient-and-sender scoped body bytes; exports reconstruct the bytes even when local storage deduplicates blobs |
-| `delivered_messages` | This DID's durably delivered message references |
+| `delivered_messages` | This DID's durably delivered message references, read markers and original Trash timestamps |
+| `account_message_drafts` | All saved drafts, including Trash, with exact editable content, revisions and original timestamps |
+| `account_message_preferences` | Zero or one owner-scoped Trash and display preferences record |
 | `delivery_status_payloads`, `delivery_status_wrappers` | Immutable status revisions and signed wrappers for received deliveries |
 | `terminal_status_publications` | Retained terminal-status publication obligations |
 | `sent_delivery_status` | Recipient-signed status received for this DID's sent envelopes |
@@ -111,11 +113,76 @@ its own execution ownership and serving generation. Do not transfer live session
 credentials, passkey secrets, source operational private keys or reusable invitation
 bearer secrets. They are outside the declared collection/field domains.
 
-UI-only trash/read/presentation preferences and category-publication batch controls
-are not silently added to this profile. Shared-conversation introduction policy,
-leave state and replay evidence are included because they affect delivery authority.
-The declared domain is protocol-continuity history, not a promise to clone every
-piece of provider-local application state.
+Received read/Trash state, saved drafts and mailbox preferences are explicit
+parts of this profile. Sent dispositions and category-publication batch controls
+remain outside it; complete Sent-state portability remains a phase 5 item.
+Shared-conversation introduction policy, leave state and replay evidence remain
+included because they affect delivery authority.
+
+## Draft preservation in portable v9 and managed v10
+
+Both profiles require `account_message_drafts` and `account_message_preferences`,
+including explicit empty arrays. Draft records are closed and owner-scoped; IDs
+are unique UUIDv7 values, revisions are positive 32-bit integers, timestamps are
+RFC 3339 strings, and content follows [the editable draft contract](provider-drafts.md).
+Preserve incomplete text, embedded images, builder fields, selected recipients,
+forward references, attachment metadata and revisions exactly. Reject malformed
+content, foreign owners, duplicate IDs and IDs already used by sent envelopes.
+
+Every draft attachment requires the migrating account's `attachment_uploads`
+record and matching `attachment_blobs` bytes. Verify digest, size and media-type
+validation, even if the file was never sent. Missing files fail export/validation;
+never silently strip them. The existing snapshot size bound still applies: an
+oversized export fails rather than dropping drafts or files. No new upload access
+is granted to other accounts.
+
+Forward and recipient references preserve editable selections, not new delivery
+or reading authority. A reference may already be unavailable or inactive when
+saved. Migration does not recreate a deleted source message or grant consent to
+reactivate a recipient. Clients must surface unavailable references, and sending
+must revalidate them under the current provider's normal authorization rules.
+
+The current complete snapshot is authoritative for drafts and preferences on a
+return trip. Replace retired live drafts/preferences atomically; do not union them
+with retired data. Drafts deleted or consumed at the other provider remain absent.
+Preserve original Trash timestamps, including expired entries until cleanup, and
+never restart retention. Import never signs, queues or sends a draft. Snapshot
+signatures and owner-approved snapshot digests cover these collections; the separate
+managed protocol-history checkpoint is not a substitute for that snapshot binding.
+
+Activation retries are idempotent. A failed activation rolls back the draft and
+preference replacement with the rest of the account. JMAP identities and cursors
+reset with the destination serving generation; draft UUIDs, revisions and content
+do not. Superseded snapshot versions are not accepted by current signed import
+paths; pre-launch snapshots must be regenerated with matching source software.
+
+## Received mailbox state on a return trip
+
+A current, fully validated and authorized transfer snapshot is authoritative for
+which received mailbox copies still exist. This applies to both managed and
+portable return trips. `delivered_messages` rows may be absent because the user
+permanently deleted them or retention removed them while using the other provider.
+The returning provider MUST NOT reconstruct those copies from its retired export.
+For surviving copies, the current `is_read` and original `trashed_at` values win;
+import MUST NOT restart the Trash retention period. Destination-local arrival
+cursors are not immutable message content.
+
+Received cached body provenance may likewise disappear after its last mailbox
+reference is deleted. A surviving received copy MUST still have its required
+verified body provenance. If a previously retained cache row is present in the
+current snapshot, its immutable content and ownership fields MUST agree with the
+retired record. Shared bodies needed by other surviving copies cannot be dropped.
+
+This rule does not permit deletion or alteration of signed received envelopes,
+Grant history, delivery responsibility, terminal outcomes or delivery/status
+proofs. Those retain their existing continuity checks. The archived export remains
+immutable; activation replaces the live mailbox projection with the current
+snapshot atomically, including when activation is retried after a lost response.
+It does not merge retired mailbox copies back into the account.
+
+These semantics use the existing received-message/cache collections and fields;
+they do not by themselves claim Sent-state portability. Draft preservation is
+defined separately above.
 
 ## Connection checkpoint v3
 
@@ -262,7 +329,7 @@ format evidence, not a claim of a second independently deployed Hail provider.
 
 ## Detached attachment records (current alpha)
 
-The current v7/v8 manifests additionally require `attachment_blobs`,
+The current v9/v10 manifests additionally require `attachment_blobs`,
 `attachment_uploads`, `body_attachment_refs`, and `received_attachment_refs`.
 Empty collections are explicit. See the regenerated closed JSON schema for
 fields. Blob bytes and digests use the existing PostgreSQL hex-byte diagnostic

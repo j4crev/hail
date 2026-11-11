@@ -892,22 +892,60 @@ Optional shared OAuth client-access work (not a gate for provider federation):
 
 ### 5. JMAP synchronization and operations
 
-Depends on the auth contract for protected endpoints. The data-model design can
-proceed while auth implementation is underway.
+Standards addressed: [RFC 8620 — JMAP Core](https://www.rfc-editor.org/rfc/rfc8620.html)
+for Session discovery, capabilities, method calls, query/get/set and change-state
+semantics. The RACR extension defines the Hail-specific data model and authority
+rules. [RFC 8621 — JMAP Mail](https://www.rfc-editor.org/rfc/rfc8621.html) is a
+reference for email semantics, not a claim that Hail implements its Email/Mailbox
+model or supports generic JMAP Mail clients. Events/Web Push remain phase 6.
+
+Phase 4's account authentication boundary is available; production OIDC and the
+optional shared OAuth client profile are not prerequisites for the first slice.
+Reuse existing session/scope policy without expanding it through JMAP.
+
+The [phase 5 preparation](standards-phase-5.md) separates established direction,
+proposed engineering defaults and the accepted requirement to preserve
+read/unread state and saved drafts when moving between providers. Trash
+portability is planned too; omit it only if a concrete complication justifies that,
+with explicit non-resurrection rules. Begin with the wire/data contract and
+read-only Session/query/get; do not claim complete synchronization or switch the
+reference clients until change tracking and recovery are proven.
 
 - [ ] Specify RACR JMAP types/capabilities, immutable-versus-local fields, exact
   signed-byte carriage, account isolation, identifiers and provider-transfer reset
   or continuity rules. Reuse current domain services and mailbox storage.
-- [ ] Implement authenticated Session discovery and read-only message query/get
-  with explicit limits and supported capabilities.
+- [x] Implement authenticated Session discovery and read-only received-message query/get
+  with explicit limits and supported capabilities. See the [initial profile](../spec/jmap.md);
+  complete Core support and other object types remain pending.
 - [ ] Implement durable changes/tombstones and resynchronization; prove two clients
   converge after create/update/delete, missed events and expired change cursors.
+  Received-message and draft logs now cover their writers and cleanup; other
+  collections and complete client synchronization remain pending.
 - [ ] Implement read/trash state, drafts and required relationship/Grant workflows;
   prove concurrent edits are detected and owner consent cannot be bypassed.
+  Individual read/unread and received-message Trash/restore/deletion are implemented
+  with state/preference guards; web callers use JMAP and superseded routes are removed.
+  Draft get/query/changes/set cover authoring, retention and send consumption;
+  web draft callers use JMAP and superseded draft routes are removed.
+  Sent, whole-account cleanup and other mutations remain.
+- [ ] Extend managed and portable account transfer to preserve read/unread state,
+  saved drafts with their required content/references. Trash portability is
+  planned; if a concrete complication requires omission, define omission semantics
+  without resurrecting trashed/deleted items.
+  Return imports now allow deleted received copies/cache entries to stay absent,
+  while retaining signed history and shared bodies still needed by surviving copies.
+  Portable v9/managed v10 preserve drafts, required uploads and preferences; Sent-state
+  transfer remains pending. Update transfer schemas and
+  versions together; prove cutover/retry/return behavior without lost state,
+  resurrected mailbox copies or automatically sent drafts. Client synchronization
+  state may reset, but preserved user data must not.
 - [ ] Implement submission with durable idempotency; prove an ambiguous retry sends
   one logical message and acceptance remains distinct from recipient delivery.
 - [ ] Move reference clients to the supported profile; document interoperability
-  boundaries without claiming generic JMAP Mail client support.
+  boundaries without claiming generic JMAP Mail client support. Remove superseded
+  account API routes, cursors and compatibility-only tests with each replaced
+  workflow; no legacy API compatibility period is required. See the
+  [replacement policy](standards-phase-5.md#replacement-policy-remove-superseded-account-api-machinery).
 
 ### 6. JMAP events and Web Push
 

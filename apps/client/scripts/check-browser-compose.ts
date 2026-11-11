@@ -1,5 +1,16 @@
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
+// Evaluated in the page so mutations traverse the same browser fetch hooks.
+const jmapDraftOps=`async (draftId,content)=>{
+  const capability='https://haili.app/ns/jmap/drafts';
+  const session=await(await fetch('/api/jmap/session')).json(),accountId=session.primaryAccounts[capability];
+  const call=async(name,args)=>{const r=await(await fetch('/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{accountId,...args},'d']]})})).json();if(r.methodResponses[0][0]!==name)throw Error('Draft call failed');return r.methodResponses[0][1];};
+  const query=await call('HailDraft/query',{filter:{draftId}});
+  const current=query.ids.length?(await call('HailDraft/get',{ids:query.ids})).list[0]:null;
+  if(content===undefined)return current;
+  const result=await call('HailDraft/set',{ifInState:query.queryState,...(current?{update:{[current.id]:{content}}}:{create:{saved:{draftId,content}}})});
+  if(result.notCreated||result.notUpdated)throw Error('Draft mutation rejected');return result;
+}`;
 const sharedMode=true;
 const work=await mkdtemp('/tmp/haili-layout-');
 const reserve=Bun.serve({hostname:'127.0.0.1',port:0,fetch:()=>new Response()});
@@ -199,7 +210,7 @@ for(const width of [1440,390]){
   await wait(()=>evaluate(`!!document.querySelector('[contenteditable=true]')`));
   assert.equal(await messageText(),'Edited draft');
   // Another signed-in client saves a newer revision. The stale editor retains its text.
-  await evaluate(`(async()=>{const draft=await(await fetch('/api/v1/account/drafts/${draftId}')).json();await fetch('/api/v1/account/drafts/${draftId}/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:draft.revision,content:draft.content})});})()`);
+  await evaluate(`(async()=>{const op=(${jmapDraftOps}),draft=await op('${draftId}');await op('${draftId}',{...draft.content,allowReply:!draft.content.allowReply});})()`);
   await writeMessage('My unsaved changes');await evaluate(`document.querySelector('button[formaction="?/save"]').click()`);
   await wait(async()=>evaluate(`document.querySelector('[role=alert]')?.textContent.includes('another device')`));
   assert.equal(await messageText(),'My unsaved changes');
@@ -209,15 +220,15 @@ for(const width of [1440,390]){
 // Legacy draft conversion is read-only until an explicit save and retains its cover.
 await navigate('/compose');
 const legacyId=await evaluate(`document.querySelector('input[name=publicationId]').value`);
-await evaluate(`(async()=>{const content={audience:'category',category:'general',connections:[],title:'Legacy headline',text:'Hello **world**',alt:'',caption:'Original caption',allowReply:true,header:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk-A8AAQUBAScY42YAAAAASUVORK5CYII',forward:null};const r=await fetch('/api/v1/account/drafts/${legacyId}/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:0,content})});if(!r.ok)throw Error('Legacy fixture save failed');})()`);
+await evaluate(`(async()=>{const content={audience:'category',category:'general',connections:[],title:'Legacy headline',text:'Hello **world**',alt:'',caption:'Original caption',allowReply:true,header:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk-A8AAQUBAScY42YAAAAASUVORK5CYII',forward:null};await (${jmapDraftOps})('${legacyId}',content);})()`);
 await navigate('/compose?draft='+legacyId);
 await wait(()=>evaluate(`!!document.querySelector('[contenteditable=true]')`));
 assert(await evaluate(`!document.querySelector('textarea')&&document.querySelector('input[name=savedHeader]').value===''`));
 assert(await evaluate(`JSON.parse(document.querySelector('input[name=builder]').value).body.blocks.some(b=>b.style==='h1'&&b.children[0].text==='Legacy headline')`));
-assert(await evaluate(`(async()=>{const d=await(await fetch('/api/v1/account/drafts/${legacyId}')).json();return d.revision===1&&!d.content.builder&&d.content.text==='Hello **world**';})()`),'Opening never rewrites the saved draft');
+assert(await evaluate(`(async()=>{const d=await (${jmapDraftOps})('${legacyId}');return d.revision===1&&!d.content.builder&&d.content.text==='Hello **world**';})()`),'Opening never rewrites the saved draft');
 await evaluate(`document.querySelector('button[formaction="?/save"]').click()`);
 await wait(()=>evaluate(`document.querySelector('input[name=draftRevision]').value==='2'`));
-assert(await evaluate(`(async()=>{const d=await(await fetch('/api/v1/account/drafts/${legacyId}')).json();return !!d.content.builder&&d.content.header===null&&d.content.title===''&&d.content.text===''&&d.content.builder.body.blocks[0].alt==='';})()`),'Explicit save writes exactly one content representation');
+assert(await evaluate(`(async()=>{const d=await (${jmapDraftOps})('${legacyId}');return !!d.content.builder&&d.content.header===null&&d.content.title===''&&d.content.text===''&&d.content.builder.body.blocks[0].alt==='';})()`),'Explicit save writes exactly one content representation');
 
 // Exercise the same reusable package inside the authenticated publication form.
 for(const width of [1440,390]){

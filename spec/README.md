@@ -45,7 +45,8 @@ Historical implementation/rollout notes do not override the current profile belo
 | Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
 | Custody | [Account onboarding](account-onboarding.md), [managed custody](managed-custody.md); [reduced-assurance alpha](alpha-onboarding.md) is an explicitly weaker deployment profile |
 | Reference monitor service | Provider registration, scoped enrollment, management handoff and signed receiver lifecycle v1 in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
-| Transfer | Handshake v1, portable snapshot v7, managed snapshot v8, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
+| Client synchronization | Hail JMAP received-message v1 with read/Trash state and deletion; [implemented subset and remaining Core work](jmap.md); [draft reads/writes/sync v1](jmap-drafts.md); web received-message mutations and draft workflows use JMAP; other workflows still use account API v1 |
+| Transfer | Handshake v1, portable snapshot v9, managed snapshot v10, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
 
 Envelope versions select different authority models. V4 is not a replacement for
 Grant delivery. New direct replies use v3 rather than the historical unthreaded

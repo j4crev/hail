@@ -151,19 +151,6 @@ export class AccountMessaging {
     return result;
   }
 
-  async setRead(session:AccountApiSession,sender:string,id:string,isRead:boolean) {
-    if(!DID.test(sender)||!ID.test(id))throw new UserGrantError(400,"Invalid message identity");
-    return this.sql.begin(async tx=>{
-      const accounts=await tx`SELECT id FROM provider_accounts WHERE id=${session.account_id} AND did=${session.did} AND onboarding_state='active' FOR UPDATE`;
-      if(!accounts.length)throw new UserGrantError(409,"Account is unavailable");
-      await tx`SELECT hail_assert_unfenced_account(${session.account_id}::uuid)`;
-      const rows=await tx`UPDATE delivered_messages SET is_read=${isRead}
-        WHERE recipient_did=${session.did} AND sender_did=${sender} AND message_id=${id} AND trashed_at IS NULL RETURNING message_id`;
-      if(!rows.length)return null;
-      return {messageId:id,isRead};
-    });
-  }
-
   updates(session:AccountApiSession,after:string|null,from:string|null){return inboxUpdates(this.sql,session,after,from);}
   conversations(session:AccountApiSession,peer:string|null,action:string,after:string|null,trash=false){return conversations(this.sql,session,this,peer,action,after,trash);}
 

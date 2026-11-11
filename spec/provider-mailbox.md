@@ -76,6 +76,16 @@ background tabs and failed list loads do not clear it. Refresh while visible
 approximately every 30 seconds and on focus. No system notifications or subscriber
 activity are introduced.
 
+## Received-message mutations
+
+The web client uses `HailMessage/set` with read/Trash patches or destruction,
+`ifInState`, and a Trash-setting precondition for delete/restore; see
+[the JMAP profile](jmap.md). The old per-message mark-read/mark-unread provider
+routes, per-message delete and received-message bulk restore are removed. Existing passkey, scope and migration-fence policy still
+applies. Reads alone never mark a message read. Trash timestamps remain server-set, retries
+never extend retention, and expired copies cannot be restored. The CLI permanent-delete
+endpoint and whole-account Empty Trash remain separate existing workflows.
+
 ## Folder actions
 
 The passkey-authenticated account API requires `messages:write`, the existing
@@ -165,3 +175,12 @@ success banner; failures remain visible and retryable.
 [Saved drafts](provider-drafts.md) also participate in Trash. Emptying Trash,
 disabling Trash and expiration remove draft content permanently; restoration
 returns them to Drafts. Migration 0101 adds this provider-local compose storage.
+
+## Planned mailbox-state portability
+
+Phase 5 requires provider migration to preserve read/unread markers and saved
+drafts. Trash portability is planned unless a concrete implementation complication requires omission. The [accepted portability requirements](../agents/standards-phase-5.md#accepted-product-decision-preserve-mailbox-state-on-provider-migration)
+require protection against resurrecting trashed/deleted copies in active folders.
+If Trash is transferred, preserve original retention times; otherwise specify
+its omission explicitly without implying authorization to delete source data. This extends the current transfer contract; it is not yet implemented.
+A fresh client synchronization after a move must reconstruct preserved user state.

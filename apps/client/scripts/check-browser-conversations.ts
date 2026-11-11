@@ -28,7 +28,7 @@ async function navigate(path:string,title:string){
 
 async function assertReadSettled(){
  await wait(async()=>evaluate(`document.querySelector('.expanded .action-menu button')?.disabled===false`));
- const state=()=>evaluate(`({reads:performance.getEntriesByType('resource').filter(e=>e.name.includes('/mark-read')).length,selected:document.querySelector('.expanded')?.id,rows:document.querySelectorAll('.conversation-item').length})`);
+ const state=()=>evaluate(`({reads:performance.getEntriesByType('resource').filter(e=>e.name.endsWith('/api/jmap')).length,selected:document.querySelector('.expanded')?.id,rows:document.querySelectorAll('.conversation-item').length})`);
  const before=await state();
  await Bun.sleep(500);
  assert.deepEqual(await state(),before,'Sidebar count refresh must not repeat mark-read, reset the selected message, or reset loaded rows');
@@ -39,7 +39,12 @@ const grouped=async()=>await(await fetch(origin+'/api/v1/account/connection-inbo
 if(!sharedMode)for(const width of [1440,390,320]){
  const initial=await api();
  for(const m of initial.messages.filter((m:any)=>!m.body.blocks.some((b:any)=>b.children?.some((s:any)=>s.text==='The photos turned out beautifully')))){
-  await fetch(`${origin}/api/v1/account/inbox/${encodeURIComponent(m.sender)}/${m.messageId}/mark-unread`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const capability='https://haili.app/ns/jmap/messages';
+  const session=await (await fetch(`${origin}/api/jmap/session`)).json();const accountId=session.primaryAccounts[capability];
+  const call=async(name:string,args:unknown)=>(await (await fetch(`${origin}/api/jmap`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,args,'test']]})})).json()).methodResponses[0][1];
+  const query=await call('HailMessage/query',{accountId,filter:{sender:m.sender,messageId:m.messageId,inTrash:false}});
+  const result=await call('HailMessage/set',{accountId,ifInState:query.queryState,update:{[query.ids[0]]:{isRead:false}}});
+  assert(result.updated?.[query.ids[0]]===null);
  }
  const inbox=await grouped(),oldest=inbox.messages[0];
  assert.equal(oldest.conversation.unreadCount,40);assert.equal(inbox.messages.length,2);

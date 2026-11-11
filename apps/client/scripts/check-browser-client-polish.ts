@@ -1,3 +1,4 @@
+import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 const sharedMode=process.argv.includes('--shared');
@@ -46,9 +47,9 @@ if(sharedMode){
   await click('Close');
 }
 // Move all received messages to Trash so both mailbox views are empty.
-for(const m of [...incoming,connection])await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(m.sender)+'/'+m.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+for(const m of [...incoming,connection])await fixtureMessageMutation(origin,m,{isInTrash:true});
 // Remove any additional connection messages too.
-for(const m of (await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json()).messages)await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(m.sender)+'/'+m.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+for(const m of (await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json()).messages)await fixtureMessageMutation(origin,m,{isInTrash:true});
 await cdp('Page.navigate',{url:origin+'/message/'+encodeURIComponent(incoming[0].sender)+'/'+incoming[0].messageId});
 await wait(async()=>evaluate(`!!document.querySelector('.restore-button')`));
 await cdp('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'light'}]});

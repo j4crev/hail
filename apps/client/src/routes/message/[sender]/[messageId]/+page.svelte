@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {setMessageRead,restoreReceivedMessage} from "$lib/jmap.js";
   import {mailboxView} from "$lib/mailbox-view.svelte.js";
   import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
@@ -13,7 +14,6 @@
   import ForwardedPill from "$lib/ForwardedPill.svelte";
   import {forwardedAttribution, messageDisplayContent} from "$lib/messages.js";
   import {tick} from "svelte";
-  import {mailboxRequest} from "$lib/mailbox.js";
   import {goto, invalidate} from "$app/navigation";
   import Icon from "$lib/Icon.svelte";
   import DateTime from "$lib/DateTime.svelte";
@@ -44,15 +44,14 @@
     if (opened === key) return;
     opened = key;
     readError = ''; readPending = true;
-    void mailboxRequest(`inbox/${encodeURIComponent(message.sender)}/${encodeURIComponent(message.messageId)}/mark-read`, {})
+    void setMessageRead(message.sender,message.messageId,true)
       .then(() => invalidate('hail:mailbox')).catch(() => { readError = 'Unable to mark this message read. Reload to try again.'; }).finally(() => { readPending = false; });
   });
   let restoring = $state(false), restoreError = $state('');
   async function restore() {
     restoring = true; restoreError = '';
     try {
-      const result = await mailboxRequest('trash/restore', {messages: [{sender: data.message.sender, messageId: data.message.messageId}]});
-      if (result.restored !== 1) throw new Error('This message could not be restored. It may have expired or already been restored.');
+      await restoreReceivedMessage(data.message.sender,data.message.messageId);
       await goto('/trash', {invalidateAll: true});
     } catch (error) { restoreError = error instanceof Error ? error.message : 'Unable to restore message.'; }
     finally { restoring = false; }

@@ -43,10 +43,10 @@ for(const v of vectors.records){it('accepts frozen '+v.id+' with the real server
  expect(decodeSignedRecord(v.wire,65536)).toEqual({payloadBytes:bytes(v.payloadHex),signature:bytes(v.signatureHex)});
  const corrupt=bytes(v.signatureHex);corrupt[0]=corrupt[0]!^1;await expect(verifyRecord(v,corrupt)).rejects.toThrow();
  });}
-it('links the managed v8 chain and separates handover roles and activation digest domains',async()=>{
+it('links the managed v10 chain and separates handover roles and activation digest domains',async()=>{
  const record=(id:string)=>vectors.records.find((r:any)=>r.id===id);
  const signed=(id:string)=>decodeSignedRecord(record(id).wire,65536);
- await expect(verifyManagedHandshakeChain({grant:signed('managed-grant'),acknowledgement:signed('managed-acknowledgement'),offer:signed('managed-offer'),selection:signed('managed-selection'),approval:signed('managed-approval')},record('managed-grant').didKey,vectors.time)).resolves.toMatchObject({approval:{snapshot_version:8}});
+ await expect(verifyManagedHandshakeChain({grant:signed('managed-grant'),acknowledgement:signed('managed-acknowledgement'),offer:signed('managed-offer'),selection:signed('managed-selection'),approval:signed('managed-approval')},record('managed-grant').didKey,vectors.time)).resolves.toMatchObject({approval:{snapshot_version:10}});
  await expect(verifyConnectionHandover(signed('handover-source'),'destination',record('handover-source').didKey,vectors.time)).rejects.toThrow();
  const complete=decodeDeterministic(signed('handover-complete').payloadBytes) as Record<string,HailValue>;
  expect(complete.activation_digest).toEqual(connectionActivationDigest(signed('activation')));

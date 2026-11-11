@@ -1,3 +1,5 @@
+import {JmapDrafts} from './jmap/drafts.js';
+import {JmapMessages} from "./jmap/messages.js";
 import {BodyRequestSigner, BodyRequestVerifier} from "./bodies/request-proof.js";
 import { handoffAccountMonitor } from "./accounts/monitor-handoff.js";
 import { cleanAccountMonitor } from "./accounts/monitor-cleanup.js";
@@ -381,6 +383,8 @@ const app = createApp(config, schemaRehearsal ? {
   ),
   bodyStore: new BodyRepository(database.sql),
   bodyProof: new BodyRequestVerifier(database.sql,resolver,config.publicOrigin),
+  jmap: new JmapMessages(database.sql,config.publicOrigin),
+  jmapDrafts: new JmapDrafts(database.sql,config.publicOrigin),
   envelopeReceiver: new EnvelopeReceiver(
     onboardingRepository, new EnvelopeRepository(database.sql), resolver, config.hailServiceBase,undefined,connectionAuthority,
   ),

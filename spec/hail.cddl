@@ -491,6 +491,6 @@ hail-snapshot-hash-cose = #6.18([
 ])
 hail-snapshot-hash-protected = {
   1: -19, 4: bstr, 258: -16,
-  259: "application/hail-portable-snapshot+json;version=7" /
-       "application/hail-managed-snapshot+json;version=8"
+  259: "application/hail-portable-snapshot+json;version=9" /
+       "application/hail-managed-snapshot+json;version=10"
 }

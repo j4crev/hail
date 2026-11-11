@@ -40,6 +40,12 @@ function validateRetainedHistory(previous:HistoryTables,currentTables:HistoryTab
     const name=table as keyof typeof immutable;
     for(const row of previous[name]) {
       const current=currentTables[name].find(candidate=>keys.every(key=>candidate[key]===row[key]));
+      // The current complete snapshot owns mailbox presence. A retired mailbox
+      // copy is not immutable protocol evidence and must not be resurrected.
+      if(!current&&name==='delivered_messages')continue;
+      if(!current&&name==='verified_body_provenance'&&!currentTables.delivered_messages.some(message=>
+        message.recipient_did===row.recipient_did&&message.sender_did===row.sender_did&&message.body_digest===row.digest&&
+        message.media_type===row.media_type&&message.profile===row.profile))continue;
       const expected={...row},actual=current?{...current}:null;
       // Receiver-local arrival time is not part of the signed Grant checkpoint.
       // The old observation remains immutable in the archived export.
@@ -167,6 +173,8 @@ export async function replaceRetiredProjection(tx:SQL,manifest:TransferManifest)
   for(const table of ["terminal_status_publications","delivery_status_wrappers","delivery_status_payloads","delivery_work"])
     await tx.unsafe(`DELETE FROM "${table}" WHERE (sender_did,message_id) IN (${received})`,[account]);
   await tx`DELETE FROM serving_worker_leases WHERE account_id=${account}`;
+  await tx`DELETE FROM account_message_drafts WHERE account_id=${account}`;
+  await tx`DELETE FROM account_message_preferences WHERE account_id=${account}`;
   await tx`DELETE FROM delivered_messages WHERE recipient_did=${did}`;
   await tx`DELETE FROM verified_body_provenance WHERE recipient_did=${did}`;
   await tx`DELETE FROM received_envelopes WHERE local_account_id=${account}`;
@@ -207,6 +215,8 @@ export async function replaceRetiredManagedProjection(tx:SQL,manifest:ManagedTra
   for(const table of ["terminal_status_publications","delivery_status_wrappers","delivery_status_payloads","delivery_work"])
     await tx.unsafe(`DELETE FROM "${table}" WHERE (sender_did,message_id) IN (${received})`,[account]);
   await tx`DELETE FROM serving_worker_leases WHERE account_id=${account}`;
+  await tx`DELETE FROM account_message_drafts WHERE account_id=${account}`;
+  await tx`DELETE FROM account_message_preferences WHERE account_id=${account}`;
   await tx`DELETE FROM delivered_messages WHERE recipient_did=${did}`;
   await tx`DELETE FROM verified_body_provenance WHERE recipient_did=${did}`;
   await tx`DELETE FROM received_envelopes WHERE local_account_id=${account}`;

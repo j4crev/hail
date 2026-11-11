@@ -1,3 +1,6 @@
+import type {JmapDrafts} from './jmap/drafts.js';
+import {registerJmapRoutes} from "./jmap/routes.js";
+import type {JmapMessages} from "./jmap/messages.js";
 import type {BodyRequestVerifier} from "./bodies/request-proof.js";
 import {RegistrationPolicy} from "./onboarding/registration.js";
 import {OperatorStatistics} from "./operator/stats.js";
@@ -76,6 +79,8 @@ export interface AppDependencies {
   grantReceiver?: GrantReceiver;
   bodyStore?: BodyStore;
   bodyProof?: BodyRequestVerifier;
+  jmap?: JmapMessages;
+  jmapDrafts?: JmapDrafts;
   envelopeReceiver?: EnvelopeReceiver;
   deliveryStatusSigner?: DeliveryStatusSigner;
   deliveryStatusReceiver?: DeliveryStatusReceiver;
@@ -173,6 +178,7 @@ export function createApp(
   if (dependencies.grantReceiver) {
     registerGrantRoutes(app, config.hailServiceBase, dependencies.grantReceiver);
   }
+  if(dependencies.jmap&&dependencies.accountApi)registerJmapRoutes(app,dependencies.accountApi.accounts,dependencies.jmap,config.publicOrigin,config.passkeys?.origin??config.publicOrigin,dependencies.jmapDrafts);
   if (dependencies.bodyStore) registerBodyRoutes(app, dependencies.bodyStore, dependencies.bodyProof);
   if (dependencies.envelopeReceiver) registerEnvelopeRoutes(app, dependencies.envelopeReceiver,
     dependencies.deliveryStatusSigner, protectedSchedule);

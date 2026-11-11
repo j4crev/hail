@@ -1,3 +1,7 @@
+import {draftTransferFixture} from './support/draft-transfer.js';
+import {JmapMessages} from '../src/jmap/messages.js';
+import {MessageTrash} from '../src/accounts/message-trash.js';
+import type {AccountApiSession} from '../src/accounts/repository.js';
 import {encodePayload,decodePayload} from '@racrproto/codec';
 import {assertExportConformance} from "./support/account-history-conformance.js";
 import { createHash,randomBytes, randomUUID } from "node:crypto";
@@ -178,9 +182,9 @@ integration("private PLC transfer between disposable POC providers", () => {
     const attachmentBytes=new TextEncoder().encode('portable attachment survives A to B to A');
     const messageBody=encodePayload('hail.body.spt-1',{...decodePayload('hail.body.spt-1',bodyFromText('State survives A to B to A')),
       attachments:[{filename:'portable.txt',media_type:'text/plain',size:attachmentBytes.length,digest:{algorithm:'sha-256',value:hash(attachmentBytes)}}]});
-    const seedMessage=async(db:ProviderDatabase)=>{
+    const seedMessage=async(db:ProviderDatabase,body=messageBody)=>{
       const timestamp=Math.floor(Date.now()/1000),payload:HailEnvelope={type:"hail.envelope",version:1,message_id:Bun.randomUUIDv7(),from:peerDid,to:genesis.did,authorization:{type:"grant",grant_id:grant.grant_id},category:"updates",created_at:timestamp,expires_at:timestamp+3600,
-        body:{digest:{algorithm:"sha-256",value:hash(messageBody)},size:messageBody.length,media_type:"application/hail-body+cbor",profile:"spt-1",available_until:timestamp+31*86400,access:{type:"bearer",token:randomBytes(32),expires_at:timestamp+31*86400}},reply:{allowed:false}};
+        body:{digest:{algorithm:"sha-256",value:hash(body)},size:body.length,media_type:"application/hail-body+cbor",profile:"spt-1",available_until:timestamp+31*86400,access:{type:"bearer",token:randomBytes(32),expires_at:timestamp+31*86400}},reply:{allowed:false}};
       const representation=await signPayload("hail.envelope",payload,createWebCryptoSigner(`${peerDid}#hail-messaging`,peerSigner)),digest=hash(inspectSignedPayload("hail.envelope",representation).payloadBytes);
       expect(await new EnvelopeRepository(db.sql).accept({payload,representation,payloadDigest:digest,envelopeDigest:digest,localAccountId:prepared.accountId,signingPublicKey:peerKeys.messagingDidKey,evidence:peerEvidence,now:timestamp})).toBe("accepted");
       return payload;
@@ -191,6 +195,22 @@ integration("private PLC transfer between disposable POC providers", () => {
     const archivedSigner=new DeliveryStatusSigner(source.sql,sourceRepo,sourceEncryptor,resolver,oldBase);
     await archivedSigner.signCurrent(peerDid,archivedMessage.message_id);
     expect(await new TerminalStatusPublisher(source.sql,archivedSigner,resolver,async()=>new Response(null,{status:204}),()=>{}).publishOne()).toBe("acknowledged");
+    // Both a shared-body copy and an independent cached body are deleted at B.
+    const removedBody=bodyFromText('Delete this unique cached body at the destination');
+    const deletedShared=await seedMessage(source);
+    expect(await archivedDelivery.deliver((await archivedDelivery.claimDue())!,messageBody,[attachmentBytes])).toBe('delivered');
+    await archivedSigner.signCurrent(peerDid,deletedShared.message_id);
+    expect(await new TerminalStatusPublisher(source.sql,archivedSigner,resolver,async()=>new Response(null,{status:204}),()=>{}).publishOne()).toBe('acknowledged');
+    const deletedUnique=await seedMessage(source,removedBody);
+    expect(await archivedDelivery.deliver((await archivedDelivery.claimDue())!,removedBody)).toBe('delivered');
+    await archivedSigner.signCurrent(peerDid,deletedUnique.message_id);
+    expect(await new TerminalStatusPublisher(source.sql,archivedSigner,resolver,async()=>new Response(null,{status:204}),()=>{}).publishOne()).toBe('acknowledged');
+    const originalSession={account_id:prepared.accountId,did:genesis.did,serving_generation:1} as AccountApiSession;
+    const originalMailbox=new JmapMessages(source.sql,'https://source.example.com');
+    const originalSnapshot=await originalMailbox.get(originalSession,{});
+    const originalDeletedIds=originalSnapshot.list.filter(row=>[deletedShared.message_id,deletedUnique.message_id].includes(row.messageId as string)).map(row=>row.id);
+    expect(originalDeletedIds).toHaveLength(2);
+    const draftFixture=await draftTransferFixture(source.sql,prepared.accountId);
     await target.sql`SELECT setval('inbox_delivery_sequence',1000)`;
     const firstMessage=await seedMessage(source),oldDeliveryClaim=(await new DeliveryRepository(source.sql).claimDue())!;
     const oldPublication=(await new GrantRepository(source.sql).claimDuePublication(60000))!;
@@ -293,7 +313,7 @@ integration("private PLC transfer between disposable POC providers", () => {
         writeFile(paths.vault, JSON.stringify(client.vault), { mode: 0o600 }),
         writeFile(paths.state,retainedTransferState,{mode:0o600}),
         writeFile(paths.snapshot, JSON.stringify({ type: "hail.portable-migration-transfer",
-          version: 7, manifest: encodeBase64Url(signedSnapshot.bytes),
+          version: 9, manifest: encodeBase64Url(signedSnapshot.bytes),
           digest: encodeBase64Url(signedSnapshot.digest),
           signature: encodeBase64Url(signedSnapshot.signature),
           sourceMessagingPublicKey: signedSnapshot.sourceMessagingPublicKey }), { mode: 0o600 }),
@@ -457,6 +477,16 @@ integration("private PLC transfer between disposable POC providers", () => {
     // Owner presentation choices can change at B and must return to A intact.
     await withFreshServingGenerations(target.sql,()=>target.sql`UPDATE delivered_messages SET is_read=true,trashed_at=clock_timestamp()
       WHERE recipient_did=${genesis.did} AND sender_did=${peerDid} AND message_id=${archivedMessage.message_id}`);
+    const betaTrashTimestamp=(await target.sql<{trashed_at:Date}[]>`SELECT trashed_at FROM delivered_messages
+      WHERE recipient_did=${genesis.did} AND sender_did=${peerDid} AND message_id=${archivedMessage.message_id}`)[0]!.trashed_at;
+    await withFreshServingGenerations(target.sql,async()=>{
+      const session={account_id:prepared.accountId,did:genesis.did} as AccountApiSession,trash=new MessageTrash(target.sql);
+      await trash.remove(session,peerDid,deletedShared.message_id,true);
+      await trash.remove(session,peerDid,deletedUnique.message_id,true);
+      expect(await target.sql`SELECT 1 FROM verified_body_provenance WHERE recipient_did=${genesis.did} AND digest=${hash(removedBody)}`).toHaveLength(0);
+      expect(await target.sql`SELECT 1 FROM verified_body_provenance WHERE recipient_did=${genesis.did} AND digest=${hash(messageBody)}`).toHaveLength(1);
+    });
+    await withFreshServingGenerations(target.sql,()=>draftFixture.editAtDestination(target.sql));
     const backFence=new MigrationFenceService(target.sql,resolver,newBase),backSourceRoutes=new Hono();
     const backKeys=new PreparedMigrationTarget(source.sql,sourceEncryptor,oldBase,true),backReceiver=new TransferInvitationReceiver(source.sql,resolver,backKeys);
     const backGate=new PrivatePocCutoverGate(source.sql,{origin:registry,resolver,audit:did=>plc.getAuditableLog(did)},registry,oldBase);
@@ -505,7 +535,15 @@ integration("private PLC transfer between disposable POC providers", () => {
       for(const row of localState.tables.delivered_messages){row.delivery_sequence=Number(row.delivery_sequence)+1000;row.is_read=!row.is_read;row.trashed_at=new Date().toISOString();}
       await validateReturningEvidence(source.sql,localState);
       const missingMessage=structuredClone(returnManifest);missingMessage.tables.delivered_messages=missingMessage.tables.delivered_messages.filter((row:any)=>row.message_id!==archivedMessage.message_id);
-      await expect(validateReturningEvidence(source.sql,missingMessage)).rejects.toThrow("delivered_messages history");
+      await validateReturningEvidence(source.sql,missingMessage);
+      const missingEvidence=structuredClone(returnManifest);missingEvidence.tables.received_envelopes=missingEvidence.tables.received_envelopes.filter((row:any)=>row.message_id!==deletedUnique.message_id);
+      await expect(validateReturningEvidence(source.sql,missingEvidence)).rejects.toThrow("received_envelopes history");
+      const missingSharedBody=structuredClone(returnManifest);
+      missingSharedBody.tables.verified_body_provenance=missingSharedBody.tables.verified_body_provenance.filter((row:any)=>row.digest!=='\\x'+Buffer.from(hash(messageBody)).toString('hex'));
+      await expect(validateReturningEvidence(source.sql,missingSharedBody)).rejects.toThrow('verified_body_provenance history');
+      const alteredBody=structuredClone(returnManifest);
+      alteredBody.tables.verified_body_provenance[0].body_bytes='\\x00';
+      await expect(validateReturningEvidence(source.sql,alteredBody)).rejects.toThrow('verified_body_provenance history');
       const alteredMessage=structuredClone(returnManifest);alteredMessage.tables.delivered_messages.find((row:any)=>row.message_id===archivedMessage.message_id)!.body_digest="\\x"+"ff".repeat(32);
       await expect(validateReturningEvidence(source.sql,alteredMessage)).rejects.toThrow("delivered_messages history");
       const missingWork=JSON.parse(new TextDecoder().decode(decodeBase64Url(reviewed.manifest)));
@@ -517,10 +555,20 @@ integration("private PLC transfer between disposable POC providers", () => {
       expect(log).toHaveLength(3);
       const restoredMessage=(await source.sql`SELECT is_read,trashed_at,body_digest FROM delivered_messages
         WHERE recipient_did=${genesis.did} AND sender_did=${peerDid} AND message_id=${archivedMessage.message_id}`)[0]!;
-      expect(restoredMessage.is_read).toBe(true);expect(restoredMessage.trashed_at).not.toBeNull();
+      expect(await source.sql`SELECT 1 FROM delivered_messages WHERE recipient_did=${genesis.did} AND sender_did=${peerDid}
+        AND message_id IN (${deletedShared.message_id},${deletedUnique.message_id})`).toHaveLength(0);
+      expect(await source.sql`SELECT 1 FROM verified_body_provenance WHERE recipient_did=${genesis.did} AND digest=${hash(removedBody)}`).toHaveLength(0);
+      expect(await source.sql`SELECT 1 FROM received_envelopes WHERE recipient_did=${genesis.did} AND sender_did=${peerDid}
+        AND message_id IN (${deletedShared.message_id},${deletedUnique.message_id})`).toHaveLength(2);
+      expect(restoredMessage.is_read).toBe(true);expect(restoredMessage.trashed_at).toEqual(betaTrashTimestamp);
       expect(new Uint8Array(restoredMessage.body_digest)).toEqual(hash(messageBody));
       const generation=(await source.sql<{generation:string}[]>`SELECT generation FROM account_serving_generations WHERE account_id=${prepared.accountId}`)[0]!.generation;
       expect(Number(generation)).toBe(2);
+      await draftFixture.assert(source.sql);
+      const returnedSession={...originalSession,serving_generation:Number(generation)};
+      expect((await originalMailbox.get(returnedSession,{ids:originalDeletedIds})).notFound).toEqual(originalDeletedIds);
+      await expect(originalMailbox.changes(returnedSession,{sinceState:originalSnapshot.state})).rejects.toMatchObject({type:'cannotCalculateChanges'});
+
       const rollbackConnection=await source.sql.reserve();
       try {await expect(rollbackConnection.unsafe(await Bun.file(new URL("../migrations/rollback/0037_generation_admission.sql",import.meta.url)).text())).rejects.toThrow("prevent rollback");}
       finally{await rollbackConnection.unsafe("ROLLBACK");rollbackConnection.release();}

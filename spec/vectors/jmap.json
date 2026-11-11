@@ -1,0 +1,209 @@
+{
+  "description": "Hail JMAP received-message v1 HTTP method-envelope vectors. Fixture account is account_fixture; only messages:read is granted.",
+  "cases": [
+    {
+      "name": "core echo with result reference",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core"
+        ],
+        "methodCalls": [
+          [
+            "Core/echo",
+            {
+              "list": [
+                {
+                  "id": "one"
+                },
+                {
+                  "id": "two"
+                }
+              ]
+            },
+            "a"
+          ],
+          [
+            "Core/echo",
+            {
+              "#ids": {
+                "resultOf": "a",
+                "name": "Core/echo",
+                "path": "/list/*/id"
+              }
+            },
+            "b"
+          ]
+        ]
+      },
+      "status": 200,
+      "responses": [
+        [
+          "Core/echo",
+          {
+            "list": [
+              {
+                "id": "one"
+              },
+              {
+                "id": "two"
+              }
+            ]
+          },
+          "a"
+        ],
+        [
+          "Core/echo",
+          {
+            "ids": [
+              "one",
+              "two"
+            ]
+          },
+          "b"
+        ]
+      ]
+    },
+    {
+      "name": "capability opt-in is required",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core"
+        ],
+        "methodCalls": [
+          [
+            "HailMessage/get",
+            {
+              "accountId": "account_fixture",
+              "ids": []
+            },
+            "a"
+          ]
+        ]
+      },
+      "status": 200,
+      "responses": [
+        [
+          "error",
+          {
+            "type": "unknownMethod"
+          },
+          "a"
+        ]
+      ]
+    },
+    {
+      "name": "missing result does not stop later calls",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core"
+        ],
+        "methodCalls": [
+          [
+            "Core/echo",
+            {
+              "#ids": {
+                "resultOf": "absent",
+                "name": "Core/echo",
+                "path": "/ids"
+              }
+            },
+            "a"
+          ],
+          [
+            "Core/echo",
+            {},
+            "b"
+          ]
+        ]
+      },
+      "status": 200,
+      "responses": [
+        [
+          "error",
+          {
+            "type": "invalidResultReference"
+          },
+          "a"
+        ],
+        [
+          "Core/echo",
+          {},
+          "b"
+        ]
+      ]
+    },
+    {
+      "name": "foreign account is not visible",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core",
+          "https://haili.app/ns/jmap/messages"
+        ],
+        "methodCalls": [
+          [
+            "HailMessage/get",
+            {
+              "accountId": "foreign"
+            },
+            "a"
+          ]
+        ]
+      },
+      "status": 200,
+      "responses": [
+        [
+          "error",
+          {
+            "type": "accountNotFound"
+          },
+          "a"
+        ]
+      ]
+    },
+    {
+      "name": "unknown capability fails request",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core",
+          "urn:unknown"
+        ],
+        "methodCalls": []
+      },
+      "status": 400,
+      "problem": "urn:ietf:params:jmap:error:unknownCapability"
+    },
+    {
+      "name": "read-only credentials cannot mutate through JMAP",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core",
+          "https://haili.app/ns/jmap/messages"
+        ],
+        "methodCalls": [
+          [
+            "HailMessage/set",
+            {
+              "accountId": "account_fixture",
+              "update": {
+                "message": {
+                  "isRead": true
+                }
+              }
+            },
+            "a"
+          ]
+        ]
+      },
+      "status": 200,
+      "responses": [
+        [
+          "error",
+          {
+            "type": "forbidden"
+          },
+          "a"
+        ]
+      ]
+    }
+  ]
+}

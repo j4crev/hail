@@ -101,7 +101,7 @@ history collectors rather than replacing their authority with container validity
 [core delivery](../spec/core-delivery.md), [encoding](../spec/encoding.md),
 [transfer formats](../spec/transfer-formats.md), [account history](../spec/account-history.md),
 [connection portability](../spec/connection-portability.md), `spec/hail.cddl`,
-[history schema](../spec/schemas/account-history-v7-v8.json).
+[history schema](../spec/schemas/account-history-v9-v10.json).
 Codec vectors `v0.json`, `threads-v3.json`, `conversations-v1.json` and spec vectors
 `portable-history.json`, `managed-history.json`, `transfer-wire.json`,
 `connection-history.json`, `conversation-*.json`, `history-negative.json` own
@@ -180,6 +180,12 @@ of whether the provider offers the shared OAuth client API.
 
 ### 5. JMAP synchronization and operations
 
+**Accepted portability requirement.** Provider migration must preserve read/unread
+state and saved drafts with their required data. Trash portability is planned unless a concrete implementation complication requires omission;
+omitting Trash must not resurrect trashed/deleted items in active folders. Extend managed/portable history schemas and export/import explicitly;
+this is not implemented by current formats. Client synchronization cursors may
+reset independently. See [phase 5 preparation](standards-phase-5.md#accepted-product-decision-preserve-mailbox-state-on-provider-migration).
+
 **Current behavior and reuse.** [Account routes](../apps/server/src/accounts/routes.ts),
 [messaging](../apps/server/src/accounts/messaging.ts),
 [drafts](../apps/server/src/accounts/drafts.ts), [Trash](../apps/server/src/accounts/message-trash.ts),
@@ -188,14 +194,19 @@ of whether the provider offers the shared OAuth client API.
 and submission/delivery repositories own existing operations. Reuse them behind
 JMAP. [Inbox updates](../apps/server/src/accounts/inbox-updates.ts) provides an
 account/filter-bound delivery-sequence cursor; it is not a complete change log for
-updates/deletes. Client mailbox cache and shared account API own client adaptation.
+updates/deletes. The new JMAP received-message log captures those changes transactionally
+across existing writers. Drafts now have a separate durable log covering saves,
+Trash, cleanup and send consumption; sent items and relationships remain pending.
+Client mailbox cache and shared account API own client adaptation.
 
 **Spec/schema/vector owners.** `spec/client-api.md`, `spec/provider-mailbox.md`,
 `spec/provider-drafts.md`, `spec/grants.md`, `spec/connection-auth.md`,
 `spec/shared-conversations.md`, `spec/delivery-state.md`, `spec/account-history.md`;
 `spec/schemas/provider-draft.json`, `content-builder-draft.json`, and the history
-schema if export collections change. A **planned** RACR JMAP profile, schemas and
-method/state vectors must define actual capabilities and exact signed-byte carriage.
+schema if export collections change. The initial [JMAP profile](../spec/jmap.md),
+message schema and request vectors define the implemented received-message read
+subset. The [draft profile](../spec/jmap-drafts.md) adds authenticated draft reads and conditional writes
+and changes, with a projection schema and executable capability vectors. Other object types and complete Core behavior remain pending.
 Provider-local JSON vectors are not federation encoding vectors.
 
 **Existing tests and missing proof.** Server `account-api.integration.test.ts`,

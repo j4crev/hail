@@ -170,12 +170,12 @@ fn snapshot_hash_profiles_verify_exact_export_bytes() {
     for (kind, version, text) in [
         (
             "portable",
-            7,
+            9,
             include_str!("../../../../spec/vectors/portable-history.json"),
         ),
         (
             "managed",
-            8,
+            10,
             include_str!("../../../../spec/vectors/managed-history.json"),
         ),
     ] {

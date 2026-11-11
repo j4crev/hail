@@ -1,8 +1,8 @@
 import {signHashEnvelope,verifyHashEnvelope,inspectHashEnvelope,createWebCryptoSigner,createWebCryptoVerifier} from '@racrproto/codec';
 import {ed25519PublicKeyFromDidKey} from '../identity/did-key.js';
 const contentType=(version:number)=>{
- if(version!==7&&version!==8)throw new Error('Superseded snapshot version');
- return `application/hail-${version===7?'portable':'managed'}-snapshot+json;version=${version}`;
+ if(version!==9&&version!==10)throw new Error('Superseded snapshot version');
+ return `application/hail-${version===9?'portable':'managed'}-snapshot+json;version=${version}`;
 };
 export async function signSnapshot(bytes:Uint8Array,version:number,did:string,key:CryptoKey){
  // The JSON artifact carries the exact preimage separately; signature holds one

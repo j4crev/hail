@@ -1,3 +1,4 @@
+import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 const sharedMode=process.argv.includes('--shared');
@@ -95,7 +96,7 @@ assert.equal((await sentItems(true)).length,0);
 // Seed received Trash to exercise the whole-folder permanent action.
 await fetch(origin+'/api/v1/account/message-preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashEnabled:true})});
 const incoming=(await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json()).messages;
-for(const m of incoming)await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(m.sender)+'/'+m.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+for(const m of incoming)await fixtureMessageMutation(origin,m,{isInTrash:true});
 await navigate('/trash','Trash');await wait(async()=>evaluate(`!document.querySelector('.mobile-cleanup').disabled`));
 await click('Empty Trash');await click('Cancel');
 assert((await(await fetch(origin+'/api/v1/account/trash')).json()).messages.length>0);

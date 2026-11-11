@@ -5,7 +5,8 @@ import type {RequestHandler} from './$types';
 // Uploaded bytes, protocol bodies and media capabilities are never proxied here.
 const proxy:RequestHandler=async({request,url,params,cookies})=>{
   const path=params.path;
-  if(!/^v1\//.test(path)||/(?:^|\/)(?:media|media-ticket)(?:\/|$)/.test(path)||
+  const jmapPath=path==='jmap/session'?'/.well-known/jmap':path==='jmap'?'/jmap':null;
+  if(!jmapPath&&!/^v1\//.test(path)||/(?:^|\/)(?:media|media-ticket)(?:\/|$)/.test(path)||
     /^v1\/account\/attachments\//.test(path)||/\/avatar\/image$/.test(path))
     return new Response(null,{status:404});
   const headers=new Headers();
@@ -14,7 +15,7 @@ const proxy:RequestHandler=async({request,url,params,cookies})=>{
   const clientAddress=request.headers.get('X-Hail-Trusted-Client-IP');
   if(clientAddress)headers.set('X-Hail-Trusted-Client-IP',clientAddress);
   const session=cookies.get('hail_session');if(session)headers.set('Cookie',`hail_session=${session}`);
-  const upstream=await fetch(`${API_ORIGIN}/api/${path}${url.search}`,{method:request.method,headers,
+  const upstream=await fetch(`${API_ORIGIN}${jmapPath??`/api/${path}`}${url.search}`,{method:request.method,headers,
     ...(request.method==='GET'||request.method==='HEAD'?{}:{body:request.body,duplex:'half'}),redirect:'manual',signal:AbortSignal.timeout(60_000)});
   if(!/^application\/(?:json|problem\+json)(?:;|$)/i.test(upstream.headers.get('content-type')??'')){
     await upstream.body?.cancel();return new Response(null,{status:502});

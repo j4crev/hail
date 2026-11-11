@@ -1,3 +1,4 @@
+import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 const sharedMode=process.argv.includes('--shared');
@@ -45,7 +46,7 @@ await evaluate('window.fetch=window.realFetch');
 // An external mutation is detected without disturbing active selection.
 await evaluate(`document.querySelector('.selection-avatar').click()`);
 const first=(await(await fetch(origin+'/api/v1/account/inbox?kind=subscriptions')).json()).messages[0];
-await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(first.sender)+'/'+first.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+await fixtureMessageMutation(origin,first,{isInTrash:true});
 await evaluate(`window.dispatchEvent(new Event('hail:mailbox-changed'))`);
 await wait(async()=>evaluate(`document.querySelector('main').textContent.includes('Updates available')`));
 assert.equal(await rows(),2);
@@ -56,7 +57,7 @@ assert(!(await evaluate(`Array.from(document.querySelectorAll('.message-row a'))
 // A same-tab mutation invalidates a warmed folder before navigation returns to it.
 await evaluate(`document.querySelector('nav[aria-label="Main navigation"] a[href="/sent"]').click()`);
 await wait(async()=>evaluate(`document.querySelector('main h1')?.textContent==='Sent'`));
-await evaluate(`fetch('/api/v1/account/trash/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[${JSON.stringify({sender:first.sender,messageId:first.messageId})}]})})`);
+await evaluate(`(${fixtureMessageMutation.toString()})(location.origin,${JSON.stringify(first)},{isInTrash:false})`);
 await evaluate(`document.querySelector('nav[aria-label="Main navigation"] a[href="/?view=subscriptions"]').click()`);
 await wait(async()=>evaluate(`document.querySelector('main h1')?.textContent==='Feed'`));
 assert((await evaluate(`Array.from(document.querySelectorAll('.message-row a')).map(a=>a.href).join(' ')`)).includes(first.messageId));

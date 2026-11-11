@@ -1,3 +1,4 @@
+import {jmapReadFixture} from './jmap-read-fixture.js';
 // Built GUI + Chromium + virtual WebAuthn; local API fixtures, no public writes or mail.
 import {strict as assert} from "node:assert";
 import {mkdir,mkdtemp,readFile,readdir,writeFile,rm} from "node:fs/promises";
@@ -80,6 +81,7 @@ const standaloneSetup=()=>({address:"publisher@publisher.example.com",token:stan
   delegationName:"_hail-provider.publisher.example.com",delegationValue:"v=hail1; provider=provider.example.com",
   expiresAt:new Date(Date.now()+86400000).toISOString(),verified:standaloneVerified});
 let signupMode:"invite"|"public"="invite";
+const jmapFixture=jmapReadFixture(()=>[...(incoming?[incomingMessage()]:[]),...(connectionIncoming?[connectionReply()]:[])].filter(m=>!deleted.has(m.messageId)).map(m=>({...m,trashedAt:trashed.get(m.messageId)??null})),(id,isRead)=>{if(isRead)readMessages.add(id);else readMessages.delete(id);},()=>trashEnabled,(id,value)=>{if(value===null){deleted.add(id);trashed.delete(id);}else if(value)trashed.set(id,new Date().toISOString());else trashed.delete(id);});
 const server=Bun.serve({hostname:"::",port:0,async fetch(request){
   const path=new URL(request.url).pathname;
   assert(!request.url.includes(fixtureAdmissionToken),"Connection token leaked into an HTTP URL");
@@ -120,23 +122,12 @@ const server=Bun.serve({hostname:"::",port:0,async fetch(request){
     }
     return json({trashEnabled,...displayPreferences});
   }
-  const readAction=path.match(/^\/api\/v1\/account\/inbox\/([^/]+)\/([^/]+)\/mark-(read|unread)$/);
-  if(readAction){
-    assert.equal(request.method,'POST');
+  if(['/.well-known/jmap','/jmap','/api/jmap/session','/api/jmap'].includes(path)){
     assert(request.headers.get('Cookie')?.includes('hail_session='+sessionToken));
-    const [,sender,id,action]=readAction;
-    assert.equal(decodeURIComponent(sender),peerDid);
-    assert([incomingId,connectionIncomingId].includes(id));
-    if(action==='read')readMessages.add(id);else readMessages.delete(id);
-    return json({messageId:id,isRead:readMessages.has(id)});
+    const response=jmapFixture(path==='/.well-known/jmap'?'/api/jmap/session':path==='/jmap'?'/api/jmap':path,request.method,input);if(response)return response;
   }
-  if(path.endsWith('/delete')&&path.startsWith('/api/v1/account/inbox/')){
-    const id=path.split('/').at(-2)!;if(trashEnabled)trashed.set(id,new Date().toISOString());else deleted.add(id);
-    return json({state:trashEnabled?'trashed':'deleted'});
-  }
-  if(path==='/api/v1/account/drafts')return json({drafts:[],next:null});
+
   if(path==='/api/v1/account/trash')return json({messages:[incomingMessage(),connectionReply()].filter(m=>trashed.has(m.messageId)).map(m=>({...m,trashedAt:trashed.get(m.messageId)})),next:null});
-  if(path==='/api/v1/account/trash/restore'){let restored=0;for(const m of input.messages)if(trashed.delete(m.messageId))restored++;return json({restored});}
   if(connectionIncoming&&(path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${connectionIncomingId}`||path===`/api/v1/account/inbox/${peerDid}/${connectionIncomingId}`))return json(connectionReply());
   if(path.startsWith("/api/v1/account/connections")){
     assert(request.headers.get("Cookie")?.includes("hail_session="+sessionToken));
@@ -727,7 +718,7 @@ try{
   await wait(async()=>evaluate(`document.querySelector('button[aria-label="Reply"]')?.disabled===false`),"incoming reply action ready");
   assert.equal(requests.filter(r=>r.path==='/api/v1/account').length-accountReadsBefore,2,'Layout and reader share the initial account read; marking read refreshes the sidebar once');
   assert.equal(requests.filter(r=>r.path==='/api/v1/account/unread-counts').length-unreadReadsBefore,2,'Unread counts load on navigation and refresh after marking read');
-  assert.equal(requests.filter(r=>r.path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${incomingId}/mark-read`).length,1,'Message is marked read once');
+  assert.equal(requests.filter(r=>r.path==='/api/jmap'&&JSON.parse(r.body).methodCalls?.some((call:any)=>call[0]==='HailMessage/set'&&call[1].update?.['m_'+incomingId.replaceAll('-','')]?.isRead===true)).length,1,'Message is marked read once');
   assert(await evaluate(`!document.querySelector('nav[aria-label="Main navigation"] a[href="/?view=subscriptions"] [aria-label$="unread messages"]')`),'Feed count clears after reading the last unread message');
   assert.equal(requests.filter(r=>r.path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${incomingId}`).length,1,'Message body loads once');
   assert(await evaluate(`!!document.querySelector('article header img[src*="/media/avatars/"]')`),'Reader renders while photo request is pending');

@@ -17,7 +17,7 @@ integration('requires current snapshot signatures and refuses lossy rollback',as
   await expect(connection`INSERT INTO provider_migration_exports VALUES(${new Uint8Array(64)})`).rejects.toThrow();
   await expect(connection`INSERT INTO pending_migration_imports VALUES(${new Uint8Array(64)})`).rejects.toThrow();
   const keys=await crypto.subtle.generateKey('Ed25519',true,['sign','verify']);
-  const current=await signSnapshot(new TextEncoder().encode('{"version":7}'),7,'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa',keys.privateKey);
+  const current=await signSnapshot(new TextEncoder().encode('{"version":9}'),9,'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa',keys.privateKey);
   await connection`INSERT INTO provider_migration_exports VALUES(${current})`;
   await connection`INSERT INTO pending_migration_imports VALUES(${current})`;
   const rollback=await readFile(new URL('../migrations/rollback/0109_hash_snapshot_signatures.sql',import.meta.url),'utf8');

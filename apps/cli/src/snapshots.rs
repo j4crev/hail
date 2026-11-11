@@ -23,7 +23,7 @@ pub fn verify(snapshot: &Value, managed: bool) -> Result<Value, Error> {
             "version",
         ],
     )?;
-    let versions = if managed { vec![8] } else { vec![7] };
+    let versions = if managed { vec![10] } else { vec![9] };
     if snapshot["type"]
         != if managed {
             "hail.managed-migration-transfer"
@@ -136,7 +136,7 @@ pub fn matches(s: &Value, m: &Value, o: &Value, managed: bool) -> Result<(), Err
                 || m["destinationIdentityPublicKey"] != o["destination_identity_key"]
         } else {
             m["custodyProfile"] != "portable"
-                || !matches!(m["version"].as_i64(), Some(2 | 3 | 5 | 7))
+                || !matches!(m["version"].as_i64(), Some(9))
         }
     {
         return Err(t::invalid());

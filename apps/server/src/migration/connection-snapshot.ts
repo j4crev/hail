@@ -10,7 +10,7 @@ export interface ConnectionSnapshot {
   tables:{sent_envelopes:Row[];received_envelopes:Row[]};
 }
 export function validateSnapshotConnections(manifest:ConnectionSnapshot):void {
-  const extended=[5,6,7,8].includes(manifest.version);
+  const extended=[5,6,9,10].includes(manifest.version);
   if(!extended){
     if(Object.hasOwn(manifest,"connections")||Object.hasOwn(manifest,"connectionCheckpointDigest"))throw new Error("Legacy snapshot cannot carry connection history");
   }else{
@@ -21,7 +21,7 @@ export function validateSnapshotConnections(manifest:ConnectionSnapshot):void {
     if(history.capturedAt!==manifest.capturedAt||encodeBase64Url(connectionHistoryDigest(history))!==manifest.connectionCheckpointDigest)
       throw new Error("Snapshot connection checkpoint differs from retained history");
   }
-  const shared=manifest.version===7||manifest.version===8;
+  const shared=manifest.version===9||manifest.version===10;
   if(shared){
     if(!manifest.conversations)throw Error('Conversation checkpoint is missing');
     validateConversationHistory(manifest.conversations,{accountId:manifest.accountId,did:manifest.did,sourceGeneration:manifest.sourceGeneration!,sourceServiceBase:manifest.sourceServiceBase},manifest.capturedAt);

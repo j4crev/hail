@@ -148,3 +148,13 @@ bytes without requiring an image encoder or pixel decoder.
 is public test material only. `retrieval-signature.test.ts` verifies its exact
 bytes independently with Node crypto and WebCrypto; database/HTTP tests cover
 replay, concealed failure, rotation and endpoint changes.
+
+`jmap.json` defines executable Hail JMAP HTTP request/response vectors
+for result references, capability opt-in, foreign account isolation, read-only mutation rejection and errors.
+`apps/server/test/jmap-routes.test.ts` consumes these; database synchronization
+and exact signed-byte carriage are exercised by `jmap.integration.test.ts`.
+
+`jmap-drafts.json` defines executable draft capability routing and metadata-result
+reference vectors, consumed by `jmap-draft-routes.test.ts`. Draft content schema,
+transactional synchronization and cleanup are exercised by
+`jmap-drafts.integration.test.ts`.

@@ -304,6 +304,7 @@ export class PortableMigrationActivation {
           await insertRow(tx, table, resumed);
         }
       }
+      for(const table of ["account_message_preferences","account_message_drafts"] as const)for(const row of manifest.tables[table])await insertRow(tx,table,row);
       const activated = await tx`UPDATE pending_migration_imports SET state = 'active', activated_at = ${this.now()}
         WHERE transfer_id = ${transferId} AND state = 'staged' RETURNING transfer_id`;
       const owned = await tx`UPDATE prepared_migration_target_keys SET state = 'active'

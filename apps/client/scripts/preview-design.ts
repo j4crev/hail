@@ -1,4 +1,5 @@
-import {parseDraftContent,type Draft} from "@racrproto/client-support/drafts";
+import {jmapReadFixture} from './jmap-read-fixture.js';
+import {type Draft} from "@racrproto/client-support/drafts";
 import {groupConnectionMessages,connectionKey} from '../../server/src/accounts/connection-threads.js';
 import {threadBodyPreview} from '../../server/src/accounts/message-threads.js';
 // Local-only visual fixture provider. Never imports production configuration or credentials.
@@ -86,6 +87,7 @@ const deleted = new Set<string>();
 let allowIntroductions=true,conversationsConfigured=false;
 const preferences = {theme:'system',showHeaderImages:true,trashEnabled:true,startScreen:'feed'};
 const json = (data: unknown, status = 200) => Response.json(data,{status,headers:{'Cache-Control':'no-store','Content-Type':'application/json'}});
+const jmapFixture=jmapReadFixture(()=>messages.filter(m=>!deleted.has(m.messageId)).map(m=>({...m,trashedAt:trash.get(m.messageId)??null})),(id,isRead)=>{messages.find(m=>m.messageId===id)!.isRead=isRead;},()=>preferences.trashEnabled,(id,value)=>{if(value===null){deleted.add(id);trash.delete(id);}else if(value)trash.set(id,new Date().toISOString());else trash.delete(id);},drafts);
 const reserve = Bun.serve({hostname:'127.0.0.1',port:0,fetch:()=>new Response()});
 const guiPort = reserve.port!;reserve.stop(true);
 let gui: ReturnType<typeof Bun.spawn> | undefined;
@@ -94,6 +96,8 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
   // Binding and Host checks keep this unauthenticated fixture off the network.
   if(![`localhost:${port}`,`127.0.0.1:${port}`].includes(url.host))return new Response('Local preview only',{status:403});
   if(request.headers.has('origin') && request.headers.get('origin')!==origin)return new Response('Local preview only',{status:403});
+  if(path==='/.well-known/jmap')return jmapFixture('/api/jmap/session',request.method,{})!;
+  if(path==='/jmap')return jmapFixture('/api/jmap',request.method,await request.json() as Record<string,any>)!;
   if(!path.startsWith('/api/')) {
     const headers = new Headers(request.headers);
     headers.set('cookie',`hail_session=${session}`);
@@ -103,18 +107,7 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
     catch {return new Response('Local preview is starting. Refresh in a moment.',{status:503});}
   }
   const input = request.method==='POST' ? await request.json().catch(()=>({})) as Record<string,any> : {};
-  if(path==='/api/v1/account/drafts')return json({drafts:[...drafts.values()].filter(d=>(d.trashedAt!==null)===(url.searchParams.get('trash')==='true')),next:null});
-  const draftPath=path.match(/^\/api\/v1\/account\/drafts\/([^/]+)(?:\/(save|delete|restore))?$/);
-  if(draftPath){
-    const [,id,operation]=draftPath,previous=drafts.get(id!);
-    if(request.method==='GET')return previous&&!previous.trashedAt?json(previous):json({},404);
-    if(operation==='save'){
-      if(previous?.trashedAt||(previous?.revision??0)!==input.revision)return json({},409);
-      try{const draft={id:id!,revision:(previous?.revision??0)+1,content:parseDraftContent(input.content),updatedAt:new Date().toISOString(),trashedAt:null};drafts.set(id!,draft);return json(draft);}catch{return json({},400);}
-    }
-    if(operation==='delete'){if(previous){if(preferences.trashEnabled)previous.trashedAt=new Date().toISOString();else drafts.delete(id!);previous.revision++;}return json({state:preferences.trashEnabled?'trashed':'deleted'});}
-    if(operation==='restore'){if(previous){previous.trashedAt=null;previous.revision++;}return json({restored:previous?1:0});}
-  }
+  const jmap=jmapFixture(path,request.method,input);if(jmap)return jmap;
   if(path==='/api/v1/account/message-preferences') {
     if(request.method==='POST') {
       if(['feed','inbox'].includes(input.startScreen)&&!input.initialize)preferences.startScreen=input.startScreen;
@@ -131,12 +124,6 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
   }
   if(sharedMode&&path==='/api/v1/account/fixture-active'){sharedConversation.state='active';sharedConversation.expiresAt=new Date(Date.now()+90*86400000).toISOString();return json({});}
   if(sharedMode&&path==='/api/v1/account/fixture-expire'){sharedConversation.state='expired';sharedConversation.expiresAt=new Date(0).toISOString();return json({});}
-  const action = path.match(/^\/api\/v1\/account\/inbox\/([^/]+)\/([^/]+)\/(mark-read|mark-unread|delete)$/);
-  if(action && request.method==='POST') {
-    const m = messages.find(m=>m.sender===action[1]&&m.messageId===action[2]);if(!m)return json({},404);
-    if(action[3]==='delete'){if(preferences.trashEnabled)trash.set(m.messageId,new Date().toISOString());else deleted.add(m.messageId);return json({state:preferences.trashEnabled?'trashed':'deleted'});}
-    m.isRead=action[3]==='mark-read';return json({messageId:m.messageId,isRead:m.isRead});
-  }
   if(path==='/api/v1/account/trash/empty'&&request.method==='POST'){
     const count=trash.size+[...drafts.values()].filter(d=>d.trashedAt).length;for(const [id,draft] of drafts)if(draft.trashedAt)drafts.delete(id);for(const id of trash.keys())deleted.add(id);trash.clear();return json({deleted:count});
   }
@@ -147,7 +134,6 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
     return json({affected,state:preferences.trashEnabled?'trashed':'deleted'});
   }
   if(path==='/api/v1/account/sent/restore'&&request.method==='POST')return json({restored:sent.some(m=>m.kind===input.kind&&m.messageId===input.messageId)&&trash.delete(input.messageId)?1:0});
-  if(path==='/api/v1/account/trash/restore'&&request.method==='POST')return json({restored:(input.messages??[]).filter((m:{messageId:string})=>trash.delete(m.messageId)).length});
   // Sending, passkey ceremonies, profile edits and destructive account actions are not simulated.
   if(path==='/api/v1/account/connections/seen'&&request.method==='POST'){
     for(const item of input.connections??[])if(item.epoch===1)seenConnections.add(item.id);

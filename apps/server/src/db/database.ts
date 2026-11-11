@@ -253,6 +253,8 @@ const migrations: readonly Migration[] = [
   {version:109,name:"hash-snapshot-signatures",url:new URL("../../migrations/0109_hash_snapshot_signatures.sql",import.meta.url)},
   {version:110,name:"provider-authentication",url:new URL("../../migrations/0110_provider_authentication.sql",import.meta.url)},
   {version:111,name:"body-request-nonces",url:new URL("../../migrations/0111_body_request_nonces.sql",import.meta.url)},
+  {version:112,name:"jmap-messages",url:new URL("../../migrations/0112_jmap_messages.sql",import.meta.url)},
+  {version:113,name:"jmap-drafts",url:new URL("../../migrations/0113_jmap_drafts.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

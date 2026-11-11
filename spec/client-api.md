@@ -6,6 +6,10 @@ federate without implementing this API. `racr.*` names designate shared client
 formats here, not a particular provider implementation or database schema.
 The CLI's terminal output contract v2 is separately versioned.
 
+The [Hail JMAP profile](jmap.md) now provides a separate received-message
+API and state-conditional read/unread, Trash/restore and deletion. The web client uses JMAP for
+received-message mutations; other web/CLI workflows still use this account API.
+
 ## Authentication boundary
 
 Providers choose their own user authentication: passkeys, passwords, enterprise

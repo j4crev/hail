@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {setMessageRead} from "$lib/jmap.js";
   import {mailboxView} from "$lib/mailbox-view.svelte.js";
   import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
@@ -67,7 +68,7 @@
   async function markRead(row:{sender:string;messageId:string;sent:boolean},value:MessageView|SentMessageView){
     if(row.sent||value.isRead)return;
     readPending=true;
-    try{await mailboxRequest(`inbox/${encodeURIComponent(row.sender)}/${row.messageId}/mark-read`,{});
+    try{await setMessageRead(row.sender,row.messageId,true);
       rows=rows.map(m=>conversationKey(m)===conversationKey(row)?{...m,isRead:true}:m);
       await invalidate('hail:mailbox');
     }catch{error='Unable to mark this message read. Reopen it to try again.';}
