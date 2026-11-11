@@ -1,6 +1,6 @@
 import {createECDH,createDecipheriv,hkdfSync,randomBytes,randomUUID} from 'node:crypto';
 import {SQL} from 'bun';
-import {afterAll,beforeAll,describe,expect,it} from 'vitest';
+import {afterAll,beforeAll,describe,expect,it,vi} from 'vitest';
 import {ProviderDatabase} from '../src/db/database.js';
 import {AccountApiRepository,type AccountApiSession} from '../src/accounts/repository.js';
 import {JmapPush} from '../src/jmap/push.js';
@@ -50,6 +50,26 @@ integration('credential-bound encrypted JMAP push',()=>{
   const verify=async(id:string)=>{const code=deliveries[0]!.payload.verificationCode;expect((await service.set(session,{update:{[id]:{verificationCode:code}}})).notUpdated).toEqual({});};
   return {accounts,session,service,state,deliveries,hooks,create,start,due,row,verify};
  }
+ it('reports rejected verification without sending again or exposing secrets',async()=>{
+  const log=vi.spyOn(console,'info').mockImplementation(()=>{});
+  try{
+    const f=await fixture();f.state.status=403;const id=await f.start();
+    expect((await f.service.get(f.session,{})).list[0]).toMatchObject({verificationCode:null,verificationError:'pushServiceRejected'});
+    expect(log).toHaveBeenCalledWith(JSON.stringify({event:'push.verification.delivery',subscriptionId:id,httpStatus:403,accepted:false}));
+    const output=JSON.stringify(log.mock.calls);expect(output).not.toContain('push.example.com');expect(output).not.toContain(f.deliveries[0]!.payload.verificationCode);
+    await f.due(id);await f.service.workOne(id);expect(f.deliveries).toHaveLength(1);
+  }finally{log.mockRestore();}
+ });
+ it('reports a failed verification transport and clears error when a delayed acknowledgment arrives',async()=>{
+  const log=vi.spyOn(console,'warn').mockImplementation(()=>{});
+  try{
+    const f=await fixture();f.state.fail=true;const id=await f.start();
+    expect((await f.service.get(f.session,{})).list[0]!.verificationError).toBe('deliveryFailed');
+    expect(log).toHaveBeenCalledWith(JSON.stringify({event:'push.delivery.failure',subscriptionId:id,verification:true,networkCode:'unknown'}));
+    await f.due(id);await f.service.workOne(id);expect(f.deliveries).toHaveLength(1);
+    await f.verify(id);expect((await f.service.get(f.session,{})).list[0]!.verificationError).toBeNull();
+  }finally{log.mockRestore();}
+ });
  it('encrypts one verification, hides its code until verified, then coalesces state changes',async()=>{
   const f=await fixture(),id=await f.start(),delivery=f.deliveries[0]!;
   expect(delivery.payload).toMatchObject({'@type':'PushVerification',pushSubscriptionId:id});

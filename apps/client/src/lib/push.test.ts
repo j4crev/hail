@@ -23,7 +23,7 @@ function fixture(){
     if(args.destroy)list=[];
     return Response.json({methodResponses:[[method,{created:{browser:{id:'registered'}},updated:{},destroyed:args.destroy??[]},tag]]});
   });vi.stubGlobal('fetch',request);
-  return {notification,registration,serviceWorker,subscription,calls,request,verify(){list[0].verificationCode='verified';}};
+  return {notification,registration,serviceWorker,subscription,calls,request,verify(){list[0].verificationCode='verified';},reject(){list[0].verificationError='pushServiceRejected';}};
 }
 it('does not prompt on discovery; explicitly registers once and reflects verification',async()=>{
   const f=fixture();expect(await pushStatus()).toMatchObject({available:true,enabled:false,pending:false});
@@ -52,4 +52,11 @@ it('replaces a refreshed browser endpoint instead of renewing stale server desti
   expect(f.calls.filter(c=>c.args.destroy)).toHaveLength(1);
   expect(f.calls.filter(c=>c.args.create)).toHaveLength(2);
   expect(f.calls.at(-1).args.create.browser.url).toBe('https://push.example/new-device');
+});
+
+it('exposes rejected delivery separately from an unconfirmed subscription',async()=>{
+  const f=fixture();await enablePush(capability);f.reject();
+  expect(await pushStatus()).toMatchObject({enabled:false,pending:true,verificationError:'pushServiceRejected'});
+  f.verify();expect(await pushStatus()).toMatchObject({enabled:true,pending:false});
+  expect((await pushStatus()).verificationError).toBeUndefined();
 });

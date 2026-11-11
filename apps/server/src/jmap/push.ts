@@ -13,10 +13,10 @@ export type PushStates=(s:AccountApiSession,types:string[])=>Promise<Record<stri
 interface Row {
  id:string;account_id:string;credential_id:string;credential_kind:Kind;generation:number;scopes:string[];
  device_client_id:string;endpoint:string;keys:PushKeys;types:string[];verification_code:string;verified_at:Date|null;
- verification_sent_at:Date|null;created_at:Date;expires_at:Date;attempts:number;last_states:Record<string,string>;lease_token:string;
+ verification_error:'pushServiceRejected'|'deliveryFailed'|null;verification_sent_at:Date|null;created_at:Date;expires_at:Date;attempts:number;last_states:Record<string,string>;lease_token:string;
 }
 const id=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(v);
-const properties=['id','deviceClientId','verificationCode','expires','types'];
+const properties=['id','deviceClientId','verificationCode','expires','types','verificationError'];
 const equal=(a:string,b:string)=>a.length===b.length&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 const scopes=(s:AccountApiSession)=>[...s.scopes].sort();
 export class JmapPush {
@@ -45,7 +45,7 @@ export class JmapPush {
     AND credential_kind=${credentialKind(s)} AND generation=${s.serving_generation??1} AND expires_at>clock_timestamp() ORDER BY id`;
   const selected=rows.filter(r=>ids===null||(ids as string[]).includes(r.id));
   return {list:selected.map(r=>Object.fromEntries(Object.entries({id:r.id,deviceClientId:r.device_client_id,verificationCode:r.verified_at?r.verification_code:null,
-    expires:r.expires_at.toISOString().replace('.000Z','Z'),types:r.types}).filter(([k])=>k==='id'||fields.includes(k)))),notFound:ids===null?[]:[...new Set(ids as string[])].filter(i=>!selected.some(r=>r.id===i))};
+    verificationError:r.verified_at?null:r.verification_error,expires:r.expires_at.toISOString().replace('.000Z','Z'),types:r.types}).filter(([k])=>k==='id'||fields.includes(k)))),notFound:ids===null?[]:[...new Set(ids as string[])].filter(i=>!selected.some(r=>r.id===i))};
  }
  async set(s:AccountApiSession,args:Record<string,unknown>){
   this.authorize(s);argumentsOnly(args,['create','update','destroy']);const create=args.create??{},update=args.update??{},destroy=args.destroy??[];
@@ -88,11 +88,15 @@ export class JmapPush {
       const verifying=!row.verified_at&&value.verificationCode!==undefined;
       const baseline=verifying?await this.states(s,types):row.last_states;
       await tx`UPDATE jmap_push_subscriptions SET types=${JSON.stringify(types)}::text::jsonb,expires_at=${expires},
-        verified_at=CASE WHEN ${verifying} THEN clock_timestamp() ELSE verified_at END,last_states=${JSON.stringify(baseline)}::text::jsonb,
+        verification_error=CASE WHEN ${verifying} THEN NULL ELSE verification_error END,verified_at=CASE WHEN ${verifying} THEN clock_timestamp() ELSE verified_at END,last_states=${JSON.stringify(baseline)}::text::jsonb,
         next_attempt_at=clock_timestamp(),attempts=0,lease_token=NULL,lease_until=NULL WHERE id=${key}`;
       updated[key]={expires:expires.toISOString().replace('.000Z','Z')};
     });
-  }catch(e){notUpdated[key]=error(e);}
+    if(value.verificationCode!==undefined)console.info(JSON.stringify({event:'push.verification.acknowledged',subscriptionId:key}));
+  }catch(e){
+    notUpdated[key]=error(e);
+    if(id(key)&&object(value)&&value.verificationCode!==undefined)console.warn(JSON.stringify({event:'push.verification.refused',subscriptionId:key,errorType:e instanceof JmapError?e.type:'serverFail'}));
+  }
   for(const key of new Set(destroy))try{
     if(!id(key))throw new JmapError('notFound');
     const removed=await this.sql`DELETE FROM jmap_push_subscriptions WHERE id=${key} AND account_id=${s.account_id} AND credential_id=${s.credential_id} AND credential_kind=${credentialKind(s)} RETURNING id`;
@@ -123,17 +127,29 @@ export class JmapPush {
     const request=encryptedPush(row.endpoint,row.keys,payload,this.config,Math.max(0,Math.min(300,Math.floor((row.expires_at.getTime()-Date.now())/1000))));
     // Check the lease still exists after state reads; cancellation wins before dispatch.
     if(!(await this.sql`SELECT id FROM jmap_push_subscriptions WHERE id=${row.id} AND lease_token=${lease} AND expires_at>clock_timestamp()`).length)return true;
-    const response=await this.send(request);await response.body?.cancel();
+    const response=await this.send(request);
+    if(!row.verified_at)console.info(JSON.stringify({event:'push.verification.delivery',subscriptionId:row.id,httpStatus:response.status,accepted:response.ok}));
+    await response.body?.cancel();
     if(response.status===404||response.status===410){await remove();return true;}
     if(response.ok){
-      await this.sql`UPDATE jmap_push_subscriptions SET last_states=${JSON.stringify(states??{})}::text::jsonb,attempts=0,lease_until=NULL,lease_token=NULL,
+      await this.sql`UPDATE jmap_push_subscriptions SET last_states=${JSON.stringify(states??{})}::text::jsonb,verification_error=NULL,attempts=0,lease_until=NULL,lease_token=NULL,
         next_attempt_at=clock_timestamp()+interval '30 seconds' WHERE id=${row.id} AND lease_token=${lease}`;
-    }else if(!row.verified_at){await this.defer(row.id,lease,30);}
+    }else if(!row.verified_at){
+      await this.sql`UPDATE jmap_push_subscriptions SET verification_error='pushServiceRejected' WHERE id=${row.id} AND lease_token=${lease} AND verified_at IS NULL`;
+      await this.defer(row.id,lease,30);
+    }
     else if(response.status===429||response.status>=500){
       const retry=response.headers.get('Retry-After');const seconds=retry?(/^\d+$/.test(retry)?Number(retry):Math.ceil((Date.parse(retry)-Date.now())/1000)):0;
       await this.retry(row,lease,Number.isFinite(seconds)?seconds:0);
     }else await remove();
-  }catch{await this.retry(row,lease);}
+  }catch(error){
+    // Do not log exception messages, response bodies, URLs, keys or codes.
+    const code=error&&typeof error==='object'&&'code' in error?error.code:null;
+    const networkCode=typeof code==='string'&&['ECONNREFUSED','ECONNRESET','ENETUNREACH','EHOSTUNREACH','ETIMEDOUT','ENOTFOUND','EAI_AGAIN'].includes(code)?code:'unknown';
+    console.warn(JSON.stringify({event:'push.delivery.failure',subscriptionId:row.id,verification:!row.verified_at,networkCode}));
+    if(!row.verified_at)await this.sql`UPDATE jmap_push_subscriptions SET verification_error='deliveryFailed' WHERE id=${row.id} AND lease_token=${lease} AND verified_at IS NULL`;
+    await this.retry(row,lease);
+  }
   return true;
  }
  private defer(id:string,lease:string,seconds:number){return this.sql`UPDATE jmap_push_subscriptions SET lease_until=NULL,lease_token=NULL,
