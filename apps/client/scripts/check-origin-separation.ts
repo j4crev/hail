@@ -11,7 +11,7 @@ const work=await mkdtemp(join(tmpdir(),'hail-origin-proof-'));
 const session='hails_'+'A'.repeat(43),signup='racr_'+'B'.repeat(43);
 const did='did:plc:'+'a'.repeat(24),id='01900000-0000-7000-8000-000000000001',digest='C'.repeat(43);
 const reserve=Bun.serve({hostname:'127.0.0.1',port:0,fetch:()=>new Response()});
-const guiPort=reserve.port;reserve.stop(true);
+const guiPort=reserve.port;
 const guiOrigin=`http://localhost:${guiPort}`;
 let app:ReturnType<typeof createApp>;
 const provider=Bun.serve({hostname:'127.0.0.1',port:0,fetch:request=>{
@@ -25,6 +25,7 @@ const provider=Bun.serve({hostname:'127.0.0.1',port:0,fetch:request=>{
   return app.fetch(request);
 }});
 const providerOrigin=`http://localhost:${provider.port}`;
+assert.notEqual(provider.port,guiPort,'Provider and GUI must have separate listening ports');
 let active=true;
 app=createApp({publicOrigin:providerOrigin,providerId:'fixture',passkeys:{origin:guiOrigin,rpId:'localhost'}} as AppConfig,{
   accountApi:{accounts:{authenticate:async(_authorization:string,cookie:string)=>active&&cookie===session?{
@@ -35,6 +36,9 @@ app=createApp({publicOrigin:providerOrigin,providerId:'fixture',passkeys:{origin
     })}
   }
 } as unknown as AppDependencies);
+// Keep the GUI port reserved until the provider is listening, so its ephemeral
+// allocation cannot reuse the GUI port. Finish closing before the child binds.
+await reserve.stop(true);
 const child=Bun.spawn(['bun','build/index.js'],{cwd:new URL('..',import.meta.url).pathname,
   env:{...process.env,PUBLIC_SENTRY_DSN:'',HOST:'127.0.0.1',PORT:String(guiPort),ORIGIN:guiOrigin,HAIL_WEB_CLIENT_PROVIDER:providerOrigin,
     HAIL_WEB_CLIENT_ORIGIN:guiOrigin,HAIL_WEB_CLIENT_API_ORIGIN:providerOrigin,HAIL_WEB_CLIENT_SIGNUP:'false'},
