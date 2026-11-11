@@ -260,6 +260,7 @@ const migrations: readonly Migration[] = [
   {version:116,name:"jmap-collections",url:new URL("../../migrations/0116_jmap_collections.sql",import.meta.url)},
   {version:117,name:"remove-inbox-cursor",url:new URL("../../migrations/0117_remove_inbox_cursor.sql",import.meta.url)},
   {version:118,name:"jmap-push",url:new URL("../../migrations/0118_jmap_push.sql",import.meta.url)},
+  {version:119,name:"push-verification-feedback",url:new URL("../../migrations/0119_push_verification_feedback.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

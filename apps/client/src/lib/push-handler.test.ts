@@ -56,3 +56,15 @@ it('suppresses expired sessions, oversized responses and transport/notification 
   const offline=setup();offline.request.mockRejectedValue(new Error('offline'));await handlePush(state,offline);expect(offline.notify).not.toHaveBeenCalled();
   const denied=setup();denied.notify.mockRejectedValue(new Error('denied'));await expect(handlePush(state,denied)).resolves.toBeUndefined();
 });
+
+it('reports sanitized acknowledgment failures to open clients and success before displaying a notification',async()=>{
+  for(const [status,reason] of [[403,'http'],[200,'response']] as const){
+    const deps={...setup({},status),report:vi.fn(async()=>{})};await handlePush(verification,deps);
+    expect(deps.report).toHaveBeenCalledWith({type:'hail-push-verification',ok:false,reason,...(status===403?{httpStatus:403}:{})});
+    expect(JSON.stringify(deps.report.mock.calls)).not.toContain(verification.verificationCode);
+  }
+  const offline={...setup(),report:vi.fn(async()=>{})};offline.request.mockRejectedValue(Error('secret endpoint URL'));
+  await handlePush(verification,offline);expect(offline.report).toHaveBeenCalledWith({type:'hail-push-verification',ok:false,reason:'network'});
+  const success={...setup(accepted),report:vi.fn(async()=>{})};success.notify.mockRejectedValue(Error('denied'));
+  await handlePush(verification,success);expect(success.report).toHaveBeenCalledExactlyOnceWith({type:'hail-push-verification',ok:true});
+});

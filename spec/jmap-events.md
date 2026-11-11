@@ -102,7 +102,12 @@ identifier, unique per credential. `p256dh` is a canonical base64url uncompresse
 65-byte P-256 public point and `auth` a canonical 16-byte base64url secret. The
 endpoint and keys are immutable and MUST NOT be returned by get (explicitly
 requesting them returns `forbidden`). Get returns `id`, `deviceClientId`,
-`verificationCode`, `expires`, `types`; the code remains null until verification.
+`verificationCode`, `expires`, `types`, and the read-only Hail extension
+`verificationError`; the code remains null until verification. The error is null,
+`pushServiceRejected` for a non-success push-service response, or `deliveryFailed`
+for a failed delivery operation. An error does not establish whether an uncertain
+network request reached the browser; a valid delayed acknowledgment still clears it.
+Clients without this extension may omit it through `properties`.
 Create returns the assigned id and actual expiry. Types are unique authorized
 collection names; null/omitted means all currently authorized implemented types,
 and an empty array means no state hints. Expiry is a future RFC 8620 UTCDate or
@@ -172,7 +177,12 @@ A local hash binds the server subscription id to the current browser endpoint an
 keys; replacements and VAPID-key changes require explicit resubscription.
 Permission revocation and expired authentication suppress notifications. Provider
 expiry may require enabling again; key rotation requires resubscription. The UI
-shows pending verification with explicit check/cancel controls. A lost verification
+checks pending verification automatically for up to one minute while visible and
+shows distinct delivery errors or an unconfirmed timeout. Worker acknowledgments
+notify open windows of success or sanitized HTTP/network/response failures, never
+including codes, endpoint URLs or response bodies. Explicit retry cancels the old
+subscription and creates a new verified-destination challenge; it does not resend
+the old challenge. A lost verification
 is recovered by cancelling and enabling again, subject to registration limits.
 
 The CLI continues to use JMAP change-state polling for wait workflows; browser
@@ -182,3 +192,7 @@ authorization, bounded delivery failures and generic browser handling. Actual br
 push-service delivery (including platform `userVisibleOnly` enforcement when stale
 sessions suppress a push) still requires an operator-configured real-device smoke
 test; local fixtures do not establish independent push-service interoperability.
+
+Provider verification diagnostics record only subscription id, HTTP status and
+acceptance, or a fixed failure category/network error code. These logs never
+contain endpoint URLs, response bodies, push keys or verification secrets.

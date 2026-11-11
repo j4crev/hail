@@ -1,7 +1,7 @@
 import {readJmapJson} from './jmap.js';
 const CORE='urn:ietf:params:jmap:core',PUSH='https://haili.app/ns/jmap/push';
 const DEVICE='hail.push.device.v1',BINDING='hail.push.binding.v1';
-interface Subscription {id:string;deviceClientId:string;verificationCode:string|null;expires:string}
+interface Subscription {id:string;deviceClientId:string;verificationCode:string|null;verificationError?:string|null;expires:string}
 interface Capability {applicationServerKey:string;contentEncoding:string}
 const object=(v:unknown):v is Record<string,any>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 async function request(path:string,body?:unknown){
@@ -37,14 +37,15 @@ async function bindingMatches(browser:PushSubscription,list:Subscription[]){
   let binding:unknown;try{binding=JSON.parse(localStorage.getItem(BINDING)??'null');}catch{return false;}
   return object(binding)&&list.some(s=>s.id===binding.id)&&binding.fingerprint===await fingerprint(browser);
 }
-export async function pushStatus():Promise<{available:boolean;enabled:boolean;pending:boolean;capability?:Capability}>{
+export async function pushStatus():Promise<{available:boolean;enabled:boolean;pending:boolean;verificationError?:string;capability?:Capability}>{
   if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))return {available:false,enabled:false,pending:false};
   const session=await request('/api/jmap/session'),capability=session.capabilities?.[PUSH];
   if(!object(capability)||capability.contentEncoding!=='aes128gcm'||typeof capability.applicationServerKey!=='string')return {available:false,enabled:false,pending:false};
   const registration=await navigator.serviceWorker.getRegistration('/');
   const browser=await registration?.pushManager.getSubscription(),list=await subscriptions();
   const cap=capability as unknown as Capability,matched=!!browser&&keyMatches(browser,cap)&&await bindingMatches(browser,list);
-  return {available:true,enabled:matched&&Notification.permission==='granted'&&list.some(s=>!!s.verificationCode),pending:matched&&list.some(s=>!s.verificationCode),capability:cap};
+  const failure=list.find(s=>!s.verificationCode&&s.verificationError)?.verificationError;
+  return {available:true,...(matched&&failure?{verificationError:failure}:{}),enabled:matched&&Notification.permission==='granted'&&list.some(s=>!!s.verificationCode),pending:matched&&list.some(s=>!s.verificationCode),capability:cap};
 }
 export async function enablePush(capability:Capability){
   // Called directly from a button click: never prompt during page load.

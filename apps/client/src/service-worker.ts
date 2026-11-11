@@ -6,7 +6,8 @@ worker.addEventListener('activate',event=>event.waitUntil(worker.clients.claim()
 worker.addEventListener('push',event=>{
   let value:unknown;
   try{const text=event.data?.text();if(!text||text.length>8192)return;value=JSON.parse(text);}catch{return;}
-  event.waitUntil(handlePush(value,{request:fetch,notify:(title,options)=>worker.registration.showNotification(title,options)}));
+  event.waitUntil(handlePush(value,{request:fetch,notify:(title,options)=>worker.registration.showNotification(title,options),
+    report:async result=>{for(const client of await worker.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage(result);}}));
 });
 worker.addEventListener('notificationclick',event=>{
   event.notification.close();
