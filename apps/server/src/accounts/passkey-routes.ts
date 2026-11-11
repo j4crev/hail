@@ -122,12 +122,16 @@ export function registerPasskeyRoutes(app:Hono,passkeys:PasskeyAuth,accounts:Acc
     if(Object.keys(value).length!==2||typeof value.challengeId!=="string"||!UUID.test(value.challengeId)||
       !value.response||typeof value.response!=="object"||Array.isArray(value.response))throw new PasskeyError(400);
     const session=await passkeys.authenticate(value.challengeId,value.response as AuthenticationResponseJSON);
-    await passkeys.logout(getCookie(context,COOKIE));
+    const previousToken=getCookie(context,COOKIE);
+    if(previousToken?.startsWith("hailps_"))await accounts.revokeProviderSession(previousToken);
+    else await passkeys.logout(previousToken);
     setCookie(context,COOKIE,session.token,{httpOnly:true,secure:passkeys.origin.startsWith("https://"),sameSite:"Lax",path:"/",maxAge:passkeys.sessionPolicy.absoluteSeconds});
     return {authenticated:true,expiresAt:session.expiresAt.toISOString()};
   }));
   app.post("/api/v1/auth/logout",context=>run(context,async()=>{
-    await passkeys.logout(getCookie(context,COOKIE));
+    const previousToken=getCookie(context,COOKIE);
+    if(previousToken?.startsWith("hailps_"))await accounts.revokeProviderSession(previousToken);
+    else await passkeys.logout(previousToken);
     deleteCookie(context,COOKIE,{secure:passkeys.origin.startsWith("https://"),path:"/"});
     return {loggedOut:true};
   }));

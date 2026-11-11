@@ -66,6 +66,10 @@ from subscription Grants. Their messages MUST NOT contain a category.
 
 ## Client interoperability
 
+[Provider authentication](provider-authentication.md) defines the reference server's
+optional trusted-backend integration, enterprise account bindings, session
+revocation and separation from independent owner authority.
+
 The optional [RACR client profile](client-api.md) defines CLI provider
 interoperability, authentication-method-neutral browser authorization and the
 account API boundary. It is not required for federation. The reference web

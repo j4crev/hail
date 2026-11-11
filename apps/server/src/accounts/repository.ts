@@ -1,3 +1,4 @@
+import type {ProviderAuthentication} from "./provider-authentication.js";
 import {DEFAULT_SESSION_POLICY, type SessionPolicy} from "./session-policy.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { encodeBase64Url } from "@racrproto/codec";
@@ -16,6 +17,7 @@ export interface AccountApiSession {
   address_released_at?:Date|null;
   migration_state: "fenced" | "exported" | "retired" | null;
   serving_generation?:number;
+  authentication?: {method: "passkey" | "provider"; authenticatedAt: Date};
   passkey_credential_id?:string|null;
   passkey_verified_at?:Date|null;
 }
@@ -23,7 +25,8 @@ export const tokenHash = (token: string) => new Uint8Array(createHash("sha256").
 export class CredentialConflictError extends Error {}
 
 export class AccountApiRepository {
-  constructor(private readonly sql: SQL, readonly sessionPolicy: Readonly<SessionPolicy> = DEFAULT_SESSION_POLICY) {}
+  constructor(private readonly sql: SQL, readonly sessionPolicy: Readonly<SessionPolicy> = DEFAULT_SESSION_POLICY,
+    private readonly providerAuthentication?: ProviderAuthentication) {}
 
   async connectionAddress(session:AccountApiSession,did:string) {
     const row=(await this.sql<{address:string;previous_address:string|null;completed_at:Date|null}[]>`
@@ -103,9 +106,17 @@ export class AccountApiRepository {
     return rows[0]?.revoked?"CREDENTIAL_REVOKED":rows[0]?.expired?"CREDENTIAL_EXPIRED":undefined;
   }
 
+  async revokeProviderSession(token: string) {
+    if (/^hailps_[A-Za-z0-9_-]{43}$/.test(token))
+      await this.sql`UPDATE account_provider_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp())
+        WHERE token_hash=${tokenHash(token)}`;
+  }
+
   async authenticate(header: string | undefined, sessionToken?:string): Promise<AccountApiSession | null> {
     const token = /^Bearer (racr_[A-Za-z0-9_-]{43})$/i.exec(header ?? "")?.[1];
     if (!token) {
+      if (header !== undefined) return null;
+      if (sessionToken?.startsWith("hailps_")) return this.providerAuthentication?.authenticate(sessionToken) ?? null;
       if(!/^hails_[A-Za-z0-9_-]{43}$/.test(sessionToken??""))return null;
       const rows=await this.sql<(Omit<AccountApiSession,"scopes">&{scopes:unknown})[]>`
         UPDATE account_passkey_sessions session SET last_seen_at=now()
@@ -121,7 +132,8 @@ export class AccountApiRepository {
           session.serving_generation::integer AS serving_generation,passkey.credential_id AS passkey_credential_id,
           session.created_at AS passkey_verified_at`;
       if(!rows[0])return null;const scopes=typeof rows[0].scopes==="string"?JSON.parse(rows[0].scopes):rows[0].scopes;
-      return {...rows[0],scopes:scopes as AccountApiScope[]};
+      return {...rows[0],scopes:scopes as AccountApiScope[],
+        authentication: {method: "passkey", authenticatedAt: rows[0].passkey_verified_at!}};
     }
     const rows = await this.sql<(Omit<AccountApiSession, "scopes"> & { scopes: unknown })[]>`
       SELECT account.id AS account_id, credential.id AS credential_id,

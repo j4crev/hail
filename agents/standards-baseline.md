@@ -140,6 +140,15 @@ bearer retrieval success is not proof of this profile.
 
 ### 4. Authentication and authorization
 
+**Phase 4 core implemented.** The [trusted provider integration](../apps/server/src/accounts/provider-authentication.ts)
+adds explicit issuer/tenant/subject bindings and locally revocable sessions, with
+per-request upstream access checks and no credential delegation. Migration 0110
+keeps these records local to the current account generation. The
+[contract](../spec/provider-authentication.md) and
+[integration tests](../apps/server/test/provider-authentication.integration.test.ts)
+cover the existing-application SSO boundary. Production OIDC/SAML connectors and
+shared OAuth client access remain unimplemented; the latter is explicitly deferred.
+
 **Current behavior and reuse.** [Passkeys](../apps/server/src/accounts/passkeys.ts)
 and [passkey routes](../apps/server/src/accounts/passkey-routes.ts) implement the
 custom browser authorization/code exchange. [Account repository](../apps/server/src/accounts/repository.ts)
@@ -155,16 +164,19 @@ client hooks and [account security](../apps/client/src/lib/server/account-securi
 `spec/managed-custody.md`, `spec/alpha-onboarding.md`, CLI
 [contract](../apps/cli/docs/cli-contract.md) and
 [credential lifecycle](../apps/cli/docs/credential-lifecycle.md).
-OAuth metadata/token/registration schemas and positive/negative request fixtures
-are **planned**, not extensions to signed federation CDDL by default.
+Optional OAuth metadata/token/registration schemas and positive/negative request
+fixtures are **planned**, not extensions to signed federation CDDL by default.
 
 **Existing tests and missing proof.** Server `browser-authorization.integration.test.ts`,
 `passkey-authentication.integration.test.ts`, `passkey-session.integration.test.ts`,
 `account-access.integration.test.ts`, `permissions.integration.test.ts`,
 `custody-transition.integration.test.ts`; CLI `browser-cases.ts`, `credential-cases.ts`,
 `access-cases.ts`. Add independent clients, issuer/audience/redirect/code replay,
-refresh/revocation/CSRF and trust-linking cases. Provider-approved identity-service
-support versus local unlocking only remains an explicit phase 4 product decision.
+refresh/revocation/CSRF and trust-linking cases when implementing the optional
+OAuth client-access profile. The phase 4 decision is provider-chosen authentication
+with enterprise SSO compatibility; provider-specific clients may use their provider's own
+contract. Verify issuer/tenant binding and organizational offboarding independently
+of whether the provider offers the shared OAuth client API.
 
 ### 5. JMAP synchronization and operations
 
@@ -250,7 +262,7 @@ rules above; unresolved profile choices must be resolved before that phase ships
 | 1 | Deploy parsing/transport fixes without rewriting signed bodies or tokens. Preserve coded versus decoded integrity domains, failure concealment, availability and authenticated discovery freshness. Determine malformed/unsupported dictionary behavior before publishing parser vectors. |
 | 2 | Decide envelope and snapshot adoption separately. If adopted, switch writers/readers and peers at an explicit profile boundary; retain original authenticated history as evidence, not silently converted authority. Keep all current consent models. Regenerate current-format vectors deliberately. Drain or explicitly reject/restart in-flight incompatible transfers while retaining fences and owner/destination checks. Reject obsolete input rather than maintaining an indefinite dual writer. If rejected, record reasons and mark only the candidate's conditional work N/A. |
 | 3 | Coordinate recipient clients/providers and sender authorization storage before enabling mandatory signatures. Specify applicability to existing tokens and outstanding availability commitments; no silent bearer fallback. Preserve recipient/message/digest binding and transfer of pending retrieval authority. Define replay-state persistence and retry behavior across restart and key/provider changes before rollout. |
-| 4 | Keep DIDs, account IDs, custody evidence and enrolled provider credentials; explicitly invalidate obsolete custom codes/sessions/API tokens and require reauthorization as needed. Define credential classification and GUI/CLI upgrade steps before removal. Never reinterpret an old token as OAuth, copy a passkey to another origin, or equate login with independent owner authority. Provider transfer requires explicit audience/issuer rebinding and reauthorization, not forwarding old credentials. |
+| 4 | Provider-owned authentication and enterprise SSO are the core contract; the shared OAuth API is optional. If replacing the custom client exchange, keep DIDs, account IDs, custody evidence and enrolled provider credentials; explicitly invalidate obsolete custom codes/sessions/API tokens and require reauthorization as needed. Define credential classification and GUI/CLI upgrade steps before removal. Never reinterpret an old token as OAuth, copy a passkey to another origin, or equate login with independent owner authority. Provider transfer requires explicit audience/issuer rebinding and reauthorization, not forwarding old credentials. |
 | 5 | Introduce JMAP over existing account/domain services. Define stable IDs and a starting state, then capture creates/updates/deletes durably before clients rely on changes. Explicitly reset old cursors/caches and resynchronize. Preserve signed bytes, local read/Trash/draft state and pending sends; reconcile or drain sends before changing retry keys. Decide transfer reset versus continuity and local-state export coverage before schema changes. |
 | 6 | Enable only after phase 5 sync is usable. Bind subscriptions to current account/client authority; revoke on loss of access. Recreate or explicitly reauthorize subscriptions after provider transfer, never copy endpoint credentials blindly. Lost notifications require sync, not read-state or delivery-status changes. |
 | 7 | Finalize provisional names before profile stability; any signed name change follows phase 2's byte/history cutover and regenerates both codec vectors. Record actual registration status. No cleanup, account migration or compatibility guarantee follows from publication alone. |

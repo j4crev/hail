@@ -22,6 +22,16 @@ headless device authorization and dynamic client registration are not defined.
 A provider may use an external identity service behind its authorization page,
 but credentials and exchange requests remain bound to the selected provider.
 
+Enterprise providers may integrate organization SSO using OIDC, SAML or a
+provider-controlled authentication service backed by Active Directory/LDAP. These
+are provider login integrations, not Hail federation requirements or client-side
+directory protocols. A provider may reuse its existing application login for both
+email and Hail. This profile does not require a separate Hail passkey enrollment.
+Trusted issuer/tenant selection, account binding and organizational access remain
+the provider's responsibility; ordinary login does not replace Hail owner/recovery
+authority. This permission does not claim that the reference provider implements
+SSO connectors. A future shared OAuth client API remains an optional profile.
+
 ## Provider selection and transport
 
 The user explicitly selects a canonical HTTPS DNS origin for login. Credential
@@ -249,3 +259,11 @@ destination native domains to service hostnames and rejects delegated-domain
 source addresses. Separating the native address domain does not relax those
 checks or define a new transfer protocol. Such transfers remain unavailable until
 that profile, schemas and conformance vectors are updated together.
+
+## Reference-provider authentication integration
+
+The optional [provider authentication boundary](provider-authentication.md) permits
+trusted existing application sessions to authorize the reference account API
+without passkey enrollment. It is a provider-local integration, not an OAuth or
+OIDC endpoint and not an extension of the CLI code exchange. Its restricted scopes,
+explicit identity bindings and organizational revocation rules are defined there.

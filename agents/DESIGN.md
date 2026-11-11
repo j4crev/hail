@@ -498,7 +498,8 @@ its affected `spec/` documents, schemas, version inventory and conformance vecto
 in the same change. Pre-launch changes need not preserve superseded alpha formats;
 preserve authenticated current history and define an explicit cutover instead.
 
-The intended layers are OAuth-based client authorization, JMAP client/provider
+The intended layers are provider-chosen authentication, optional OAuth client
+authorization, JMAP client/provider
 interoperability, RACR recipient consent and federation, and eventual MLS content
 encryption. Reusing a standard is a valid interoperability benefit even when the
 current implementation already provides similar behavior. Evaluate security,
@@ -559,55 +560,54 @@ implementation is conditional on the corresponding decision. Do not add a second
 signature wrapper merely to claim RFC adoption, or use optional location hints
 to bypass authenticated endpoint discovery and SSRF defenses.
 
-### Client-selected authentication and provider trust
+### Provider-chosen authentication and enterprise SSO
 
-The goal is independent clients with their own authentication experience connecting
-to the same provider through a standard access contract. Separate three concerns:
+Providers own account authentication and may integrate Hail into their existing
+email applications and login sessions. An email provider can expose email and
+Hail messages after one existing account login. Federation does not require a
+shared user-login mechanism. Provider-specific web/native clients implement or
+delegate to that provider's chosen authentication and API contract.
 
-- Client-local authentication can unlock a client session or protect credentials
-  obtained through prior provider authorization. A client may use passkeys or
-  another method here without changing the provider's API. Local unlocking does
-  not mint provider authority, renew expired access or bypass revocation.
-- Provider-account authentication establishes who may authorize access to an
-  account. A client-selected login service or proof can perform this role only
-  when the provider explicitly trusts its issuer, enrollment and account binding.
-- OAuth authorizes a client to use specified provider resources. It does not
-  automatically translate an arbitrary client-side login into trusted identity.
+Enterprise SSO is an essential supported architectural use case. Providers may
+use [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html), SAML,
+or their own directory-backed login. Microsoft Entra ID offers
+[OIDC authentication](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc);
+on-premises Active Directory or LDAP can be integrated behind an identity broker
+or provider authentication backend. For example,
+[Keycloak user federation](https://www.keycloak.org/docs/latest/server_admin/index.html#_user-storage-federation)
+connects LDAP/AD directories to a standard identity service. LDAP directory access
+and browser SSO are different layers; Hail clients need not implement LDAP or
+collect directory passwords. No particular broker or directory connector is
+mandated for every provider.
 
-Proposed access baseline: authorization code with PKCE and the security practices
-in [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html),
+Provider administrators select trusted identity services and tenant boundaries.
+OIDC account binding uses a validated issuer and subject, not email equality.
+Specify enrollment, linking, organization membership, session/token revocation,
+reauthentication and offboarding for the chosen integration. Enterprise login
+and directory roles do not replace Hail owner/recovery signatures or automatically
+grant custody/transfer authority.
+
+Haili's current reference provider/client may retain passkeys. This is a local
+implementation choice, not a requirement on other providers or their clients.
+[WebAuthn](https://www.w3.org/TR/webauthn-3/) credentials remain RP/origin scoped;
+provider transfer does not copy them between origins. The existing
+[CLI client profile](../spec/client-api.md) already delegates browser login to the
+provider and is authentication-method-neutral; the current reference GUI's
+passkey APIs do not define the federation contract.
+
+A shared OAuth client-access profile is optional interoperability work. Providers
+that offer it can support independent clients without those clients implementing
+the provider's login method. Use authorization code+PKCE with
+[RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html),
 [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) and
-[RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html). A provider authorization
-page is the baseline interoperable route. Supporting client-selected identity
-services requires an explicit provider trust configuration and account-linking
-flow; it is an open design item, not a promise that every client proof is accepted.
-Evaluate this before finalizing the auth profile rather than constraining the
-product goal to provider-owned login screens.
-
-[OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) can supply
-identity federation where needed. Bind accounts to trusted issuer and subject,
-not matching email addresses. ID tokens, API access tokens and Hail identity
-signatures remain distinct. [WebAuthn credentials](https://www.w3.org/TR/webauthn-3/)
-are scoped to relying parties and verified origins: an independently hosted client
-cannot assume a passkey enrolled at the provider works at its own origin. Any
-related-origin arrangement needs explicit configuration and validation.
-
-The CLI already has a custom authentication-method-neutral PKCE exchange in
-[the client profile](../spec/client-api.md). The GUI still assumes passkey login,
-`hail_session`, passkey settings and passkey-specific action approval. Decouple
-those workflows through the standard authorization boundary and advertised
-account capabilities. Ordinary login must not become independent owner-key or
-recovery authority. Signup, account linking, sensitive-action approval and
-recovery need their own documented contracts.
-
-For the server-rendered reference web client, use server-held OAuth credentials
-and a protected local browser session following
-[RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html). The CLI uses the system
-browser and loopback redirect. Specify client registration, issuer/resource
-metadata ([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html),
-[RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html)), exact redirect validation,
-audiences, scopes, refresh, revocation, CSRF and logout behavior. Discovery neither
-registers clients automatically nor authorizes arbitrary issuers or token targets.
+[RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html). Web-client architecture
+follows [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html); server-held
+credentials are the baseline for a future reference-web-client OAuth adaptation.
+Specify registration, redirects, scopes/audiences, refresh/revocation and logout,
+plus metadata under [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html) and
+[RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html). This does not require
+replacing a provider's existing login, accepting arbitrary client identity
+assertions, or making OAuth support a prerequisite for Hail federation.
 
 ### JMAP interoperability and notifications
 
@@ -666,7 +666,8 @@ coordinate any name changes with wire changes before independent implementations
 freeze them. Registration is not certification. Final templates depend on the
 RFC 9995 and JMAP profile decisions; inventory can begin immediately.
 
-Use OAuth metadata and `/.well-known/jmap`/Session discovery to remove endpoint
+For providers offering the optional OAuth profile, use OAuth metadata alongside
+`/.well-known/jmap`/Session discovery to remove endpoint
 and capability hard-coding. Preserve provider selection, authenticated endpoint
 validation and token audience restrictions. Existing WebFinger/PLC discovery
 continues to establish federation identity.
@@ -775,6 +776,40 @@ record a justified rejection as a completed evaluation, not a shipped feature.
 Depends on phase 1 parsing work and phase 2's envelope decision, not on adopting
 RFC 9995. Keep this separable from client OAuth tokens.
 
+Standards addressed: [RFC 9421 — HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html).
+RACR defines the application profile: mandatory token plus signature, authorized
+recipient key, covered components, replay policy and concealed failure behavior.
+Those authorization/privacy choices are not supplied by the RFC alone.
+
+Before implementation, finish the first checklist item as a concrete wire profile:
+exact signature algorithm and components, timestamp tolerance, nonce/replay scope
+and persistence, retry signing, and key-rotation/provider-transfer behavior.
+The main direction is already decided: use the authorized recipient's messaging
+key, require both proofs, and reject cheap token failures first. These remaining
+technical choices can be proposed and resolved during phase 3 design work; they
+do not require another product-direction decision or depend on phase 4.
+
+Existing guidance to carry into that profile (do not reopen established choices):
+
+| Choice | Existing guidance | What phase 3 still specifies |
+| --- | --- | --- |
+| Key and algorithm | [Body proof of possession](../spec/bodies.md#future-proof-of-possession) names recipient `#hail-messaging`; [DID key profile](../spec/did-profile.md#v0-key-algorithm-and-encoding) requires Ed25519 | RFC 9421 key identifier/algorithm parameters and constrained key lookup |
+| Request binding and authorization | [Retrieval design](#retrieval-tokens-and-http-signatures) requires method, target and Authorization coverage, token-first lookup and both proofs | Exact covered-component list and signature parameters; do not reuse COSE numeric algorithm labels as HTTP parameters |
+| Privacy | [Body authorization](../spec/bodies.md#retrieval-authorization) conceals failures; the retrieval design moves disclosure until both proofs pass | Uniform signature-failure scheduling and resource bounds |
+| Attachments | [Attachment retrieval](../spec/attachments.md) binds files to an authorized body, shares token/fence rules, prohibits redirects and restarts retries from byte zero | Sign the exact attachment target under the same proof requirement |
+| Retries and routing | [Retry ownership](../spec/delivery-state.md#retry-ownership) sets deadlines/backoff; [endpoint refresh](../spec/http-binding.md#redirects-and-endpoint-refresh) permits only authenticated endpoint changes | Fresh signature/nonce behavior on retries and changed targets |
+| Rotation and transfer | [Key rotation](../spec/did-profile.md#key-rotation) rejects removed keys for new operations; continuity uses fenced state transfer | How request replay state and in-flight retrievals behave across restart/transfer |
+
+No complete retrieval-signature freshness/replay profile exists yet; the
+[baseline inventory](standards-baseline.md#3-token-plus-http-signature-retrieval)
+explicitly lists it as planned. The existing
+[300-second envelope tolerance](../spec/envelopes.md#timestamp-validation) is a
+precedent, not a defined HTTP-signature validity window. Decide signature maximum
+age, clock tolerance, nonce uniqueness scope, replay retention/atomicity and
+restart persistence together. Also settle re-signing on retry, key refresh and
+target change. Existing message replay rules do not automatically answer request
+replay handling.
+
 - [ ] Specify the RFC 9421 profile: covered method/target/Authorization, recipient
   key role, freshness, replay state, retries, attachments and migration behavior.
 - [ ] Implement cheap token rejection before recipient-key resolution and require
@@ -784,31 +819,77 @@ RFC 9995. Keep this separable from client OAuth tokens.
 - [ ] Prove legitimate retries, restarts, attachments and key/provider changes work;
   bound expensive attempts and prohibit bearer-only downgrade in the new profile.
 
-### 4. Authentication and authorization contract
+### 4. Provider authentication, enterprise SSO and optional client access
 
-Can be designed alongside phases 1–3. Resolve the trust decision before promising
-arbitrary client-selected provider login.
+Decided: providers choose authentication; enterprise SSO must be permitted by the
+architecture. Provider-specific clients follow that provider's contract. A shared
+OAuth client-access profile is optional and separate from federation.
 
-- [ ] Specify local client unlocking versus provider-account authentication and
-  API authorization. Decide how provider-approved client-selected identity services
-  are enrolled, linked and revoked, or explicitly limit the first slice to local
-  unlocking plus provider authorization. Record the remaining product gap if limited.
-- [ ] Define OAuth code+PKCE, client registration, issuer/resource discovery,
-  redirects, scopes, audiences, token lifetime/refresh/revocation and logout.
-- [ ] Define GUI/CLI session handling and provider capabilities for signup,
-  security settings, reauthentication and exact-action approvals; retain separate
-  owner/recovery authority and reject email-only identity linking.
-- [ ] Implement provider authorization and API validation using existing account
-  policy services; replace the custom client exchange with a documented cutover.
-- [ ] Adapt GUI and CLI; prove independently hosted clients can use one provider
-  without implementing its passkey endpoints, and a client can use a non-passkey
-  provider without client-specific login code.
-- [ ] Demonstrate two clients with different local authentication experiences
-  accessing the same provider after valid authorization. If external identity
-  services are included, prove trusted linking succeeds and untrusted assertions
-  fail. Check origin-scoped passkey behavior explicitly.
-- [ ] Prove wrong issuer/audience, code replay, CSRF, scope escalation, expired or
-  revoked access and login-only attempts at owner actions fail safely.
+Standards addressed by the optional OAuth client-access profile (apply modern
+security guidance to the base framework):
+
+| Contract area | Standard |
+| --- | --- |
+| Authorization code, client roles and refresh | [RFC 6749 — OAuth 2.0](https://www.rfc-editor.org/rfc/rfc6749.html), constrained by [RFC 9700 — OAuth security BCP](https://www.rfc-editor.org/rfc/rfc9700.html) |
+| Code interception protection | [RFC 7636 — PKCE](https://www.rfc-editor.org/rfc/rfc7636.html) |
+| API bearer-token usage, where selected | [RFC 6750](https://www.rfc-editor.org/rfc/rfc6750.html) |
+| CLI system-browser and loopback flow | [RFC 8252 — OAuth for native apps](https://www.rfc-editor.org/rfc/rfc8252.html) |
+| Web-client credential/session architecture | [RFC 10017 — OAuth for browser-based applications](https://www.rfc-editor.org/rfc/rfc10017.html) |
+| Authorization-server discovery | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html) |
+| Protected-resource discovery | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) |
+| Token revocation | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html); browser logout/session termination must be specified separately |
+
+Enterprise identity standards are separate from that optional client API:
+[OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html), SAML and
+[WebAuthn](https://www.w3.org/TR/webauthn-3/) are not RFCs. LDAP/Active Directory
+integration belongs behind the provider's login or its chosen identity broker.
+Supporting enterprise SSO in the architecture is required; implementing every
+identity protocol or an LDAP connector in the reference provider is not implied.
+The reference server implements a trusted existing-session integration boundary;
+a production SSO protocol connector is not yet supplied. See the
+[provider authentication contract](../spec/provider-authentication.md).
+
+Core authentication and enterprise contract:
+
+- [x] Record provider-owned authentication, provider-specific client integration,
+  enterprise SSO compatibility and optional shared OAuth access.
+  Evidence: [provider authentication decision](#provider-chosen-authentication-and-enterprise-sso).
+- [x] Specify provider-account authentication, client/API authorization and
+  independent owner/recovery authority as separate boundaries. Preserve Haili's
+  passkey behavior without requiring passkeys for other providers.
+- [x] Define the enterprise integration contract: administrator-approved issuers
+  and tenants, stable account binding, provisioning/linking, organization access,
+  reauthentication, revocation/offboarding and recovery. Do not auto-link by email
+  or treat directory administrator status as independent Hail owner authority.
+- [x] Verify that a provider can integrate Hail with its existing application and
+  login session, including an enterprise SSO-backed flow, without a separate Hail
+  credential enrollment. Use a test integration to prove the boundary; choose a
+  concrete reference-provider SSO connector separately before production support.
+- [x] Prove untrusted/wrong-tenant identity assertions, cross-account linking,
+  disabled organizational access, scope escalation and login-only attempts at
+  owner actions fail safely. Document session/revocation latency and enforcement.
+
+Evidence: [integration and lifecycle contract](../spec/provider-authentication.md),
+[provider authentication service](../apps/server/src/accounts/provider-authentication.ts),
+and [database/HTTP integration tests](../apps/server/test/provider-authentication.integration.test.ts).
+The test adapter represents an already-verified SSO application session; production
+OIDC/SAML connector validation and passkey-independent sensitive-action UI remain
+separate work. Integrated sessions cannot mint independent bearer credentials.
+
+Optional shared OAuth client-access work (not a gate for provider federation):
+
+- [x] Defer the optional shared OAuth profile until a client interoperability
+  requirement justifies it; it is not part of this phase 4 implementation.
+- [ ] Before implementing the optional profile, define code+PKCE,
+  registration, issuer/resource discovery, redirects, scopes, audiences, token
+  lifetime/refresh/revocation and logout using the RFCs above.
+- [ ] If implemented, reuse existing authorization/policy services and document
+  the cutover from the custom client exchange; retain exact-action approvals.
+- [ ] Adapt participating GUI/CLI clients and prove interoperability with both
+  passkey and enterprise-SSO providers through provider-hosted authorization.
+  Provider-specific clients may continue using their provider's own API.
+- [ ] Prove issuer/audience validation, code replay/CSRF protection and revoked or
+  expired access rejection. Publish only capabilities actually implemented.
 
 ### 5. JMAP synchronization and operations
 
