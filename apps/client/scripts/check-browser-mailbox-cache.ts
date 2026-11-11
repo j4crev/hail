@@ -2,7 +2,7 @@ import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 async function fixtureOperation(origin:string,name:string,args:Record<string,unknown>={}){
- const capability='https://haili.app/ns/jmap/account';
+ const capability='https://racrproto.com/ns/jmap/account';
  const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
  const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];
  assert.equal(typeof accountId,'string');assert(session.accounts[accountId].accountCapabilities[capability]);

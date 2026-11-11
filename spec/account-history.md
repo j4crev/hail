@@ -30,7 +30,10 @@ changes storage representation, not historical identity, authority or signatures
 
 Stored envelopes and snapshot signatures use the same RFC 9995 profiles as new
 objects. There is no reader for the superseded direct-payload envelope or raw
-snapshot signature.
+snapshot signature. The [namespace cutover](encoding.md#protocol-namespace-cutover)
+requires the protocol-domain preimage label for both current and imported envelopes;
+no old-label compatibility reader is defined. Original accepted bytes still must
+be preserved, not normalized or re-signed.
 
 History verification still MUST preserve original signed bytes and use the
 corresponding key/authority evidence. Do not re-sign or normalize accepted objects.

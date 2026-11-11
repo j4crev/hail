@@ -4,7 +4,7 @@ import {handlePush} from './push-handler.js';
 const id='12345678-1234-1234-1234-123456789abc';
 const verification={'@type':'PushVerification',pushSubscriptionId:id,verificationCode:'A'.repeat(43)};
 const state={'@type':'StateChange',changed:{current:{HailMessage:'opaque'}}};
-const session={accounts:{current:{}},primaryAccounts:{'https://haili.app/ns/jmap/messages':'current'},apiUrl:'https://attacker.example/jmap'};
+const session={accounts:{current:{}},primaryAccounts:{'https://racrproto.com/ns/jmap/messages':'current'},apiUrl:'https://attacker.example/jmap'};
 const accepted={methodResponses:[['PushSubscription/set',{updated:{[id]:null},notUpdated:null},'verify-push']]};
 const setup=(response:unknown=session,status=200)=>({request:vi.fn<typeof fetch>(async()=>Response.json(response,{status})),notify:vi.fn(async()=>{})});
 

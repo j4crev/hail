@@ -2,7 +2,7 @@ import type {SQL} from 'bun';
 import type {AccountApiSession} from '../accounts/repository.js';
 import {lockMessageAccount} from '../accounts/message-read.js';
 import {JmapError,argumentsOnly,object,jmapAccountId,canMutateMessages,MAX_OBJECTS} from './common.js';
-export const HAIL_ACCOUNT='https://haili.app/ns/jmap/account';
+export const HAIL_ACCOUNT='https://racrproto.com/ns/jmap/account';
 export const COLLECTIONS=['HailSent','HailSubmission','HailGrant','HailRelationship'] as const;
 export type Collection=typeof COLLECTIONS[number];
 const FIELDS:Record<Collection,readonly string[]>={

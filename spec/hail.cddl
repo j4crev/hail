@@ -478,7 +478,7 @@ hail-attachment = {
 ; purpose, deterministic encoding and total size constraints are semantic gates.
 hail-envelope-hash-cose = #6.18([
   protected: bstr .cbor hail-envelope-hash-protected,
-  unprotected: {"https://haili.app/ns/racr/preimage": bstr .cbor hail-envelope},
+  unprotected: {"https://racrproto.com/ns/racr/preimage": bstr .cbor hail-envelope},
   payload: sha256,
   signature: bstr .size 64
 ])

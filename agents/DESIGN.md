@@ -139,7 +139,7 @@ Using PLC for every identity establishes one recovery and resolution model, but 
 - PLC updates are full state snapshots. Key rotation and provider migration tooling starts from validated current state and preserves unrelated keys and services rather than patching one field. Every existing non-Hail `alsoKnownAs` value and its order are preserved unless the DID controller explicitly authorizes an alias change in the exact signed update.
 - PLC's 72-hour higher-authority recovery window can reverse a lower-authority update. Hail must define when new keys and endpoints become authoritative before production migration is safe.
 - PLC rotation keys act unilaterally rather than by threshold. A user-held higher-priority key protects a provider-held update key only if unauthorized changes are detected and recovered within 72 hours, so monitoring is part of the recovery model.
-- Verification keys, service endpoints, update timestamps, nullified operations, and tombstones are permanently public. Hail addresses stay in expiring Address Bindings and out of PLC state.
+- Verification keys, service endpoints, update timestamps, nullified operations, and tombstones are permanently public. Hail addresses stay in nonexpiring Address Bindings with bounded discovery-cache freshness, and out of PLC state.
 - Custom-domain control authenticates the human-readable address, while PLC rotation authority independently controls the durable identity. Losing or transferring the domain does not transfer DID-bound grants or message history.
 
 ## Account Onboarding
@@ -254,7 +254,15 @@ V0 uses one content-addressed body for any number of byte-identical messages, pl
 
 The envelope is compact and carries only data needed for routing, authorization, presentation, threading, and body retrieval.
 
-v0 uses one recipient per envelope, UUIDv7 message IDs scoped by sender DID, grant or reply authorization, required timestamps, and explicit reply behavior. The envelope signature covers a closed detached-body descriptor containing the digest, uncompressed size, media type, profile, availability commitment, and recipient-specific bearer authorization. The payload uses deterministic Hail CBOR in tagged COSE_Sign1 signed with the sender's `#hail-messaging` key and the RFC 9864 fully specified COSE `Ed25519` algorithm. POC limits include a 16,384-byte signed representation, a 256 KiB uncompressed body, 300 seconds of timestamp tolerance, and an envelope expiration no more than seven days after creation.
+v0 uses one recipient per envelope and UUIDv7 message IDs scoped by sender DID.
+Envelope versions select Grant, connection, threaded-reply or shared-conversation
+authority. The complete deterministic CBOR descriptor commits to the parties,
+authorization, timestamps, reply behavior and detached-body metadata, including
+its recipient-specific retrieval token. The current RFC 9995 COSE hash profile
+signs that descriptor's SHA-256 with `#hail-messaging` and fully specified Ed25519.
+[Encoding](../spec/encoding.md#rfc-9995-hash-profile) owns exact headers and limits;
+[bodies](../spec/bodies.md) owns the content budget. Retrieval additionally requires
+[recipient HTTP proof](../spec/retrieval-signatures.md), not token possession alone.
 
 The complete schema, signature profile, validation order, and replay behavior are defined in [`../spec/envelopes.md`](../spec/envelopes.md). Detached body behavior is defined in [`../spec/bodies.md`](../spec/bodies.md).
 
@@ -286,7 +294,9 @@ Suggested product default:
 
 The protocol has no implicit default. `reply.allowed: true` requires an explicit signed `reply.until`; products may suggest a 120-day value and senders may choose a different deadline.
 
-The POC applies the common 256 KiB maximum uncompressed body size to replies and defines no reply-specific minimum. Sender Profiles do not advertise sender-specific reply-size or attachment limits; assets and attachments are unsupported by the POC body profile.
+Replies use the current common [body budgets and profiles](../spec/bodies.md) and
+[attachment rules](../spec/attachments.md), with no reply-specific minimum. Sender
+Profiles do not advertise sender-specific reply-size or attachment limits.
 
 v0 deliberately permits one next message per capability. Multiple conversational turns form a linear chain in which each delivered reply may grant one further reply. Either side can end the thread with `reply.allowed: false`; sibling replies require a future authorization design.
 
@@ -367,7 +377,7 @@ Content-Type: application/hail-body+cbor
 Content-Encoding: gzip  # optional
 ```
 
-The signed body digest and size cover exact uncompressed deterministic body bytes, regardless of transport coding. Signed objects use tagged COSE_Sign1 and are not HTTP-compressed. Their outer media type is `application/cose; cose-type="cose-sign1"`; the protected COSE content type identifies the exact embedded Hail object. WebFinger, rendered DID documents, Problem Details, and generic receipts retain their externally defined JSON representations. Zstd remains a separate future body-transfer decision.
+The signed body digest and size cover exact uncompressed deterministic body bytes, regardless of transport coding. Signed objects use tagged COSE_Sign1 and are not HTTP-compressed. Their outer media type is `application/cose; cose-type="cose-sign1"`; the protected COSE content type identifies the exact payload or hash preimage under the [current signature profile](../spec/encoding.md). WebFinger, rendered DID documents, Problem Details, and generic receipts retain their externally defined JSON representations. Zstd remains a separate future body-transfer decision.
 
 The shared codecs, schemas, typed models, diagnostic converters, and conformance vectors keep CBOR and COSE mechanics out of ordinary application code. Hail follows the constrained-data-model precedent of DRISL and AT Protocol where useful but does not require AT Protocol interoperability, CIDs, CAR files, or repository structures.
 
@@ -959,14 +969,21 @@ operational smoke test still to run, not established interoperability evidence.
 Inventory starts in phase 0; finalize names after wire/capability decisions, before
 calling those profiles stable. Each earlier phase still updates its spec immediately.
 
-- [ ] Complete media-type/extension inventory, registration templates and necessary
+- [x] Complete media-type/extension inventory, registration templates and necessary
   allocation policies; align exact signed names across specifications and codecs.
 - [ ] Complete applicable registration submissions and track their actual status;
   do not label provisional values registered or imply IETF adoption.
-- [ ] Review security/privacy and ACE/CWT-derived authority cases for every new
+- [x] Review security/privacy and ACE/CWT-derived authority cases for every new
   profile, including downgrade, migration and adversarial-provider scenarios.
-- [ ] Record independent client/provider or codec interoperability evidence with
+- [x] Record independent client/provider or codec interoperability evidence with
   its limits; update draft references and inventories consistently.
+
+Evidence and remaining external prerequisite:
+[phase 7 record](standards-baseline.md#7-publication-and-interoperability).
+Registration templates, allocation decisions, bounded security review and codec
+interoperability evidence are local artifacts. The submission checkbox stays open:
+standards-tree publication/approval and confirmed author metadata remain necessary;
+no registry submission, registration or IETF adoption is claimed.
 
 ### 8. Long-term MLS conversations
 

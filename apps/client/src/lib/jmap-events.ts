@@ -1,4 +1,4 @@
-export const EVENT_CAPABILITY='https://haili.app/ns/jmap/events';
+export const EVENT_CAPABILITY='https://racrproto.com/ns/jmap/events';
 // Notifications are hints only: never replace /changes cursors or modify mail.
 export class MailboxEvents {
   private source:EventSource|null=null;

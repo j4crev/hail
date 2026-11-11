@@ -390,7 +390,9 @@ An envelope is the RFC 9995 hash-profile COSE_Sign1 in [encoding.md](encoding.md
 Protected label 259 is `application/hail-envelope+cbor`; label 258 is SHA-256
 (`-16`). Protected `kid` is the UTF-8 sender DID plus `#hail-messaging`.
 The embedded payload is SHA-256 of the exact deterministic envelope descriptor,
-carried in the sole unprotected `https://haili.app/ns/racr/preimage` byte string.
+carried in the sole unprotected `https://racrproto.com/ns/racr/preimage` byte string.
+The [namespace cutover](encoding.md#protocol-namespace-cutover) has no old-label
+reader or fallback.
 External AAD is empty. There is one signature and no nested signed envelope.
 All descriptor fields, including consent and detached-body credentials, are bound
 by its signed hash. The body itself is fetched only after existing admission gates.

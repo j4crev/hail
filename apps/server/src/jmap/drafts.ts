@@ -5,7 +5,7 @@ import type {SQL} from 'bun';
 import type {AccountApiSession} from '../accounts/repository.js';
 import {JmapChangeLog} from './change-log.js';
 import {JmapError,MAX_OBJECTS,argumentsOnly,object,canMutateMessages} from './common.js';
-export const HAIL_DRAFTS='https://haili.app/ns/jmap/drafts';
+export const HAIL_DRAFTS='https://racrproto.com/ns/jmap/drafts';
 export const MAX_DRAFT_GET_BYTES=2_097_152;
 export const canReadDrafts=(session:AccountApiSession)=>session.scopes.includes('messages:read')&&!!session.passkey_credential_id;
 const uuid=(id:unknown)=>typeof id==='string'&&/^d_[0-9a-f]{32}$/.test(id)?`${id.slice(2,10)}-${id.slice(10,14)}-${id.slice(14,18)}-${id.slice(18,22)}-${id.slice(22)}`:null;

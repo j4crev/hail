@@ -24,8 +24,8 @@ Normal tests read committed files; they do not generate their own expected bytes
 | Artifact | Actual producer and coverage |
 | --- | --- |
 | `cbor-resource-limits.json` | Synthetic exact CBOR boundaries for default depth, item, array, map and encoded-byte budgets; small override cases isolate map-key counting and UTF-8/byte-string lengths. Segments expand to fixed bytes checked against committed length and SHA-256 in both codecs. These are data-model tests, not valid signed Hail objects. |
-| `portable-history.json` | `MigrationTransferService.exportFenced` in the private-PLC transfer/return integration test; v7 with Grants, consent, accepted and delivered messages, body provenance, immutable statuses and retry obligations |
-| `managed-history.json` | `ManagedMigrationExportService.exportFenced` in the managed network orchestration integration test; v8 with public source role metadata, managed custody, Grants, detached body authorization and pending delivery |
+| `portable-history.json` | `MigrationTransferService.exportFenced` in the private-PLC transfer/return integration test; v11 with Grants, consent, accepted and delivered messages, body provenance, immutable statuses and retry obligations |
+| `managed-history.json` | `ManagedMigrationExportService.exportFenced` in the managed network orchestration integration test; v12 with public source role metadata, managed custody, Grants, detached body authorization and pending delivery |
 | `connection-history.json` | `collectConnectionHistory` after real local connection admission in the shared-conversation integration test; nonempty pair, proof, result and signing-evidence history |
 | `conversation-creator.json` | `collectConversationHistory` after shared sends; immutable descriptor, creator membership and terminal shared-message outboxes |
 | `conversation-active.json` | Same collector for an active recipient whose own reply renewed their participation |
@@ -158,3 +158,70 @@ and exact signed-byte carriage are exercised by `jmap.integration.test.ts`.
 reference vectors, consumed by `jmap-draft-routes.test.ts`. Draft content schema,
 transactional synchronization and cleanup are exercised by
 `jmap-drafts.integration.test.ts`.
+
+## Phase 7 evidence and limits
+
+Verified locally on 2026-11-11 against implementation commit
+`7f05efcbdde7775e108288bf9c210c5b56f607d2` and the accompanying publication-only edits.
+The [current profile index](../README.md#current-profiles) owns versions; the
+[encoding inventory](../encoding.md#publication-identifiers-and-registration-templates)
+owns names and registration status. Existing frozen vectors were consumed, not
+regenerated to make these checks pass.
+
+| Execution | Result and what it establishes |
+| --- | --- |
+| `bun run --cwd packages/hail-codec-ts test` | 18 files, 557 tests passed; current encoding, signatures, resource limits, profiles and malformed-input rejection |
+| `mise exec -- go -C packages/hail-codec-go test ./...` | Passed; independent Go codec and standard-library crypto consume the frozen representations, including hash envelopes/history and rejection vectors |
+| `mise exec -- cargo test --manifest-path apps/cli/Cargo.toml snapshot` | One Rust snapshot test passed; current portable/managed hash profiles verify exact export bytes. Other CLI tests are outside this invocation |
+| `bun run --cwd apps/server test -- test/retrieval-signature.test.ts test/protocol-interop-vectors.test.ts test/jmap-events.test.ts test/jmap-account-schema.test.ts test/safe-fetch-tls.test.ts` | 5 files, 63 tests passed; real provider decoders/crypto, HTTP signature base verified through Node crypto, event/schema boundaries and real TLS hostname checks |
+| `DATABASE_TEST_ADMIN_URL=<disposable-admin-url> bun scripts/test-database-integration.ts retrieval-signature provider-authentication jmap-push jmap-core jmap-collections jmap-relationships private-poc-migration managed-network-orchestration` | 8 suites passed, no skips; fresh source/target databases per suite, using an isolated loopback PostgreSQL 18 container. Exercises persistence, replay/restart, account/credential boundaries, consent and transfer state transitions |
+| `xml2rfc --text --html drafts/draft-creviston-racr-00.xml` (3.35.0) | Both retained renderings regenerated without warnings |
+| `npx --yes @ietf-tools/idnits@3.3.0 --no-color --no-progress drafts/draft-creviston-racr-00.txt` | Passed with no nits |
+
+Go/Rust are independent format consumers within this project, not independently
+operated provider implementations. Node/WebCrypto checks do not establish
+interoperability with an independently implemented RFC 9421 server. JMAP schema,
+HTTP and database tests exercise the reference implementation; they do not certify
+a generic JMAP Mail client or a third-party Hail client. Live public PLC cutover,
+real-device push-service delivery, complete third-party federation and an external
+security audit are not established by this run. The existing
+[artifact provenance](#artifacts-and-provenance) and [synthetic fixture limits](#independent-verification)
+continue to apply.
+
+Publication review also checked exact signed content-type names against the TS/Go
+profiles, snapshot purposes against TS/Go/Rust verification, and domain-controlled
+JMAP capability names against server constants. No identifiers or wire formats
+were changed in that initial preparation; the follow-up below records the later
+namespace change. The [security review](../README.md#standards-profile-security-review)
+records the reviewed threats and unresolved limits. Passing these checks does not
+close external registration or the remaining historical-authority decisions.
+
+### Protocol namespace follow-up
+
+Current codec vectors (`v0.json`, `threads-v3.json`, `connections-draft.json`,
+`conversations-v1.json`) are regenerated with their existing generators for
+`https://racrproto.com/ns/racr/preimage`. JMAP request vectors use the protocol
+capability namespace. TS/Go readers reject the old label, arbitrary provider
+labels and maps containing both labels. There is no compatibility reader.
+
+The operator confirmed no subscriptions, connections or messages require old-label
+support. History vectors are deliberately recaptured through the isolated workflows
+under [fixture maintenance](#deliberate-fixture-maintenance), using the current codec.
+Their fresh IDs, timestamps, keys, exact manifest bytes and signatures are synthetic
+exports, not transformations of previously authenticated evidence. Experimental
+candidate vectors retain their original test-only formats; runtime codecs reject them.
+See [cutover and rollback](../encoding.md#protocol-namespace-cutover).
+
+The initial phase 7 validation above predates this namespace follow-up.
+
+Validation after removing the unused compatibility reader (2026-11-11):
+
+- `bun run --cwd packages/hail-codec-ts test` — 558 passed; codec typecheck passed.
+- `HAIL_WRITE_HISTORY_VECTORS=1 DATABASE_TEST_ADMIN_URL=<disposable-admin-url> bun scripts/test-database-integration.ts private-poc-migration managed-network-orchestration server/test/shared-conversations.integration` — three suites passed without skips; recaptured portable/managed history and connection/conversation checkpoints from actual test exports. The isolated PostgreSQL 18 container was removed afterward.
+- `mise exec -- go -C packages/hail-codec-go test ./...` — passed against the new fixtures, including retired/foreign-label rejection.
+- `bun run --cwd apps/server test -- test/protocol-interop-vectors.test.ts` — 48 passed against the new exports.
+- `mise exec -- cargo test --locked --manifest-path apps/cli/Cargo.toml snapshot` — snapshot verification passed.
+- Draft rendering, idnits, Markdown links and namespace checks passed. All six captured history fixtures contain no retired envelope URI.
+
+JMAP namespace behavior is unchanged from the preceding follow-up, whose web-client,
+server-route and native HTTPS CLI checks passed. No production data was changed.

@@ -12,7 +12,7 @@ it("validates sender filtering and retains account-scoped grant authorization",a
     {jmap:new JmapMessages({} as never,"https://example.com"),accountApi:{accounts:{authenticate:async()=>session,listGrants} as unknown as AccountApiRepository,grants:{} as GrantRepository,service:{} as GrantService},async checkReadiness(){return {ready:true};}});
   const sender=`did:plc:${"a".repeat(24)}`;
   const get=async(args:Record<string,unknown>)=>{
-    const response=await app.request('/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/account'],methodCalls:[['HailGrant/list',{accountId:new JmapMessages({} as never,'https://example.com').accountId(session as never),...args},'test']]})});
+    const response=await app.request('/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://racrproto.com/ns/jmap/account'],methodCalls:[['HailGrant/list',{accountId:new JmapMessages({} as never,'https://example.com').accountId(session as never),...args},'test']]})});
     const data=await response.json() as any;return data.methodResponses[0];
   };
   expect((await get({sender}))[0]).toBe('HailGrant/list');

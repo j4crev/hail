@@ -4,8 +4,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 const CORE: &str = "urn:ietf:params:jmap:core";
-const ACCOUNT: &str = "https://haili.app/ns/jmap/account";
-const MESSAGES: &str = "https://haili.app/ns/jmap/messages";
+const ACCOUNT: &str = "https://racrproto.com/ns/jmap/account";
+const MESSAGES: &str = "https://racrproto.com/ns/jmap/messages";
 
 pub(crate) async fn call(client: &Client, method: &str, args: Value) -> Result<Value, Error> {
     // Use the credential's fixed origin, never a Session-supplied URL.

@@ -28,7 +28,7 @@ it('forces downloads and authorizes against the requesting account and exact mes
 });
 it('requires write authority and an unfenced account for bounded uploads',async()=>{
  const f=setup(),request=async()=>{
-  const response=await f.app.request('/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/account'],methodCalls:[['HailAttachment/import',{accountId:new JmapMessages({} as never,'https://example.com').accountId(f.session as never),filename:'test.log',blobId:'u_fixture'},'upload']]})});
+  const response=await f.app.request('/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://racrproto.com/ns/jmap/account'],methodCalls:[['HailAttachment/import',{accountId:new JmapMessages({} as never,'https://example.com').accountId(f.session as never),filename:'test.log',blobId:'u_fixture'},'upload']]})});
   const [method,result]=(await response.json() as any).methodResponses[0];return {status:method==='error'?(result.httpStatus??400):200};
  };
  f.upload.mockResolvedValue({filename:'test.log'});expect((await request()).status).toBe(200);

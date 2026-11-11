@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/fxamacker/cbor/v2"
 )
 
 type testKeyVector struct {
@@ -499,4 +501,37 @@ func TestInvalidResourceLimits(t *testing.T) {
 			t.Fatal("decoder accepted invalid limits")
 		}
 	}
+}
+
+func TestEnvelopeProtocolNamespaceRejectsOldAndForeignLabels(t *testing.T) {
+	for _, v := range vectors(t).Positive {
+		if v.Type != EnvelopeType {
+			continue
+		}
+		for _, label := range []string{"https://haili.app/ns/racr/preimage", "https://other.example/ns/racr/preimage"} {
+			var tag cbor.Tag
+			if err := coseDecMode.Unmarshal(fromHex(t, v.COSEHex), &tag); err != nil {
+				t.Fatal(err)
+			}
+			headers := tag.Content.([]any)[1].(map[any]any)
+			if HashEnvelopePreimage != "https://racrproto.com/ns/racr/preimage" || headers[HashEnvelopePreimage] == nil {
+				t.Fatal("writer namespace")
+			}
+			headers[label] = headers[HashEnvelopePreimage]
+			for _, both := range []bool{true, false} {
+				if !both {
+					delete(headers, HashEnvelopePreimage)
+				}
+				wire, err := coseEncMode.Marshal(tag)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := InspectSignedPayload(EnvelopeType, wire); err == nil {
+					t.Fatal("accepted old, foreign or ambiguous namespace")
+				}
+			}
+		}
+		return
+	}
+	t.Fatal("missing envelope vector")
 }

@@ -20,7 +20,7 @@ it('requires authenticated scoped same-origin web access for Trash mutations',as
   const path='/api/v1/account/inbox/did:plc:'+ 'b'.repeat(24)+'/019a0000-0000-7000-8000-000000000001/permanent-delete';
   const headers={Cookie:'hail_session=fixture',Origin:origin,'Content-Type':'application/json'};
   const post=async(name:string,args:unknown={},extra={})=>{
-    const response=await app.request('/jmap',{method:'POST',headers:{...headers,...extra},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/account'],methodCalls:[[name,{accountId:new JmapMessages({} as never,origin).accountId(session as never),...(args as object)},'test']]})});
+    const response=await app.request('/jmap',{method:'POST',headers:{...headers,...extra},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://racrproto.com/ns/jmap/account'],methodCalls:[[name,{accountId:new JmapMessages({} as never,origin).accountId(session as never),...(args as object)},'test']]})});
     if(!response.ok)return response;const data=await response.json() as any;const [method,result]=data.methodResponses[0];
     return Response.json(result,{status:method==='error'?(result.httpStatus??(result.type==='forbidden'?403:400)):200});
   };

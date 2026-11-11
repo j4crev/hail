@@ -1,7 +1,7 @@
 import {expect,it,vi} from "vitest";
 import {validateSenderAddress,recoverPermission,senderLink,senderRequest,senderQr,permissionRequest,subscriptionScopeLabel} from "./permissions.js";
 
-const capability='https://haili.app/ns/jmap/account',accountId='a_fixture';
+const capability='https://racrproto.com/ns/jmap/account',accountId='a_fixture';
 function jmapFetch(...results:unknown[]){
   let resultIndex=0;
   return vi.fn(async(path:string,init?:RequestInit)=>{

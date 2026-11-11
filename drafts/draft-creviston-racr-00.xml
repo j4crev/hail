@@ -9,7 +9,7 @@
         <email>j4@j4crev.com</email>
       </address>
     </author>
-    <date year="2026" month="November" day="8" />
+    <date year="2026" month="November" day="11" />
     <area>Applications and Real-Time</area>
     <workgroup>Individual Submission</workgroup>
     <keyword>permission-based messaging</keyword>
@@ -47,7 +47,7 @@
           <artwork type="svg">
             <svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="700" height="570" viewBox="0 0 700 570">
               <title>Grant-authorized delivery between recipient and sender providers</title>
-              <desc>Time progresses downward. The recipient provider discovers the sender's address and profile, then publishes a Grant signed by the recipient. The sender provider publishes an immutable Body and submits a signed Envelope to the recipient provider. The recipient provider authenticates and authorizes the Envelope, then atomically accepts it. It retrieves the Body from the sender provider using a bearer token, receives bounded content, verifies and durably delivers it, and sends signed delivery status to the sender provider.</desc>
+              <desc>Time progresses downward. The recipient provider discovers the sender's address and profile, then publishes a Grant signed by the recipient. The sender provider publishes an immutable Body and submits a signed Envelope to the recipient provider. The recipient provider authenticates and authorizes the Envelope, then atomically accepts it. It retrieves the Body from the sender provider using a token and recipient HTTP signature, receives bounded content, verifies and durably delivers it, and sends signed delivery status to the sender provider.</desc>
               <rect x="0" y="0" width="700" height="570" fill="white" />
               <g fill="none" stroke="black" stroke-width="1.5">
                 <line x1="145" y1="50" x2="145" y2="550" />
@@ -82,7 +82,7 @@
                 <line x1="145" y1="390" x2="545" y2="390" />
                 <path d="M 537 385 L 545 390 L 537 395" />
               </g>
-              <text x="345" y="380" font-family="sans-serif" font-size="14" fill="black" text-anchor="middle">GET Body + bearer token</text>
+              <text x="345" y="380" font-family="sans-serif" font-size="14" fill="black" text-anchor="middle">GET Body + token + signature</text>
               <g fill="none" stroke="black" stroke-width="1.5">
                 <line x1="145" y1="440" x2="545" y2="440" />
                 <path d="M 153 435 L 145 440 L 153 445" />
@@ -105,7 +105,7 @@
     |&lt;-- submit signed Envelope ---|
     | authenticate; authorize      |
     | atomically accept            |
-    |-- GET Body + bearer token --&gt;|
+    |-- GET Body + token + signature --&gt;|
     |&lt;-- bounded content ----------|
     | verify; durably deliver      |
     |-- signed delivery status ---&gt;|</artwork>
@@ -131,7 +131,7 @@
         <name>Service URLs and Safe Fetching</name>
         <t>A canonical RACR service base is an HTTPS URL with an ASCII DNS hostname. It MUST NOT contain embedded credentials, a query component, or a fragment. The host MUST NOT be an IP address literal or end with a dot. The URL MUST NOT end with a slash. Default port 443 is omitted. Base-path segments permit only ASCII letters, digits, hyphen, dot, underscore, and tilde; empty interior segments and complete dot or dot-dot segments are invalid. The HTTP binding defines the limited permitted normalization of scheme, host, port, and a single trailing slash.</t>
         <t>Operation URLs are constructed by appending one literal slash and the operation path to the canonical base. Generic relative-URI resolution MUST NOT replace the final base-path segment. A client MUST NOT follow redirects or forward bearer credentials to a redirect target. Provider changes are authenticated through DID resolution.</t>
-        <t>Cached discovery is refreshed once after the specified connection, redirect, not-found, gone, misdirected-request, or unknown-key conditions. A retry at a changed authenticated endpoint preserves the operation identity and required signed bytes. Body retrieval requires one sender-DID refresh after a concealed 404 before classifying authorization failure. Ordinary 429 and 5xx responses do not by themselves establish migration.</t>
+        <t>Cached discovery is refreshed once after the specified connection, redirect, not-found, gone, misdirected-request, or unknown-key conditions. A retry at a changed authenticated endpoint preserves the operation identity and required signed bytes. Body retrieval performs one sender-DID refresh per attempt after a concealed 404. Retry immediately only at a changed authenticated endpoint; otherwise use bounded delivery backoff through the effective deadline. Every request needs a fresh recipient signature and nonce. Ordinary 429 and 5xx responses do not by themselves establish migration.</t>
         <t>Outbound fetching MUST reject prohibited destinations and revalidate resolved addresses for each connection, preventing private-network access and DNS rebinding. Fetches require bounded time, bytes, and concurrency. A DID-authorized endpoint is not permission to reach arbitrary local networks.</t>
       </section>
     </section>
@@ -139,14 +139,15 @@
       <name>Encoding, Signatures, and Digest Domains</name>
       <t>RACR uses the core deterministic encoding requirements of CBOR <xref target="RFC8949" />. The data model permits null, booleans, integers from -(2^53-1) through 2^53-1, valid UTF-8 text, byte strings, finite arrays, and maps with unique text keys. Schemas further constrain values. Floating point, undefined, non-text map keys, indefinite lengths, application tags, duplicate keys, unknown fields in closed maps, and trailing bytes MUST be rejected.</t>
       <t>Receivers perform bounded decoding, deterministic re-encoding, and byte-for-byte equality checking. Integers and lengths use shortest encodings; maps use encoded-key bytewise order. Text is not silently normalized. Unicode Normalization Form C (NFC) requirements apply only where the schema specifies them. Diagnostic JSON is not a signed or hashed representation.</t>
-      <t>Signed objects use the tagged <tt>COSE_Sign1</tt> structure from COSE <xref target="RFC9052" />. Tag 18 is required. The protected map contains exactly labels 1 (<tt>alg</tt>), 3 (content type), and 4 (<tt>kid</tt>); the unprotected map is empty. The payload is embedded deterministic CBOR, external additional authenticated data (AAD) is empty, and the signature is 64 bytes. <tt>alg</tt> is -19, the fully specified Ed25519 algorithm in <xref target="RFC9864" />; polymorphic Edwards-curve Digital Signature Algorithm (EdDSA) value -8, negotiation, and fallback are not accepted. <tt>kid</tt> contains UTF-8 bytes of the canonical absolute DID key URL.</t>
-      <t>The protected content type is the exact object-specific string, such as <tt>application/hail-envelope+cbor</tt>. Together with the payload type, closed schema, fixed algorithm, and key role, it provides domain separation. The HTTP entity type is <tt>application/cose; cose-type="cose-sign1"</tt>. HTTP media types are parsed according to their syntax, not compared as unparsed strings. Signed representations have no HTTP content coding.</t>
+      <t>Direct-payload signed objects other than envelopes and snapshots use the tagged <tt>COSE_Sign1</tt> structure from COSE <xref target="RFC9052" />. Tag 18 is required. The protected map contains exactly labels 1 (<tt>alg</tt>), 3 (content type), and 4 (<tt>kid</tt>); the unprotected map is empty. The payload is embedded deterministic CBOR, external additional authenticated data (AAD) is empty, and the signature is 64 bytes. <tt>alg</tt> is -19, the fully specified Ed25519 algorithm in <xref target="RFC9864" />; polymorphic Edwards-curve Digital Signature Algorithm (EdDSA) value -8, negotiation, and fallback are not accepted. <tt>kid</tt> contains UTF-8 bytes of the canonical absolute DID key URL.</t>
+      <t>The protected content type is the exact object-specific string, such as <tt>application/hail-grant+cbor</tt>. Together with the payload type, closed schema, fixed algorithm, and key role, it provides domain separation. The HTTP entity type is <tt>application/cose; cose-type="cose-sign1"</tt>. HTTP media types are parsed according to their syntax, not compared as unparsed strings. Signed representations have no HTTP content coding.</t>
+      <t>Envelopes instead use the COSE hash envelope <xref target="RFC9995" />. Their protected map contains exactly labels 1: -19, 4: key identifier bytes, 258: -16 (SHA-256), and 259: <tt>application/hail-envelope+cbor</tt>. The embedded payload is the 32-byte SHA-256 digest of the exact deterministic envelope descriptor. The unprotected map contains exactly the domain-controlled text key <tt>https://racrproto.com/ns/racr/preimage</tt> with the descriptor bytes. The verifier MUST check this preimage hash before exposing descriptor fields, and MUST verify the signature and current authority before admission or retrieval. Labels 3 and 260, alternate preimage locations, and the superseded direct-payload envelope are rejected. The old provider-domain preimage label and maps containing both labels MUST be rejected. This pre-launch namespace correction defines no compatibility fallback.</t>
       <ul>
         <li>
           <t>Address Binding, Sender Profile, and Grant revision digests hash complete signed COSE representation bytes. A Grant predecessor and its ETag therefore change if its signature wrapper changes.</t>
         </li>
         <li>
-          <t>Envelope replay and Delivery Status correlation hash deterministic envelope payload bytes, excluding the COSE wrapper.</t>
+          <t>Envelope replay and Delivery Status correlation hash deterministic envelope descriptor bytes, excluding the COSE wrapper; they do not hash the embedded digest a second time.</t>
         </li>
         <li>
           <t>Body identity hashes exact uncompressed deterministic body bytes using SHA-256.</t>
@@ -157,7 +158,7 @@
       </ul>
       <section anchor="budgets">
         <name>Resource Budgets</name>
-        <t>All providers MUST support otherwise valid bodies through 1048576 encoded uncompressed octets. The budget includes CBOR framing and bundled asset data. It does not promise unlimited account quota or delivery capacity. Envelopes and Delivery Status representations are bounded at 16384 octets; Address Bindings at 16384 octets; Grants at 262144 octets. Other object-specific constraints remain applicable.</t>
+        <t>All providers MUST support otherwise valid bodies through 1048576 encoded uncompressed octets. The budget includes CBOR framing and bundled asset data. It does not promise unlimited account quota or delivery capacity. Envelope descriptors are bounded at 16384 octets and complete envelope representations at 17408 octets; Delivery Status representations at 16384 octets; Address Bindings at 16384 octets; Grants at 262144 octets. Other object-specific constraints remain applicable.</t>
         <t>The following limits apply to each independently decoded application CBOR domain and to the outer COSE domain. Application limits remain subject to the overall encoded limit and stricter object-specific limits.</t>
         <table anchor="decoder-limits">
           <name>Decoder Resource Limits</name>
@@ -241,10 +242,12 @@
       <t>Each image is limited to 196608 bytes, width and height 2400, and 2000000 pixels; header-role height remains 1200. Image occurrences total at most eight and 8000000 decoded pixels, including repeated references. Readers preserve document order and aspect ratio. Asset size, digest, and PNG dimensions must agree with the bytes; animated PNG is prohibited. A message image requires plain-text alt text and may carry a caption, each at most 1024 UTF-8 bytes under the specified NFC and character rules. The complete body, including bundled bytes, still fits within 1 MiB. Sender Profile avatar limits are separately 32768 bytes, 512 by 512, and 262144 pixels.</t>
       <t>These byte, pixel, and structural budgets apply to encoded bodies and bundled assets. Detached file attachments have separate limits: at most 20 files totaling 25 MiB per message. Attachment metadata counts toward the encoded-body limit; detached file bytes do not. Attachment formats, authorization, retrieval, and delivery requirements are specified separately in <xref target="HAIL-ATTACHMENTS" />.</t>
       <section anchor="body-auth">
-        <name>Bearer Authorization</name>
+        <name>Token and Recipient Proof of Possession</name>
         <t>For each recipient envelope, the sender generates exactly 32 cryptographically random token bytes. The signed body descriptor carries the token, body identity, and expiry. A token may be reused for retries of the same envelope, but MUST NOT be reused for another recipient or unrelated envelope. The server stores a token digest associated with body digest, recipient, message, expiry, and active state.</t>
-        <t><tt>GET bodies/{digest}</tt> sends Authorization: Bearer followed by the canonical unpadded base64url token, using the scheme syntax of <xref target="RFC6750" /> without adopting OAuth issuance flows. Tokens MUST NOT appear in URLs. Possession authorizes retrieval: this mechanism does not prove possession of the recipient DID private key.</t>
-        <t>Missing, malformed, unknown, mismatched, inactive, or expired tokens receive uniform 404 responses that conceal body existence. An authorization-lookup outage also uses the concealed path. A missing or unavailable body may produce retryable 503 only after active token, digest, and expiry authorization has been established. After a 404 the recipient performs the required authenticated endpoint refresh before classifying failure.</t>
+        <t><tt>GET bodies/{digest}</tt> sends Authorization: Bearer followed by the canonical unpadded base64url token, using the scheme syntax of <xref target="RFC6750" /> without adopting OAuth issuance flows. Tokens MUST NOT appear in URLs. The token is necessary but insufficient. Every body and attachment GET MUST also carry the recipient HTTP signature defined below. The signed descriptor retains <tt>access.type = "bearer"</tt> to describe the token representation; it does not enable bearer-only retrieval.</t>
+        <t>Missing, malformed, unknown, mismatched, inactive, or expired tokens and invalid or unavailable signature verification receive uniform 404 responses that conceal body existence. Authorization-lookup and replay-store outages also use this path. A missing or unavailable body may produce retryable 503 only after BOTH token authorization and recipient proof succeed. Concealed 404 results use authenticated endpoint refresh and bounded retries through the effective deadline, never a bearer-only fallback.</t>
+        <t>The <tt>hail-retrieval-v1</tt> profile of HTTP Message Signatures <xref target="RFC9421" /> requires one <tt>hail</tt> member in each of Signature-Input and Signature. It covers <tt>@method</tt>, <tt>@target-uri</tt>, and <tt>authorization</tt>, in that order. The six parameters are <tt>created</tt>, <tt>expires</tt>, <tt>nonce</tt>, <tt>keyid</tt>, <tt>alg</tt> equal to <tt>ed25519</tt>, and <tt>tag</tt> equal to <tt>hail-retrieval-v1</tt>. Expiry is exactly creation plus 60 seconds with 30 seconds of clock tolerance. Each request uses a fresh random 32-byte nonce in canonical unpadded base64url. The exact header grammar, signature base and canonical serialization are defined in the retrieval-signature profile in <xref target="HAIL-SPEC" />.</t>
+        <t>Token lookup fixes the authorized recipient before key resolution. Verify the current recipient <tt>#hail-messaging</tt> key; untrusted signature fields cannot select an arbitrary signer. After verification, atomically consume the recipient-DID/nonce pair provider-wide through signature expiry plus clock tolerance. Replay state survives restart. Target binding includes the full external HTTPS origin and path; queries and redirects are prohibited. Sign every retry and each attachment separately. Provider-local nonce state is not account history; same-origin storage replacement must preserve unexpired state or refuse retrieval for at least 120 seconds before using an empty store.</t>
         <t>Hashing token lookup records does not remove secrets from retained signed envelopes, outboxes, backups, or transfer history. Those copies need access controls and log redaction. A signature authenticates token bytes but does not encrypt them.</t>
       </section>
       <section anchor="body-validation">
@@ -277,12 +280,13 @@
           <t>Fixed-roster shared conversations use descriptors, per-recipient Envelope version 4, Reply all, leave, and individual participation expiry. The reference provider uses a 90-day timeout renewed only by that participant replying, not by reading. Leaving or expiry preserves saved history; expired participation requires a new conversation. Envelope version 4 does not replace Grant-authorized Envelope version 1. Connection and conversation permission is rechecked before retrieval and final delivery, unlike authorization fixed at core Grant acceptance.</t>
         </li>
         <li>
-          <t>Detached attachments support PNG, JPEG, WebP, PDF, TXT, and LOG files in all three body profiles. The authenticated body binds each file's name, media type, size, and digest. The envelope body-access token authorizes retrieval of the declared files. Recipients MUST verify and durably retain every declared file before committing <tt>delivered</tt>. The complete format and lifecycle rules are defined in <xref target="HAIL-ATTACHMENTS" />.</t>
+          <t>Detached attachments support PNG, JPEG, WebP, PDF, TXT, and LOG files in all three body profiles. The authenticated body binds each file's name, media type, size, and digest. The envelope body-access token and a separate target-bound recipient signature authorize retrieval of each declared file. Recipients MUST verify and durably retain every declared file before committing <tt>delivered</tt>. The complete format and lifecycle rules are defined in <xref target="HAIL-ATTACHMENTS" />.</t>
         </li>
         <li>
-          <t>Provider transfer uses authenticated handover, fencing, and portable snapshot version 7, managed snapshot version 8, connection checkpoint version 3, and conversation checkpoint version 1. Copying an export or retaining a signature does not grant live service authority. Its larger snapshot domains and signatures are separate from core COSE bodies.</t>
+          <t>Provider transfer uses authenticated handover, fencing, and portable snapshot version 11, managed snapshot version 12, connection checkpoint version 3, and conversation checkpoint version 1. Copying an export or retaining a signature does not grant live service authority. Snapshots use RFC 9995 with exact retained JSON manifest preimages, an empty unprotected map, and purpose/version-specific <tt>preimage_type</tt> values. Their larger limits and live cutover authority remain separate from envelope admission. Read state, drafts and required uploads, preferences, Trash, category-send groups and Sent dispositions are preserved; local synchronization state resets.</t>
         </li>
       </ul>
+      <t>The optional client-to-provider Hail JMAP profile uses <xref target="RFC8620" /> for Session discovery, typed methods, changes, binary transfer and connected events. Domain-controlled capabilities cover messages, drafts, account operations, events and optionally encrypted Web Push. These do not imply RFC 8621 Mail compatibility or a shared OAuth login profile. Provider authentication remains provider-owned, separate from owner/recovery authority. Notifications contain state hints, recover through synchronization, and neither mutate read state nor constitute RACR delivery evidence. The complete profiles are in <xref target="HAIL-SPEC" />.</t>
       <t>Attachment definitions are in <xref target="HAIL-ATTACHMENTS" />; the other extension definitions are in the fixed snapshot <xref target="HAIL-SPEC" />. Their eventual division into companion Internet-Drafts is an editorial decision, not removal of implemented functionality. Local account application programming interfaces (APIs), command-line interface (CLI) commands, passkey flows, database tables, and deployment topology are not federation requirements.</t>
       <t>End-to-end encryption, attachment formats beyond PNG/JPEG/WebP/PDF/TXT/LOG, additional publisher layouts, optional-profile capability discovery, bulk federation submission, and federated read/open receipts remain deferred. A provider-local implementation of an undeclared feature is not a negotiated interoperable extension.</t>
     </section>
@@ -293,7 +297,7 @@
       <t>Implementations MUST verify algorithm, key role, controller, protected content type, payload type, schema, and canonical bytes in addition to the signature. Closed maps and exact digest domains reduce ambiguity and cross-protocol confusion. Unknown versions require explicit rejection or their separately defined extension handling; they are not best-effort parsing opportunities.</t>
       <t>Acceptance, revocation, replay reservation, reply consumption, cancellation, and terminal publication require atomic ordering. A valid signature does not resolve races. Incorrect transaction boundaries can create duplicate messages, bypass revocation, consume a capability more than once, or publish after a terminal failure.</t>
       <t>Resource attacks include large declared CBOR lengths, deeply nested structures, expensive signatures, DID-resolution amplification, stalled transfers, gzip expansion, and image decoder attacks. Apply structural limits before expensive work; bound concurrent work and scratch allocation separately. Grants authorize delivery categories, not unlimited resource consumption.</t>
-      <t>Bearer tokens are transferable secrets. Store lookup digests and redact secrets from logs, but also protect signed representations and backups that necessarily retain raw tokens. Network redirects, ambient cookies, arbitrary URLs, and unsafe DNS resolution can exfiltrate tokens or reach private services; endpoint derivation does not remove the need for safe-fetch validation.</t>
+      <t>Retrieval tokens remain sensitive even though possession alone no longer authorizes content access. The current recipient messaging-key proof is also mandatory; compromise of both proofs defeats that protection. Store lookup digests and redact secrets from logs, but also protect signed representations and backups that necessarily retain raw tokens. Network redirects, ambient cookies, arbitrary URLs, and unsafe DNS resolution can exfiltrate tokens or reach private services; endpoint derivation does not remove the need for safe-fetch validation.</t>
       <t>Retention and migration must preserve immutable bodies through their commitments, replay state through its deadline, and status evidence through retry/correlation windows. Storage deduplication cannot erase recipient-specific ownership and authorization. Operator recovery procedures require review beyond these wire requirements.</t>
     </section>
     <section anchor="privacy">
@@ -306,8 +310,8 @@
     <section anchor="iana">
       <name>IANA Considerations</name>
       <t>This revision makes no registration request. The <tt>application/hail-*+cbor</tt> strings used in the alpha are provisional and are not claimed to be registered media types. They are nevertheless exact cryptographic domain-separation values in this profile. Implementations MUST NOT independently rename them. Final allocation will require coordinated wire and signature updates if the names change.</t>
-      <t>Before publication, the core media-type registrations need templates and expert review under <xref target="RFC6838" /> and the structured-suffix rules of <xref target="RFC6839" />. Candidate core types are <tt>application/hail-address-binding+cbor</tt>, <tt>application/hail-sender-profile+cbor</tt>, <tt>application/hail-grant+cbor</tt>, <tt>application/hail-envelope+cbor</tt>, <tt>application/hail-delivery-status+cbor</tt>, and <tt>application/hail-body+cbor</tt>. The extension types need coordinated registration in their companion documents.</t>
-      <t>The existing <tt>application/cose</tt> media type, <tt>COSE_Sign1</tt> tag, and COSE Ed25519 algorithm are reused without a new allocation. The address-binding relation is an extension relation URI, not a claim to a registered short relation token. The DID service type, DNS delegation convention, profile identifiers, reason-code extensibility, and future capability identifiers require an explicit registry review before stable publication. This paragraph does not establish new registries.</t>
+      <t>Prepared media-type templates and actual registration status are maintained in the working specification encoding inventory. No submission is asserted here. The unprefixed names require a standards-tree publication/approval path under <xref target="RFC6838" /> and the structured-suffix rules of <xref target="RFC6839" />. Candidate core types are <tt>application/hail-address-binding+cbor</tt>, <tt>application/hail-sender-profile+cbor</tt>, <tt>application/hail-grant+cbor</tt>, <tt>application/hail-envelope+cbor</tt>, <tt>application/hail-delivery-status+cbor</tt>, and <tt>application/hail-body+cbor</tt>. The extension types need coordinated registration in their companion documents.</t>
+      <t>The existing <tt>application/cose</tt> media type, <tt>COSE_Sign1</tt> tag, COSE Ed25519 algorithm, SHA-256 identifier and RFC 9995 header parameters are reused without a new allocation. The address-binding relation is an extension relation URI, not a claim to a registered short relation token. The preimage header and Hail JMAP capabilities use domain-controlled URI namespaces; no numeric COSE label or IETF JMAP capability allocation is requested. DID fragments and the service type, the DNS TXT delegation convention, signature tags, object/profile identifiers, versions and reason values remain application-specific sets governed by their defining specifications. Unknown-value behavior remains profile-specific. No new IANA registry is proposed; future open extension points require an explicit allocation and negotiation policy.</t>
     </section>
     <section anchor="implementation">
       <name>Implementation and Evaluation Status</name>
@@ -319,6 +323,18 @@
   <back>
     <references>
       <name>Normative References</name>
+      <reference anchor="RFC9995" target="https://www.rfc-editor.org/info/rfc9995">
+        <front><title>CBOR Object Signing and Encryption (COSE) Hash Envelope</title><author fullname="O. Steele" surname="Steele"/><date month="July" year="2026"/></front>
+        <seriesInfo name="RFC" value="9995"/><seriesInfo name="DOI" value="10.17487/RFC9995"/>
+      </reference>
+      <reference anchor="RFC9421" target="https://www.rfc-editor.org/info/rfc9421">
+        <front><title>HTTP Message Signatures</title><author fullname="A. Backman" surname="Backman"/><date month="February" year="2024"/></front>
+        <seriesInfo name="RFC" value="9421"/><seriesInfo name="DOI" value="10.17487/RFC9421"/>
+      </reference>
+      <reference anchor="RFC8620" target="https://www.rfc-editor.org/info/rfc8620">
+        <front><title>The JSON Meta Application Protocol (JMAP)</title><author fullname="N. Jenkins" surname="Jenkins"/><date month="July" year="2019"/></front>
+        <seriesInfo name="RFC" value="8620"/><seriesInfo name="DOI" value="10.17487/RFC8620"/>
+      </reference>
       <reference anchor="RFC2119" target="https://www.rfc-editor.org/info/rfc2119">
         <front>
           <title>Key words for use in RFCs to Indicate Requirement Levels</title>
@@ -550,16 +566,16 @@ been incorporated into this document. This document obsoletes RFC
         <seriesInfo name="RFC" value="6839" />
         <seriesInfo name="DOI" value="10.17487/RFC6839" />
       </reference>
-      <reference anchor="HAIL-ATTACHMENTS" target="https://github.com/j4crev/hail/blob/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec/attachments.md">
+      <reference anchor="HAIL-ATTACHMENTS" target="https://github.com/j4crev/hail/blob/7f05efcbdde7775e108288bf9c210c5b56f607d2/spec/attachments.md">
         <front>
-          <title>Message attachments, commit 496f1232905ecdb853c8aaa0fca9ce9e12ad2691</title>
+          <title>Message attachments, commit 7f05efcbdde7775e108288bf9c210c5b56f607d2</title>
           <author fullname="Hail contributors" />
           <date year="2026" month="November" />
         </front>
       </reference>
-      <reference anchor="HAIL-SPEC" target="https://github.com/j4crev/hail/tree/496f1232905ecdb853c8aaa0fca9ce9e12ad2691/spec">
+      <reference anchor="HAIL-SPEC" target="https://github.com/j4crev/hail/tree/7f05efcbdde7775e108288bf9c210c5b56f607d2/spec">
         <front>
-          <title>Hail alpha specification, commit 496f1232905ecdb853c8aaa0fca9ce9e12ad2691</title>
+          <title>Hail alpha specification, commit 7f05efcbdde7775e108288bf9c210c5b56f607d2</title>
           <author fullname="Hail contributors" />
           <date year="2026" month="November" />
         </front>
@@ -593,7 +609,7 @@ been incorporated into this document. This document obsoletes RFC
           <t>Resolver policy: distinguish the strict-public reference fresh-read/evidence policy from deployment choices, and establish the interoperability consequences of directory disagreement, caching, and recovery windows.</t>
         </li>
         <li>
-          <t>Registration: complete media-type templates, dependency/registry review, security review of the provisional names, and any coordinated transition required by assigned values.</t>
+          <t>Registration: confirm the standards-tree publication path and author/contact metadata, attach the prepared templates to the appropriate submission, track actual requests and outcomes, and coordinate any transition required by assigned values. Project-local provisional names are not IANA provisional registrations.</t>
         </li>
         <li>
           <t>Extension publication: select companion-document boundaries for connection admission, threaded replies, shared conversations, attachments, custody, and transfer; retain their current normative authority boundaries.</t>
@@ -611,9 +627,9 @@ been incorporated into this document. This document obsoletes RFC
     </section>
     <section anchor="source-map">
       <name>Source Map and Review Boundary</name>
-      <t>The normative source snapshot is 496f1232905ecdb853c8aaa0fca9ce9e12ad2691 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md.</t>
-      <t>The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.</t>
-      <t>Open issues distinguish editorial incorporation work from genuinely unresolved protocol decisions. In particular, current body size, mandatory SPT support, bearer body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.</t>
+      <t>The normative source snapshot is 7f05efcbdde7775e108288bf9c210c5b56f607d2 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, retrieval-signatures.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md; transfer to transfer-formats.md and account-history.md; optional account access to provider-authentication.md and the jmap*.md profiles.</t>
+      <t>This working revision updates the pinned snapshot only for protocol namespaces: current envelope preimage labels use the protocol domain, and Hail JMAP capability URIs use the prefix <tt>https://racrproto.com/ns/jmap/</tt>. Only the current envelope label is accepted; JMAP clients and providers upgrade together. Protected signature inputs and authorization rules do not change. The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.</t>
+      <t>Open issues distinguish editorial incorporation work from genuinely unresolved protocol decisions. In particular, current body size, mandatory SPT support, token-plus-signature body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.</t>
     </section>
     <section anchor="body-cddl">
       <name>Body Structural Schema Excerpt</name>

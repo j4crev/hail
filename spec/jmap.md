@@ -14,7 +14,12 @@ these methods. Superseded mailbox, submission, Grant and relationship HTTP route
 and the delivery-sequence cursor are removed without an old-client fallback.
 Provider login, credential administration, owner/recovery authorization,
 federation and distinct attachment/media resources remain separate protocols.
-See the [replacement policy](../agents/standards-phase-5.md#replacement-policy-remove-superseded-account-api-machinery).
+See the [replacement policy](../agents/standards-phase-5.md#replacement-and-rollout).
+
+The [protocol namespace cutover](encoding.md#protocol-namespace-cutover) moves
+capability identifiers from the reference-provider domain to `racrproto.com`.
+Upgrade clients and provider together; no old capability alias or automatic fallback
+is defined. The URI identifies a capability and is not a discovery fetch target.
 
 ## Discovery, authentication and limits
 
@@ -29,7 +34,7 @@ methods. Clients MUST bind credentials to the selected provider and MUST NOT
 forward credentials on redirects or provider migration.
 
 Session capabilities are `urn:ietf:params:jmap:core` and
-`https://haili.app/ns/jmap/messages` with `{version:1,mutableProperties:["isRead","isInTrash"],canDestroy:true}`. The latter
+`https://racrproto.com/ns/jmap/messages` with `{version:1,mutableProperties:["isRead","isInTrash"],canDestroy:true}`. The latter
 is present in accountCapabilities and primaryAccounts only with `messages:read`.
 There is one authenticated account, with `isPersonal:true`. Its `isReadOnly` is
 false only for an unfenced session with both `messages:read` and
@@ -38,7 +43,7 @@ for a passkey session. Scoped bearer sessions expose `mutableProperties:[],canDe
 and retain CLI permanent deletion only. Other sessions expose
 `mutableProperties:[],canDestroy:false`. Bearer credentials do not gain browser
 read-state or Trash mutation authority.
-The account extension `https://haili.app/ns/jmap/account` advertises
+The account extension `https://racrproto.com/ns/jmap/account` advertises
 `{version:1,types:["HailSent","HailSubmission","HailGrant","HailRelationship"]}`
 at Session level. Its account capability lists only types readable with the
 caller's scopes; the account is its primary account. This capability also enables

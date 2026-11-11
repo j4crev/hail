@@ -11,7 +11,7 @@ This is not RFC 8621 Email draft compatibility.
 
 ## Capability and authority
 
-`https://haili.app/ns/jmap/drafts` has Session capability
+`https://racrproto.com/ns/jmap/drafts` has Session capability
 `{version:1,mutableProperties:['content','isInTrash'],canCreate:true,canDestroy:true,maxGetBytes:2097152}`. It appears in the account's
 accountCapabilities with `readOnly` reflecting message mutation authority and in primaryAccounts only when the
 caller has `messages:read` and a current passkey session. Ordinary scoped API

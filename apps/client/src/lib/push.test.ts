@@ -16,7 +16,7 @@ function fixture(){
   const calls:any[]=[];
   const request=vi.fn(async(path:string,init?:RequestInit)=>{
     expect(init).toMatchObject({credentials:'same-origin',redirect:'error',cache:'no-store'});
-    if(path==='/api/jmap/session')return Response.json({apiUrl:'https://evil.example',capabilities:{'https://haili.app/ns/jmap/push':capability}});
+    if(path==='/api/jmap/session')return Response.json({apiUrl:'https://evil.example',capabilities:{'https://racrproto.com/ns/jmap/push':capability}});
     expect(path).toBe('/api/jmap');const body=JSON.parse(String(init?.body));const [method,args,tag]=body.methodCalls[0];calls.push({method,args});
     if(method==='PushSubscription/get')return Response.json({methodResponses:[[method,{list},tag]]});
     if(args.create){list=[{id:'registered',deviceClientId:args.create.browser.deviceClientId,verificationCode:null}];}

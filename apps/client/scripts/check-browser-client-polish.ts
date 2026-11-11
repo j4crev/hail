@@ -19,7 +19,7 @@ const evaluate=async(expression:string)=>{const r=await cdp('Runtime.evaluate',{
 await cdp('Page.enable');await cdp('Runtime.enable');
 const origin=`http://localhost:${fixturePort}`;
 const accountOperation=async(name:string,args:Record<string,unknown>={})=>{
- const capability='https://haili.app/ns/jmap/account';
+ const capability='https://racrproto.com/ns/jmap/account';
  const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
  const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];assert.equal(accountId,'fixture_account');
  const response=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},

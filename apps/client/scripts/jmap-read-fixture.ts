@@ -5,8 +5,8 @@ const json=(value:unknown)=>Response.json(value,{headers:{'Content-Type':'applic
 // This is not a compatibility implementation or a production provider.
 export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:boolean;trashedAt?:string|null}[],write:(id:string,value:boolean)=>void,trashEnabled=()=>true,trashWrite:(id:string,value:boolean|null)=>void=()=>{},drafts=new Map<string,Draft>(),operation?:(name:string,args:Record<string,any>)=>Record<string,unknown>){
   const draftFixture=jmapDraftFixture(drafts,trashEnabled);
-  const accountCapability='https://haili.app/ns/jmap/account';
-  const capability='https://haili.app/ns/jmap/messages',accountId='fixture_account';let revision=0;
+  const accountCapability='https://racrproto.com/ns/jmap/account';
+  const capability='https://racrproto.com/ns/jmap/messages',accountId='fixture_account';let revision=0;
   return (path:string,method:string,input:Record<string,any>):Response|null=>{
     if(path==='/api/jmap/session'&&method==='GET')return json({capabilities:{'urn:ietf:params:jmap:core':{},[capability]:{},[draftFixture.capability]:{},...(operation?{[accountCapability]:{version:1,types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{})},primaryAccounts:{[capability]:accountId,[draftFixture.capability]:accountId,...(operation?{[accountCapability]:accountId}:{})},
       accounts:{[accountId]:{isReadOnly:false,accountCapabilities:{...(operation?{[accountCapability]:{types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{}),[capability]:{mutableProperties:['isRead','isInTrash'],canDestroy:true}}}}});
@@ -50,7 +50,7 @@ export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:
 }
 
 export async function fixtureMessageMutation(origin:string,message:{sender:string;messageId:string},patch:Record<string,boolean>|null){
-  const capability='https://haili.app/ns/jmap/messages';
+  const capability='https://racrproto.com/ns/jmap/messages';
   const session=await (await fetch(origin+'/api/jmap/session')).json();const accountId=session.primaryAccounts[capability];
   const call=async(name:string,args:unknown)=>{
     const result=await (await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,args,'test']]})})).json();

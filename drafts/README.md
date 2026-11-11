@@ -31,7 +31,7 @@ with up to 20 files totaling 25 MiB per message. Additional attachment formats a
 advanced publisher layouts remain future work.
 
 It is grounded in the immutable specification snapshot at
-`496f1232905ecdb853c8aaa0fca9ce9e12ad2691`. Some detailed normative semantics still
+`7f05efcbdde7775e108288bf9c210c5b56f607d2`. Some detailed normative semantics still
 depend on that snapshot; this draft is explicitly **not yet a self-contained
 implementation specification**. Appendix A distinguishes missing editorial
 incorporation from unresolved protocol decisions. Appendix B maps chapters to
@@ -41,7 +41,7 @@ specification drawn from the same snapshot.
 
 Review the architecture and trust boundaries first, then the permission and
 failure semantics, then the open issues. In particular, seek feedback on historical
-authority after PLC recovery, bearer-token disclosure, response timing, and
+authority after PLC recovery, token-plus-signature retrieval and disclosure, response timing, and
 extension boundaries. A second deployed provider is not a prerequisite for this
 review, and cross-language codec tests are not described as a provider trial.
 
@@ -71,9 +71,31 @@ Author metadata, internal reference targets, and the body CDDL definitions were
 also checked against the source specification. The plain-text rendering is 25
 pages. These results describe that validation run.
 
+## Phase 7 refresh
+
+The unsubmitted `-00` source now reflects the current pinned implementation/spec
+snapshot: RFC 9995 envelope descriptors and snapshot hashes, mandatory RFC 9421
+recipient proof for bodies and attachments, portable v11/managed v12 history,
+and the optional JMAP/events/push account boundary. The draft remains a core
+summary with explicit normative dependencies, not a second complete specification.
+
+The [encoding inventory](../spec/encoding.md#publication-identifiers-and-registration-templates)
+is the single working owner for registration templates, allocation policy and actual
+submission status. The [spec index review](../spec/README.md#standards-profile-security-review)
+owns security-review boundaries, and the [vector index](../spec/vectors/README.md#phase-7-evidence-and-limits)
+owns executable evidence. Do not copy their evolving inventories into this README.
+The pinned draft reference records behavior before the namespace correction.
+Appendix B explicitly records the exclusive current `racrproto.com` namespace; advance the public snapshot before submission so it incorporates that change.
+
+Validation of this refresh is recorded with the phase 7 vector evidence below its
+protocol checks. Existing `-00` may be edited because it has never been submitted;
+a future submitted revision must follow the preservation procedure below.
+
 ## Before submission
 
-1. Review the proposed title, Experimental status, scope, author details, open
+1. Confirm the standards-tree media-type publication/approval path and the prepared
+   [registration templates](../spec/encoding.md#registration-template-fields).
+   Review the proposed title, Experimental status, scope, author details, open
    issues, and IPR/submission obligations. Keep unresolved protocol work visible;
    do not remove it simply to make a checklist look complete.
 2. Decide how much of the pinned normative specification to incorporate into the

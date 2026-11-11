@@ -4,7 +4,7 @@ import {assertCborResourceLimits} from './scan.js';
 import {HailCodecError} from './errors.js';
 import type {HailSigner,HailVerifier} from './types.js';
 
-export const HASH_ENVELOPE_PREIMAGE='https://haili.app/ns/racr/preimage';
+export const HASH_ENVELOPE_PREIMAGE='https://racrproto.com/ns/racr/preimage';
 export const ENVELOPE_DESCRIPTOR_MAX_BYTES=16_384;
 export const ENVELOPE_REPRESENTATION_MAX_BYTES=17_408;
 const cbor=(v:unknown)=>Uint8Array.from(encode(v,rfc8949EncodeOptions));
