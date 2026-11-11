@@ -5,38 +5,22 @@ are not delivered or signed, and confer no sending authority. The current alpha
 JSON format below is distinct from body profiles: it preserves incomplete editor
 input rather than a publishable document. No federation format changes.
 
-## Account API
+## JMAP interface
 
-All paths are below `/api/v1/account`. Reads require `messages:read`; mutations
-require `messages:write`. Both require a passkey-backed session. Standard account
-session authentication, no-store responses and mutation same-origin checks apply.
-Mutations require an active unfenced account with no migration in progress and
-serialize on the owning account. IDs are lowercase UUIDv7. Other accounts cannot
+Draft discovery, get/query/changes and conditional create/update/destroy use the
+[HailDraft capability](jmap-drafts.md). The former `/api/v1/account/drafts` routes
+have been removed. Reads require messages:read and a passkey session; mutations
+also require messages:write and an active unfenced account. Other accounts cannot
 read or mutate a draft using its ID.
 
-| Method/path | Request | Response |
-| --- | --- | --- |
-| `GET /drafts` | Optional `after=UUIDv7`, `trash=true` | `{drafts: Draft[], next: UUIDv7 \| null}` |
-| `GET /drafts/:id` | No query | One active `Draft`, or `404` |
-| `POST /drafts/:id/save` | `{revision: integer, content: DraftContent}` | Saved `Draft` |
-| `POST /drafts/:id/delete` | `{}` | `{state: "trashed" \| "deleted"}` |
-| `POST /drafts/:id/restore` | `{}` | `{restored: 0 \| 1}` |
-
-Lists contain up to 50 items in descending ID order (creation order). `after` is
-an exclusive ID cursor. `trash=true` selects only live Trash; the default selects
-only active drafts. Unknown or repeated query parameters and any other `trash`
-value are invalid. Mutations require `application/json`, no Content-Encoding,
-no duplicate or unknown object members, and at most 400,000 UTF-8 request bytes.
-Invalid input is `400`, oversized input `413`, unsupported media `415`, and
-unsupported methods `405`. Conflicting revisions, Trash state, accepted send IDs,
-or migration return `409`; normal account authentication/scope failures apply.
-
-`Draft` is `{id, revision, content, updatedAt, trashedAt}`. Dates are ISO 8601 UTC
-strings; `trashedAt` is null for active drafts. A new draft requires revision 0
-and is stored at revision 1. An update requires its current positive revision
-and increments it. Delete and restore also increment the revision when changing
-state. Saving a trashed draft is forbidden. A stale or ambiguously acknowledged
-save requires refetching the draft; clients must retain local edits on failure.
+The editor's `Draft` projection is `{id, revision, content, updatedAt, trashedAt}`,
+where id is the original UUIDv7 draftId, distinct from the JMAP incarnation ID.
+The web editor verifies its loaded revision against the current record and writes
+with that record's JMAP state. A competing edit fails without overwriting either
+edit. New drafts start at revision 1. Effective updates advance revision; no-op
+updates do not. Failed or ambiguously acknowledged writes require refetching;
+clients must retain local edits on failure. Draft lists use JMAP query anchors
+and bounded get batches, rejecting mixed-state pages.
 
 `DraftContent` has these required fields (see the accompanying
 [schema](schemas/provider-draft.json)):
@@ -74,7 +58,7 @@ Saving a new draft using an already accepted send ID is rejected.
 Deletion honors the current account Trash setting. With Trash enabled, the draft
 is restorable for 30 days from its original removal; retrying deletion does not
 extend retention. Restoring returns it to Drafts, not Inbox or Sent. Expired or
-absent drafts restore zero items. Empty Trash, disabling Trash, and the existing
+absent drafts return notFound. Empty Trash, disabling Trash, and the existing
 retention collector permanently remove applicable draft rows. With Trash disabled,
 delete is permanent. Draft deletion does not touch delivered messages.
 
@@ -88,10 +72,12 @@ from a saved audience. Sending still validates current recipient authority.
 Apply migration **0101_message_drafts** before this application release. It adds
 `account_message_drafts` with account ownership and migration-fence protection.
 Rollback drops saved drafts; back them up before a deliberate schema rollback.
-Provider-to-provider draft transfer is unresolved: drafts are outside the current
-account-history profile, like local mailbox preferences/dispositions. This API
-synchronizes devices using the same account provider, not different providers.
-No new envelope, body, or account-history version is implied.
+Provider-to-provider draft transfer is required by the accepted phase 5 design,
+but is not implemented by the current account-history profile. This API currently
+synchronizes devices using the same provider. The transfer extension must preserve
+saved content, revision state and required references/attachment bytes without
+implicitly sending a draft. See [the portability requirements](../agents/standards-phase-5.md#accepted-product-decision-preserve-mailbox-state-on-provider-migration).
+No new envelope, body or account-history version is implemented by this decision.
 
 Content conformance examples are in [provider-drafts vectors](vectors/provider-drafts.json).
 Database and route tests additionally cover account isolation, concurrent saves,
@@ -103,8 +89,9 @@ An empty draft array is permitted; omit it in a published body. The 25 MiB
 aggregate limit applies to drafts too. File bytes are separately uploaded by the
 owning account; draft metadata protects those editable upload references from
 expiry until the draft is deleted. Full ownership and file validation is required
-before send acceptance. Drafts themselves remain provider-local; migration
-exports carry retained upload bytes but do not promise draft-editor migration.
+before send acceptance. Portable v11 and managed v12 migration exports preserve
+the draft and required upload bytes together; missing required bytes reject the
+export rather than silently losing part of the draft.
 
 ## Structured builder drafts (current alpha)
 
@@ -148,3 +135,9 @@ than being silently dropped. Inline replies and forwards keep their existing flo
 These are client UI choices, not changes to the signed message formats. Existing
 browser recovery records are ignored. The standalone demo's explicit save uses
 its host's device-local store; it has no account Drafts folder.
+
+The [JMAP draft capability](jmap-drafts.md) exposes get/query/changes/set over
+this storage. Successful changes and consumption produce transactional change
+events. The web editor, Drafts list and draft Trash actions use this capability.
+Portable v11 and managed v12 account-history exports/imports preserve this data
+and required attachment uploads; JMAP synchronization identities reset at cutover.

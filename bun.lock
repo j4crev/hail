@@ -102,6 +102,7 @@
         "hono": "4.13.11",
         "ipaddr.js": "2.2.0",
         "multiformats": "13.4.2",
+        "structured-headers": "2.1.1",
       },
       "devDependencies": {
         "@racrproto/content-builder": "workspace:*",
@@ -168,6 +169,9 @@
         "vitest": "5.0.5",
       },
     },
+  },
+  "patchedDependencies": {
+    "structured-headers@2.1.1": "patches/structured-headers@2.1.1.patch",
   },
   "overrides": {
     "cookie": "0.7.2",
@@ -1008,6 +1012,8 @@
     "split2": ["split2@4.2.0", "", {}, "sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg=="],
 
     "std-env": ["std-env@4.3.0", "", {}, "sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag=="],
+
+    "structured-headers": ["structured-headers@2.1.1", "", {}, "sha512-Ub9mpW7mtzUC7yM7Vrl+CwvHvXa4WhKWROUM9YKmkOsI55dMSg2rhiA7Q5vwRixQk1ndQ2m8YiM6YhO+GJn9LQ=="],
 
     "supports-color": ["supports-color@8.1.1", "", { "dependencies": { "has-flag": "^4.0.0" } }, "sha512-MpUEN2OodtUzxvKQl72cUF7RQ5EiHsGvSsVG0ia9c5RbWGL2CI4C7EpPS8UTBIplnlzZiNuV56w+FuNxy3ty2Q=="],
 

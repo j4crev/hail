@@ -21,7 +21,7 @@ pub async fn list_pages(
     kind: &str,
     after: Option<&str>,
     pages: usize,
-    mut get: impl AsyncFnMut(&str) -> Result<Value, Error>,
+    mut get: impl AsyncFnMut(Option<&str>) -> Result<Value, Error>,
 ) -> Result<Value, Error> {
     if !(1..=100).contains(&pages) || after.is_some_and(|s| !cursor(kind, s)) {
         return Err(Error::usage("Invalid page count or continuation cursor"));
@@ -36,14 +36,7 @@ pub async fn list_pages(
     let mut first = json!({});
     let mut size = 0;
     for page in 0..pages {
-        // Validated cursors contain only URL-unreserved ASCII bytes.
-        let path = format!(
-            "/{kind}{}",
-            continuation
-                .as_ref()
-                .map_or(String::new(), |c| format!("?after={c}"))
-        );
-        let result = get(&path).await?;
+        let result = get(continuation.as_deref()).await?;
         size += result.to_string().len();
         let rows = result[field].as_array().ok_or_else(|| {
             Error::response("Provider returned an invalid or oversized list page")
@@ -92,25 +85,6 @@ pub async fn list_pages(
 }
 
 // Match encodeURIComponent for sender/message path segments.
-pub fn component(value: &str) -> String {
-    let mut result = String::new();
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
-            result.push(char::from(byte));
-        } else {
-            use std::fmt::Write;
-            write!(result, "%{byte:02X}").unwrap();
-        }
-    }
-    result
-}
-
-pub fn query(pairs: &[(&str, &str)]) -> String {
-    let mut url = reqwest::Url::parse("https://query.invalid").unwrap();
-    url.query_pairs_mut().extend_pairs(pairs.iter().copied());
-    url.query().unwrap_or("").to_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,7 +95,7 @@ mod tests {
     async fn merges_pages_and_preserves_metadata_and_resume_cursor() {
         let mut paths = Vec::new();
         let result = list_pages("grants", None, 2, async |path| {
-            paths.push(path.to_owned());
+            paths.push(path.map(str::to_owned));
             Ok(if paths.len() == 1 {
                 json!({"grants":[{"grantId":A}],"next":A,"metadata":"kept"})
             } else {
@@ -130,7 +104,7 @@ mod tests {
         })
         .await
         .unwrap();
-        assert_eq!(paths, ["/grants", &format!("/grants?after={A}")]);
+        assert_eq!(paths, [None, Some(A.to_owned())]);
         assert_eq!(
             result,
             json!({"grants":[{"grantId":A},{"grantId":B}],"next":B,"metadata":"kept"})

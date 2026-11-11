@@ -49,3 +49,13 @@ it("guards the anonymous connection inbox before page or data rendering",async()
   expect(response.headers.get('location')).toBe(loginPath(url));
   expect(resolve).not.toHaveBeenCalled();
 });
+
+it('prevents caching private rendered pages and protected error responses',async()=>{
+ for(const status of [200,401,403,404,500]){
+  const url=new URL('https://provider.example/account');
+  const response=await handle({event:{url,cookies:{get:()=> 'session'},request:new Request(url)},
+   resolve:async()=>new Response('private',{status,headers:{'cache-control':'public, max-age=600'}})} as never);
+  expect(response.status).toBe(status);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+ }
+});

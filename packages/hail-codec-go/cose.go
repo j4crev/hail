@@ -3,6 +3,7 @@ package hailcodec
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"unicode/utf8"
@@ -32,7 +33,7 @@ var signedProfiles = map[string]signedProfile{
 	ConnectionGrantType:        {"application/hail-connection-grant+cbor", "hail-identity", 16384},
 	ConnectionControlType:      {"application/hail-connection-control+cbor", "hail-messaging", 16384},
 	ConversationType:           {"application/hail-conversation+cbor", "hail-messaging", 16384},
-	EnvelopeType:               {"application/hail-envelope+cbor", "hail-messaging", 16384},
+	EnvelopeType:               {"application/hail-envelope+cbor", "hail-messaging", 17408},
 	DeliveryStatusType:         {"application/hail-delivery-status+cbor", "hail-messaging", 16384},
 }
 
@@ -97,6 +98,7 @@ type parsedCOSE struct {
 	kind, keyID          string
 	data                 *authenticatedData
 	protected, signature []byte
+	signaturePayload     []byte
 }
 
 func coseLimits(maximumBytes int) ResourceLimits {
@@ -240,12 +242,27 @@ func SignPayload(payload Payload, privateKey ed25519.PrivateKey) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	toSign, err := SigStructure(protectedBytes, payloadBytes)
+	signaturePayload := payloadBytes
+	unprotected := map[any]any{}
+	if kind == EnvelopeType {
+		if len(payloadBytes) > 16384 {
+			return nil, errors.New("descriptor too large")
+		}
+		hash := sha256.Sum256(payloadBytes)
+		signaturePayload = hash[:]
+		protected = map[any]any{uint64(1): int64(-19), uint64(4): []byte(keyID), uint64(258): int64(-16), uint64(259): profile.contentType}
+		protectedBytes, err = coseEncMode.Marshal(protected)
+		if err != nil {
+			return nil, err
+		}
+		unprotected[HashEnvelopePreimage] = payloadBytes
+	}
+	toSign, err := SigStructure(protectedBytes, signaturePayload)
 	if err != nil {
 		return nil, err
 	}
 	signature := ed25519.Sign(privateKey, toSign)
-	representation, err := coseEncMode.Marshal(cbor.Tag{Number: COSESign1Tag, Content: []any{protectedBytes, map[any]any{}, payloadBytes, signature}})
+	representation, err := coseEncMode.Marshal(cbor.Tag{Number: COSESign1Tag, Content: []any{protectedBytes, unprotected, signaturePayload, signature}})
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +288,7 @@ func VerifySignedPayload(kind string, representation []byte, verifier Verifier) 
 	if err != nil {
 		return nil, err
 	}
-	structure, err := SigStructure(parsed.protected, parsed.data.payloadBytes)
+	structure, err := SigStructure(parsed.protected, parsed.signaturePayload)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +298,7 @@ func VerifySignedPayload(kind string, representation []byte, verifier Verifier) 
 	return &VerifiedObject{payloadType: parsed.kind, keyID: parsed.keyID, data: parsed.data}, nil
 }
 
-func parseCOSE(kind string, representation []byte) (*parsedCOSE, error) {
+func parseDirectPayloadCOSE(kind string, representation []byte) (*parsedCOSE, error) {
 	profile, ok := signedProfiles[kind]
 	if !ok {
 		return nil, errors.New("unknown signed payload type")
@@ -375,5 +392,82 @@ func parseCOSE(kind string, representation []byte) (*parsedCOSE, error) {
 		return nil, errors.New("payload key_id does not match protected kid")
 	}
 	data := &authenticatedData{payload: clonePayload(payload), payloadBytes: bytes.Clone(payloadBytes), representationBytes: representationBytes}
-	return &parsedCOSE{kind: kind, keyID: keyID, data: data, protected: bytes.Clone(protected), signature: bytes.Clone(signature)}, nil
+	return &parsedCOSE{kind: kind, keyID: keyID, data: data, protected: bytes.Clone(protected), signature: bytes.Clone(signature), signaturePayload: bytes.Clone(payloadBytes)}, nil
+}
+
+const HashEnvelopePreimage = "https://haili.app/ns/racr/preimage"
+
+func parseCOSE(kind string, representation []byte) (*parsedCOSE, error) {
+	if kind != EnvelopeType {
+		return parseDirectPayloadCOSE(kind, representation)
+	}
+	if err := scanCBOR(representation, coseLimits(17408), true, false); err != nil {
+		return nil, err
+	}
+	var tagged cbor.Tag
+	if err := coseDecMode.Unmarshal(representation, &tagged); err != nil {
+		return nil, err
+	}
+	if tagged.Number != 18 {
+		return nil, errors.New("hash envelope tag required")
+	}
+	canonical, err := coseEncMode.Marshal(tagged)
+	if err != nil || !bytes.Equal(canonical, representation) {
+		return nil, errors.New("noncanonical hash envelope")
+	}
+	parts, ok := tagged.Content.([]any)
+	if !ok || len(parts) != 4 {
+		return nil, errors.New("hash envelope array")
+	}
+	p, ok := parts[0].([]byte)
+	if !ok {
+		return nil, errors.New("protected bytes")
+	}
+	u, ok := parts[1].(map[any]any)
+	if !ok || len(u) != 1 {
+		return nil, errors.New("preimage map")
+	}
+	preimage, ok := u[HashEnvelopePreimage].([]byte)
+	if !ok || len(preimage) < 1 || len(preimage) > 16384 {
+		return nil, errors.New("preimage bytes/size")
+	}
+	digest, ok := parts[2].([]byte)
+	if !ok || len(digest) != 32 {
+		return nil, errors.New("hash payload")
+	}
+	signature, ok := parts[3].([]byte)
+	if !ok || len(signature) != 64 {
+		return nil, errors.New("hash signature")
+	}
+	if err := scanCBOR(p, coseLimits(1024), false, false); err != nil {
+		return nil, err
+	}
+	var h map[any]any
+	if err := coseDecMode.Unmarshal(p, &h); err != nil {
+		return nil, err
+	}
+	canonical, err = coseEncMode.Marshal(h)
+	if err != nil || !bytes.Equal(canonical, p) {
+		return nil, errors.New("noncanonical protected")
+	}
+	if len(h) != 4 || h[uint64(1)] != int64(-19) || h[uint64(258)] != int64(-16) || h[uint64(259)] != "application/hail-envelope+cbor" {
+		return nil, errors.New("hash envelope profile")
+	}
+	kid, ok := h[uint64(4)].([]byte)
+	if !ok || !utf8.Valid(kid) {
+		return nil, errors.New("hash envelope kid")
+	}
+	hash := sha256.Sum256(preimage)
+	if !bytes.Equal(digest, hash[:]) {
+		return nil, errors.New("preimage digest mismatch")
+	}
+	payload, err := DecodePayload(kind, preimage)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := expectedKeyID(kind, payload)
+	if err != nil || expected != string(kid) {
+		return nil, errors.New("wrong key role")
+	}
+	return &parsedCOSE{kind: kind, keyID: string(kid), data: &authenticatedData{payload: clonePayload(payload), payloadBytes: bytes.Clone(preimage), representationBytes: bytes.Clone(representation)}, protected: bytes.Clone(p), signature: bytes.Clone(signature), signaturePayload: bytes.Clone(digest)}, nil
 }

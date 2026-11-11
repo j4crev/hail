@@ -1,3 +1,4 @@
+import {inspectHashEnvelope,signHashEnvelope,ENVELOPE_DESCRIPTOR_MAX_BYTES} from './hash-envelope.js';
 import {
   decode as decodeCbor,
   encode as encodeCbor,
@@ -25,7 +26,7 @@ import type {
 } from "./types.js";
 import type { HailPayloadByType } from "./models.js";
 import { expectedKeyId, validatePayload } from "./validation.js";
-import { encodePayload } from "./payload.js";
+import { decodePayload, encodePayload } from "./payload.js";
 import { assertCborResourceLimits } from "./scan.js";
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
@@ -50,6 +51,7 @@ interface ParsedCose<T extends HailSignedPayloadType> {
   readonly protectedBytes: Uint8Array;
   readonly representationBytes: Uint8Array;
   readonly signature: Uint8Array;
+  readonly signaturePayloadBytes: Uint8Array;
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
@@ -77,7 +79,7 @@ function coseLimits(maximumBytes: number): HailResourceLimits {
   };
 }
 
-function parseCose<T extends HailSignedPayloadType>(
+function parseDirectPayloadCose<T extends HailSignedPayloadType>(
   type: T,
   representation: Uint8Array,
 ): ParsedCose<T> {
@@ -201,7 +203,17 @@ function parseCose<T extends HailSignedPayloadType>(
     protectedBytes,
     representationBytes,
     signature,
+    signaturePayloadBytes:payloadBytes,
   };
+}
+
+function parseCose<T extends HailSignedPayloadType>(type:T,representation:Uint8Array):ParsedCose<T> {
+  if(type!=='hail.envelope')return parseDirectPayloadCose(type,representation);
+  const h=inspectHashEnvelope(representation,SIGNED_PROFILES[type].contentType,ENVELOPE_DESCRIPTOR_MAX_BYTES);
+  const payload=decodePayload(type,h.preimage);
+  if(h.keyId!==expectedKeyId(type,payload))throw new HailCodecError('wrong-key-role','hash envelope kid differs from sender role');
+  return {keyId:h.keyId,payload,payloadBytes:h.preimage,protectedBytes:h.protectedBytes,
+    representationBytes:h.representationBytes,signature:h.signature,signaturePayloadBytes:h.digest};
 }
 
 function inspectedResult<T extends HailSignedPayloadType>(
@@ -242,6 +254,7 @@ export async function signPayload<T extends HailSignedPayloadType>(
 
   const profile = SIGNED_PROFILES[type];
   const payloadBytes = encodePayload(type, payload);
+  if(type==='hail.envelope')return signHashEnvelope(payloadBytes,profile.contentType,signer,ENVELOPE_DESCRIPTOR_MAX_BYTES);
   const protectedHeader = new Map<number, number | string | Uint8Array>([
     [COSE_ALGORITHM_HEADER, COSE_ED25519_ALGORITHM],
     [COSE_CONTENT_TYPE_HEADER, profile.contentType],
@@ -280,7 +293,7 @@ export async function verifySignedPayload<T extends HailSignedPayloadType>(
 ): Promise<VerifiedHailObject<HailPayloadByType[T]>> {
   const parsed = parseCose(type, representation);
   const valid = await verifier.verify(
-    signatureStructure(parsed.protectedBytes, parsed.payloadBytes),
+    signatureStructure(parsed.protectedBytes, parsed.signaturePayloadBytes),
     parsed.signature,
     parsed.keyId,
   );

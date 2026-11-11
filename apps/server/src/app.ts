@@ -1,3 +1,10 @@
+import {JmapOperations} from './jmap/operations.js';
+import type {JmapCollections} from './jmap/collections.js';
+import type {JmapBlobs} from './jmap/blobs.js';
+import type {JmapDrafts} from './jmap/drafts.js';
+import {registerJmapRoutes} from "./jmap/routes.js";
+import type {JmapMessages} from "./jmap/messages.js";
+import type {BodyRequestVerifier} from "./bodies/request-proof.js";
 import {RegistrationPolicy} from "./onboarding/registration.js";
 import {OperatorStatistics} from "./operator/stats.js";
 import {registerOperatorRoutes} from "./operator/routes.js";
@@ -38,7 +45,7 @@ import { registerSelfServiceOnboarding, type SelfServiceOnboarding } from "./acc
 import { registerSignupEmailRoutes, type SignupEmailClient } from "./onboarding/email.js";
 import { registerSignupMonitorRoutes, type SignupMonitorService } from "./onboarding/monitor.js";
 import { registerSignupRoutes, type SignupCoordinator } from "./onboarding/signup.js";
-import {GrantPermissions,registerPermissionRoutes} from "./accounts/permissions.js";
+import {GrantPermissions} from "./accounts/permissions.js";
 import type { AccountMessaging } from "./accounts/messaging.js";
 import type {AccountPublications} from "./accounts/publications.js";
 import { registerAccountAccess } from "./accounts/access-routes.js";
@@ -74,6 +81,11 @@ export interface AppDependencies {
   senderProfileStore?: SenderProfileStore;
   grantReceiver?: GrantReceiver;
   bodyStore?: BodyStore;
+  bodyProof?: BodyRequestVerifier;
+  jmap?: JmapMessages;
+  jmapDrafts?: JmapDrafts;
+  jmapBlobs?: JmapBlobs;
+  jmapCollections?: JmapCollections;
   envelopeReceiver?: EnvelopeReceiver;
   deliveryStatusSigner?: DeliveryStatusSigner;
   deliveryStatusReceiver?: DeliveryStatusReceiver;
@@ -128,7 +140,7 @@ export function createApp(
   app.get("/api/v1/capabilities",async context=>{
     context.header("Cache-Control","no-store");
     try{return context.json({type:"racr.capabilities",version:1,
-      features:{sharedConversations:Boolean(dependencies.accountApi?.publications&&dependencies.accountApi?.messaging),conversationControls:Boolean(dependencies.accountApi?.connections),inboxWait:Boolean(dependencies.accountApi?.messaging),conversations:Boolean(dependencies.accountApi?.messaging),connectionInvitations:Boolean(dependencies.accountApi?.connections)},
+      features:{sharedConversations:Boolean(dependencies.jmap&&dependencies.accountApi?.publications&&dependencies.accountApi?.messaging),conversationControls:Boolean(dependencies.jmap&&dependencies.accountApi?.connections),inboxWait:Boolean(dependencies.jmap&&dependencies.accountApi?.messaging),conversations:Boolean(dependencies.jmap&&dependencies.accountApi?.messaging),connectionInvitations:Boolean(dependencies.jmap&&dependencies.accountApi?.connections)},
       signup:{available:Boolean(dependencies.selfServiceOnboarding),mode:registration?(await registration.read()).mode:null},
       passkeyRequired:["account browser-login","operator administration"]});}
     catch{return context.json({error:"Provider capabilities unavailable"},503);}
@@ -158,8 +170,7 @@ export function createApp(
     if(dependencies.passkeys&&dependencies.signup&&dependencies.signupEmail&&config.alphaSignup)
       registerOperatorRoutes(app,accounts,new OperatorInvitations(dependencies.signupEmail.sql,config.publicOrigin,
         dependencies.passkeys.origin,config.alphaSignup.invitationKey,dependencies.signupEmail.client),dependencies.passkeys.origin,new OperatorStatistics(dependencies.signupEmail.sql),registration);
-    if(dependencies.passkeys&&dependencies.servingSql)registerPermissionRoutes(app,
-      new GrantPermissions(dependencies.servingSql,accounts,grants,service,dependencies.passkeys,config.publicOrigin),accounts,dependencies.passkeys.origin);
+
   }
 
   if (dependencies.discoveryStore) {
@@ -171,7 +182,11 @@ export function createApp(
   if (dependencies.grantReceiver) {
     registerGrantRoutes(app, config.hailServiceBase, dependencies.grantReceiver);
   }
-  if (dependencies.bodyStore) registerBodyRoutes(app, dependencies.bodyStore);
+  if(dependencies.jmap&&dependencies.accountApi)registerJmapRoutes(app,dependencies.accountApi.accounts,dependencies.jmap,config.publicOrigin,config.passkeys?.origin??config.publicOrigin,dependencies.jmapDrafts,dependencies.jmapBlobs,dependencies.jmapCollections,
+    new JmapOperations({...dependencies.accountApi,...(dependencies.jmapBlobs?{blobs:dependencies.jmapBlobs}:{}),
+      ...(dependencies.passkeys&&dependencies.servingSql?{permissions:new GrantPermissions(dependencies.servingSql,dependencies.accountApi.accounts,
+        dependencies.accountApi.grants,dependencies.accountApi.service,dependencies.passkeys,config.publicOrigin)}:{})}));
+  if (dependencies.bodyStore) registerBodyRoutes(app, dependencies.bodyStore, dependencies.bodyProof);
   if (dependencies.envelopeReceiver) registerEnvelopeRoutes(app, dependencies.envelopeReceiver,
     dependencies.deliveryStatusSigner, protectedSchedule);
   if (dependencies.deliveryStatusReceiver) registerDeliveryStatusRoutes(app, dependencies.deliveryStatusReceiver,

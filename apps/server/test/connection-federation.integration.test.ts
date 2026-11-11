@@ -1,4 +1,10 @@
-import {collectConversationHistory,reconstructConversations} from '../src/migration/conversation-history.js';
+import {JmapMessages,JMAP_CORE} from '../src/jmap/messages.js';
+import {HAIL_ACCOUNT} from '../src/jmap/collections.js';
+import {JmapOperations} from '../src/jmap/operations.js';
+import {registerJmapRoutes} from '../src/jmap/routes.js';
+import {BodyRequestSigner,BodyRequestVerifier} from "../src/bodies/request-proof.js";
+import {signSnapshot} from '../src/migration/snapshot-signature.js';
+import {collectConversationHistory,conversationHistoryDigest,reconstructConversations} from '../src/migration/conversation-history.js';
 import {CustomDomains} from "../src/accounts/custom-domains.js";
 import {AddressVerifier} from "../src/discovery/verifier.js";
 import {registerDiscoveryRoutes} from "../src/discovery/routes.js";
@@ -54,7 +60,7 @@ import {registerConnectionHandoverRoutes} from "../src/migration/routes.js";
 import {PortablePlcSubmission} from "../src/migration/poc-plc-submission.js";
 import {verifyConnectionHistoryAuthority} from "../src/migration/connection-history-verification.js";
 import {ConnectionReconstruction,reconstructConnections} from '../src/migration/connection-reconstruction.js';
-import {MANAGED_TRANSFER_TABLES,managedHistoryCheckpoint,managedSnapshotSignatureInput,validateManagedTransferManifest,type ManagedTransferManifest} from '../src/migration/managed-snapshot.js';
+import {MANAGED_TRANSFER_TABLES,managedHistoryCheckpoint,validateManagedTransferManifest,type ManagedTransferManifest} from '../src/migration/managed-snapshot.js';
 import {signConnectionHandoverTransition,verifyConnectionHandoverResult,connectionActivationDigest,type ConnectionHandoverTransition} from '../src/migration/connection-handover.js';
 import {signActivationReceipt} from '../src/migration/activation-receipt.js';
 import {ConnectionTransferOrchestration} from '../src/migration/connection-orchestration.js';
@@ -313,12 +319,14 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       const statuses=new DeliveryStatusReceiver(sql,accounts,resolver,p.origin+'/hail'),signer=new DeliveryStatusSigner(sql,accounts,p.encryptor,resolver,p.origin+'/hail');
       const service=new EnvelopeService(accounts,new GrantRepository(sql),envelopes,p.encryptor,resolver,p.origin+'/hail',undefined,authority);
       const messaging=new AccountMessaging(sql,bodies,envelopes,service,(sender,id)=>submitEnvelope(sender,id,envelopes,resolver,statuses,{fetch:network,validateTarget:validate},authority));
-      const publications=new AccountPublications(sql,messaging,authority),delivery=new DeliveryRepository(sql,authority),retriever=new BodyRetriever(resolver,network,validate);
+      const publications=new AccountPublications(sql,messaging,authority),delivery=new DeliveryRepository(sql,authority),retriever=new BodyRetriever(resolver,network,validate,new BodyRequestSigner(sql,accounts,p.encryptor,resolver,p.origin+'/hail').sign);
       // Lifecycle tests wait for actual work, not the fixed admission lease; budget/privacy behavior has dedicated tests.
       const schedule=new ProtectedResponseSchedule({minimumResponseMs:mode==='shared conversations'?750:1,processingDeadlineMs:10000,maxInFlight:128,maxPerSource:128});
       const grants=new GrantRepository(sql),grantService=new GrantService(accounts,grants,p.encryptor,resolver,{async verify(){throw new Error('No fixture subscription discovery');}},{async verify(){throw new Error('No fixture publisher profile');}},p.origin+'/hail');
       registerAccountApiRoutes(p.app,p.accounts,grants,grantService,p.origin,messaging,undefined,undefined,undefined,undefined,undefined,undefined,p.origin,publications);
-      registerBodyRoutes(p.app,bodies);
+      registerJmapRoutes(p.app,p.accounts,new JmapMessages(sql,p.origin),p.origin,p.origin,undefined,undefined,undefined,
+        new JmapOperations({accounts:p.accounts,grants,service:grantService,messaging,publications,connections:p.service}));
+      registerBodyRoutes(p.app,bodies,new BodyRequestVerifier(sql,resolver,p.origin),new ProtectedResponseSchedule({minimumResponseMs:750,processingDeadlineMs:10000,maxInFlight:128,maxPerSource:128}));
       registerEnvelopeRoutes(p.app,new EnvelopeReceiver(accounts,envelopes,resolver,p.origin+'/hail',undefined,authority),mode==='shared conversations'?signer:undefined,schedule);
       return {accounts,bodies,envelopes,authority,service,messaging,publications,delivery,retriever,worker:new DeliveryWorker(delivery,retriever),statuses,signer,schedule};
     };
@@ -326,8 +334,20 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     expect((await one.messaging.unreadCounts(a.session)).unseenConnections).toBe((await active(a)).filter(c=>c.isNew).length);
     expect((await two.messaging.unreadCounts(b.session)).unseenConnections).toBe((await active(b)).filter(c=>c.isNew).length);
     const received=async()=>{for(let i=0;i<500&&(one.schedule.processingInFlight||two.schedule.processingInFlight);i++)await Bun.sleep(10);expect(one.schedule.processingInFlight+two.schedule.processingInFlight).toBe(0);};
-    const api=(user:User,path:string,input?:unknown,headers:Record<string,string>={})=>user.provider.app.request(user.provider.origin+'/api/v1/account/'+path,{method:input===undefined?'GET':'POST',
-      headers:{Cookie:'hail_session='+user.token,Origin:user.provider.origin,'Content-Type':'application/json',...headers},...(input===undefined?{}:{body:JSON.stringify(input)})});
+    const api=async(user:User,method:string,args:Record<string,unknown>,headers:Record<string,string>={})=>{
+      const accountId=new JmapMessages(user.provider.db.sql,user.provider.origin).accountId(user.session);
+      const response=await user.provider.app.request(user.provider.origin+'/jmap',{method:'POST',
+        headers:{...(headers.Authorization?{}:{Cookie:'hail_session='+user.token}),Origin:user.provider.origin,'Content-Type':'application/json',...headers},
+        body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[[method,{accountId,...args},'test']]})});
+      if(!response.ok)return response;
+      const calls=(await response.json()).methodResponses;expect(calls).toHaveLength(1);expect(calls[0][2]).toBe('test');
+      const [name,result]=calls[0];
+      if(name!=='error'){expect(name).toBe(method);expect(result.accountId).toBe(accountId);}
+      const status=name==='error'?result.httpStatus??({invalidArguments:400,forbidden:403,notFound:404} as Record<string,number>)[result.type]??500:200;
+      return Response.json(result,{status});
+    };
+    const send=(user:User,input:unknown,headers:Record<string,string>={})=>api(user,'HailSubmission/submit',{kind:'message',input},headers);
+    const submitConnections=(user:User,input:unknown,headers:Record<string,string>={})=>api(user,'HailSubmission/submit',{kind:'connections',input},headers);
     if(mode==="custom-domain loss"){
       // Use actual WebFinger/COSE routes and signed-binding verification. Only
       // the recursive DNS answer and HTTPS transport are controlled by the test.
@@ -351,11 +371,11 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
         const outgoing=uuidV7(),reply=uuidV7();
         const pair=(await one.publications.connectionTargets(a.session)).connections.find(t=>t.recipientDid===b.did)!;
         const reverse=(await two.publications.connectionTargets(b.session)).connections.find(t=>t.recipientDid===a.did)!;
-        expect((await api(a,'messages',{messageId:outgoing,text:label,connectionId:pair.connectionId,
+        expect((await send(a,{messageId:outgoing,text:label,connectionId:pair.connectionId,
           connectionEpoch:pair.epoch,recipientDid:b.did})).status).toBe(200);
         await received();expect(await withFreshServingGenerations(second.db.sql,()=>two.worker.processOne())).toBe('delivered');
         expect(await two.messaging.read(b.session,a.did,outgoing)).toMatchObject({kind:'connection',senderAddress:a.address});
-        expect((await api(b,'messages',{messageId:reply,text:'Reply: '+label,connectionId:reverse.connectionId,
+        expect((await send(b,{messageId:reply,text:'Reply: '+label,connectionId:reverse.connectionId,
           connectionEpoch:reverse.epoch,recipientDid:a.did,inReplyTo:{sender:a.did,messageId:outgoing}})).status).toBe(200);
         await received();expect(await withFreshServingGenerations(first.db.sql,()=>one.worker.processOne())).toBe('delivered');
         expect(await one.messaging.read(a.session,b.did,reply)).toMatchObject({kind:'connection',senderAddress:b.address});
@@ -382,7 +402,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       discover.mockReset().mockResolvedValue(new URL(second.origin).hostname);
       expect((await verifier.verify(a.address)).did).toBe(d.did);expect(d.did).not.toBe(a.did);
       expect(await active(d)).toHaveLength(0);
-      expect((await api(d,'messages',{messageId:uuidV7(),text:'Attempt inherited permission',
+      expect((await send(d,{messageId:uuidV7(),text:'Attempt inherited permission',
         connectionId:initial.pair.connectionId,connectionEpoch:initial.pair.epoch,recipientDid:b.did})).status).toBe(409);
       discover.mockClear();await exchange('Address now resolves to a different DID');expect(discover).not.toHaveBeenCalled();
       expect(await two.messaging.read(b.session,a.did,initial.outgoing)).toMatchObject({kind:'connection'});
@@ -461,17 +481,17 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     }
 
     const direct={delivery:'private' as const,publicationId:uuidV7(),connections:[localTarget.connectionId,remoteTarget.connectionId],text:'Private connection message to two people'};
-    expect((await first.app.request(first.origin+'/api/v1/account/connection-messages/targets')).status).toBe(401);
-    expect((await api(a,'connection-messages',direct,{Origin:'https://foreign.example'})).status).toBe(403);
+    expect((await first.app.request(first.origin+'/.well-known/jmap')).status).toBe(401);
+    expect((await submitConnections(a,direct,{Origin:'https://foreign.example'})).status).toBe(403);
     const readOnly=await first.accounts.issue(a.address,false,undefined,['messages:read']);
-    expect((await api(a,'connection-messages/targets',undefined,{Authorization:'Bearer '+readOnly.token})).status).toBe(403);
-    expect((await api(a,'connection-messages',direct,{Authorization:'Bearer '+readOnly.token})).status).toBe(403);
-    const admitted=await api(a,'connection-messages',direct);expect(admitted.status).toBe(202);expect((await admitted.json() as {total:number}).total).toBe(2);
-    expect((await api(c,'connection-messages/'+direct.publicationId)).status).toBe(404);
-    expect((await api(a,'publications/'+direct.publicationId)).status).toBe(404);
-    expect((await api(a,'connection-messages',{...direct,publicationId:uuidV7(),category:'general'})).status).toBe(400);
-    expect((await api(a,'connection-messages',{...direct,publicationId:uuidV7(),allowReplies:true})).status).toBe(400);
-    expect((await api(a,'connection-messages',{...direct,publicationId:uuidV7(),connections:[localTarget.connectionId,localTarget.connectionId]})).status).toBe(400);
+    expect((await api(a,'HailSubmission/targets',{},{Authorization:'Bearer '+readOnly.token})).status).toBe(403);
+    expect((await submitConnections(a,direct,{Authorization:'Bearer '+readOnly.token})).status).toBe(403);
+    const admitted=await submitConnections(a,direct);expect(admitted.status).toBe(200);expect((await admitted.json() as {total:number}).total).toBe(2);
+    expect((await api(c,'HailSubmission/status',{kind:'connections',id:direct.publicationId})).status).toBe(404);
+    expect((await api(a,'HailSubmission/status',{kind:'category',id:direct.publicationId})).status).toBe(404);
+    expect((await submitConnections(a,{...direct,publicationId:uuidV7(),category:'general'})).status).toBe(400);
+    expect((await submitConnections(a,{...direct,publicationId:uuidV7(),allowReplies:true})).status).toBe(400);
+    expect((await submitConnections(a,{...direct,publicationId:uuidV7(),connections:[localTarget.connectionId,localTarget.connectionId]})).status).toBe(400);
     expect((await one.publications.recent(a.session)).publications).toHaveLength(0); // not a subscription publication
     expect((await one.publications.recent(a.session,'connections')).publications).toHaveLength(1);
     lostEnvelope=1;await withFreshServingGenerations(first.db.sql,()=>one.publications.workOne());
@@ -520,24 +540,24 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     const threadedId=uuidV7(),threadedRequest={messageId:threadedId,text:'Reply to the private original',
       connectionId:remoteTarget.connectionId,connectionEpoch:remoteTarget.epoch,recipientDid:a.did,
       inReplyTo:{sender:a.did,messageId:sentToB.messageId}};
-    expect((await api(b,'messages',threadedRequest)).status).toBe(200);
+    expect((await send(b,threadedRequest)).status).toBe(200);
     await received();
     expect(await withFreshServingGenerations(first.db.sql,()=>one.worker.processOne())).toBe('delivered');
     const threaded=inspectSignedPayload('hail.envelope',(await two.envelopes.sent(b.did,threadedId))!).payload;
     expect(threaded).toMatchObject({version:3,in_reply_to:{sender:a.did,message_id:sentToB.messageId},reply:{allowed:false}});
     expect(threaded.authorization.type).toBe('connection');
-    expect((await api(b,'messages',threadedRequest)).status).toBe(200);
+    expect((await send(b,threadedRequest)).status).toBe(200);
     await received();
-    expect((await api(b,'messages',{...threadedRequest,text:'Different body'})).status).toBe(409);
-    expect((await api(b,'messages',{...threadedRequest,messageId:uuidV7(),inReplyTo:{sender:a.did,messageId:completed.targets.find(t=>t.recipient===c.did)!.messageId}})).status).toBe(409);
-    const conversation=await api(a,'threads/'+b.did+'/'+threadedId);
+    expect((await send(b,{...threadedRequest,text:'Different body'})).status).toBe(409);
+    expect((await send(b,{...threadedRequest,messageId:uuidV7(),inReplyTo:{sender:a.did,messageId:completed.targets.find(t=>t.recipient===c.did)!.messageId}})).status).toBe(409);
+    const conversation=await api(a,'HailMailbox/view',{view:'threads',sender:b.did,messageId:threadedId});
     expect(conversation.status).toBe(200);
     expect((await conversation.json() as any).messages.map((m:any)=>m.messageId)).toEqual([sentToB.messageId,threadedId]);
-    expect((await api(c,'threads/'+b.did+'/'+threadedId)).status).toBe(404);
-    expect((await api(a,'threads/'+b.did+'/'+threadedId,{})).status).toBe(405);
+    expect((await api(c,'HailMailbox/view',{view:'threads',sender:b.did,messageId:threadedId})).status).toBe(404);
+    expect((await api(a,'HailMailbox/view',{view:'threads',sender:b.did,messageId:threadedId,input:{}})).status).toBe(400);
     // The sender's private Inbox combines replies from both copies of a batch.
     const localReply=uuidV7(),sentToC=completed.targets.find(t=>t.recipient===c.did)!;
-    expect((await api(c,'messages',{messageId:localReply,text:'Another recipient replies',connectionId:localTarget.connectionId,
+    expect((await send(c,{messageId:localReply,text:'Another recipient replies',connectionId:localTarget.connectionId,
       connectionEpoch:localTarget.epoch,recipientDid:a.did,inReplyTo:{sender:a.did,messageId:sentToC.messageId}})).status).toBe(200);
     await received();await withFreshServingGenerations(first.db.sql,()=>one.worker.processOne());
     const grouped=await one.messaging.connectionInbox(a.session,null);
@@ -548,19 +568,25 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     expect(combined?.messages).toHaveLength(3);
     expect(combined?.messages.filter(m=>m.sent)).toHaveLength(1);
     expect(combined?.messages.find(m=>m.sent)?.recipients).toHaveLength(2);
-    expect((await api(c,'connection-threads/'+b.did+'/'+threadedId)).status).toBe(404);
-    expect((await api(a,'connection-threads/'+b.did+'/'+threadedId+'?offset=bad')).status).toBe(400);
-    expect((await api(a,'connection-inbox',{})).status).toBe(405);
-    await one.messaging.setRead(a.session,b.did,threadedId,true);
+    expect((await api(c,'HailMailbox/view',{view:'connectionThread',sender:b.did,messageId:threadedId})).status).toBe(404);
+    expect((await api(a,'HailMailbox/view',{view:'connectionThread',sender:b.did,messageId:threadedId,offset:'bad'})).status).toBe(400);
+    expect((await api(a,'HailMailbox/view',{view:'connectionInbox',input:{}})).status).toBe(400);
+    const jmap=new JmapMessages(first.db.sql,first.origin);
+    const markRead=async(sender:string,messageId:string)=>{
+      const query=await jmap.query(a.session,{filter:{sender,messageId}});
+      const result=await jmap.set(a.session,{ifInState:query.queryState,update:{[query.ids[0]!]:{isRead:true}}});
+      expect(result.updated).toHaveProperty(query.ids[0]!,null);
+    };
+    await markRead(b.did,threadedId);
     expect((await one.messaging.connectionInbox(a.session,null)).messages[0]).toMatchObject({messageId:localReply,conversation:{unreadCount:1}});
-    await one.messaging.setRead(a.session,c.did,localReply,true);
+    await markRead(c.did,localReply);
     expect((await one.messaging.connectionInbox(a.session,null)).messages[0]).toMatchObject({messageId:localReply,conversation:{unreadCount:0}});
     expect(await one.messaging.unreadCounts(a.session)).toMatchObject({subscriptions:0,connections:0});
     // Neither recipient can see the other recipient's private reply.
     const recipientThread=await two.messaging.connectionThread(b.session,a.did,sentToB.messageId,null);
     expect(recipientThread?.messages.map(m=>m.sender)).not.toContain(c.did);
     for(let index=0;index<6;index++){
-      expect((await api(c,'messages',{messageId:uuidV7(),text:'Separate conversation '+index,connectionId:localTarget.connectionId,
+      expect((await send(c,{messageId:uuidV7(),text:'Separate conversation '+index,connectionId:localTarget.connectionId,
         connectionEpoch:localTarget.epoch,recipientDid:a.did})).status).toBe(200);
       await received();await withFreshServingGenerations(first.db.sql,()=>one.worker.processOne());
     }
@@ -568,7 +594,7 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     expect(await one.messaging.unreadCounts(a.session)).toMatchObject({subscriptions:0,connections:6});
     expect(firstPage.messages).toHaveLength(5);expect(secondPage.messages).toHaveLength(2);expect(secondPage.next).toBeNull();
     expect(new Set([...firstPage.messages,...secondPage.messages].map(m=>m.messageId)).size).toBe(7);
-    expect((await api(a,'connection-inbox?after=invalid')).status).toBe(400);
+    expect((await api(a,'HailMailbox/view',{view:'connectionInbox',after:'invalid'})).status).toBe(400);
     const stopped={delivery:'private' as const,publicationId:uuidV7(),connections:direct.connections,text:'Cancel before materialization'};
     await restarted.createConnections(a.session,stopped);
     await expect(first.db.sql`UPDATE connection_message_batches SET body_bytes=${new Uint8Array([1])} WHERE id=${stopped.publicationId}`).rejects.toThrow('cannot be replaced');
@@ -654,20 +680,22 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
     tables.portable_custody_evidence=[{account_id:a.id,user_recovery_public_key:a.recoveryPublicKey,user_identity_public_key:a.keys.identityDidKey,
       monitor_verification_mode:'poc-local',monitor_origin:'https://monitor.example.com',monitor_public_key:a.keys.messagingDidKey,monitor_confirmed_at:capturedAt,backup_confirmed_at:capturedAt}];
     tables.sent_envelopes=(await first.db.sql<{row:Record<string,unknown>}[]>`SELECT to_jsonb(t) AS row FROM sent_envelopes t WHERE sender_account_id=${a.id}`).map(r=>r.row);
-    const manifest:TransferManifest={version:5,transferId,did:a.did,accountId:a.id,sourceServiceBase:first.origin+'/hail',destinationServiceBase:second.origin+'/hail',
+    const privateMessaging=async(user:User)=>{const k=user.keys.keys.find(k=>k.role==='hail-messaging')!,raw=await user.provider.encryptor.decrypt(user.id,k.role,k.algorithm,k.publicKey,k);
+      try{return await importEd25519PrivateKey(raw);}finally{raw.fill(0);}};
+    const conversationCheckpoint=await collectConversationHistory(first.db.sql,{accountId:a.id,did:a.did,sourceGeneration:1,sourceServiceBase:first.origin+'/hail'},capturedAt);
+    const manifest:TransferManifest={version:11,transferId,did:a.did,accountId:a.id,sourceServiceBase:first.origin+'/hail',destinationServiceBase:second.origin+'/hail',
       destinationRotationPublicKey:d.keys.rotationDidKey,destinationMessagingPublicKey:d.keys.messagingDidKey,custodyProfile:'portable',capturedAt,sourceGeneration:1,
+      conversations:conversationCheckpoint,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(conversationCheckpoint)),
       connections:checkpoint,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(checkpoint)),tables};
     const manifestBytes=new TextEncoder().encode(JSON.stringify(manifest)),snapshotDigest=new Uint8Array(createHash('sha256').update(manifestBytes).digest());
     expect(validateTransferManifest(manifestBytes).connections).toEqual(checkpoint);
     expect(()=>requireConnectionHandoverComplete(manifest)).toThrow('staged only');
     await second.db.sql`INSERT INTO pending_migration_imports(transfer_id,did,source_service_base,destination_service_base,manifest_bytes,manifest_digest,
       source_messaging_public_key,signature,state,verified_plc_document,verified_plc_data,verified_plc_operation_log) VALUES(${transferId},${a.did},${manifest.sourceServiceBase},
-      ${manifest.destinationServiceBase},${manifestBytes},${snapshotDigest},${a.keys.messagingDidKey},${new Uint8Array(64)},'staged','{}','{}','[]')`;
+      ${manifest.destinationServiceBase},${manifestBytes},${snapshotDigest},${a.keys.messagingDidKey},${await signSnapshot(manifestBytes,manifest.version,a.did,await privateMessaging(a))},'staged','{}','{}','[]')`;
     let plcCalls=0;const forbiddenPlc=async()=>{plcCalls++;throw new Error('Must not reach PLC before handover commit');};
     await expect(new PortablePlcSubmission(second.db.sql,{getOperationLog:forbiddenPlc,sendOperation:forbiddenPlc} as never,'https://plc.directory',manifest.destinationServiceBase).submit(transferId)).rejects.toThrow('staged only');
     expect(plcCalls).toBe(0);
-    const privateMessaging=async(user:User)=>{const k=user.keys.keys.find(k=>k.role==='hail-messaging')!,raw=await user.provider.encryptor.decrypt(user.id,k.role,k.algorithm,k.publicKey,k);
-      try{return await importEd25519PrivateKey(raw);}finally{raw.fill(0);}};
     const [sourcePrivate,destinationPrivate]=await Promise.all([privateMessaging(a),privateMessaging(d)]);
     const handoverStage=new ConnectionHandoverStage(second.db.sql,resolver,manifest.destinationServiceBase);
     const handoverApp=new Hono();registerConnectionHandoverRoutes(handoverApp,handoverStage);
@@ -847,14 +875,16 @@ it.skipIf(!process.env.DATABASE_URL).each(["full lifecycle","custom-domain loss"
       verification_mode:'poc-local',managed_profile_version:'hail-managed-custody-v1'}];
     for(const table of ['detached_bodies','body_authorizations','sent_envelopes'] as const)moveTables[table]=await collectRows(table,'sender_account_id=$1',[b.id]);
     moveTables.sent_delivery_status=await collectRows('sent_delivery_status','sender_did=$1',[b.did]);
-    const moveBase={version:6 as const,transferId:movingTransfer,did:b.did,accountId:b.id,sourceServiceBase:second.origin+'/hail',destinationServiceBase:third.origin+'/hail',
+    const moveConversations=await collectConversationHistory(second.db.sql,{accountId:b.id,did:b.did,sourceGeneration:1,sourceServiceBase:second.origin+'/hail'},moveCapturedAt);
+    const moveBase={version:12 as const,transferId:movingTransfer,did:b.did,accountId:b.id,sourceServiceBase:second.origin+'/hail',destinationServiceBase:third.origin+'/hail',
       ownerRecoveryPublicKey:b.recoveryPublicKey,sourceIdentityPublicKey:b.keys.identityDidKey,destinationRotationPublicKey:movedKeys.rotationDidKey,
       destinationIdentityPublicKey:movedKeys.identityDidKey,destinationMessagingPublicKey:movedKeys.messagingDidKey,sourceGeneration:1,custodyProfile:'managed' as const,capturedAt:moveCapturedAt,
+      conversations:moveConversations,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(moveConversations)),
       connections:moveHistory,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(moveHistory)),tables:moveTables};
     const movingManifest:ManagedTransferManifest={...moveBase,historyCheckpointDigest:encodeBase64Url(managedHistoryCheckpoint(moveBase))},movingBytes=new TextEncoder().encode(JSON.stringify(movingManifest)),
       movingDigest=new Uint8Array(createHash('sha256').update(movingBytes).digest()),binding=await signPayload('hail.address-binding',{type:'hail.address-binding',version:2,did:b.did,address:movingAddress,
         issued_at:Math.floor(Date.now()/1000),key_id:b.did+'#hail-identity'},createWebCryptoSigner(b.did+'#hail-identity',movedKeys.identityPrivateKey)),
-      bindingDigest=new Uint8Array(createHash('sha256').update(binding).digest()),sourceSnapshotSignature=new Uint8Array(await crypto.subtle.sign('Ed25519',sourceBPrivate,managedSnapshotSignatureInput(movingDigest,6)));
+      bindingDigest=new Uint8Array(createHash('sha256').update(binding).digest()),sourceSnapshotSignature=await signSnapshot(movingBytes,movingManifest.version,b.did,sourceBPrivate);
     validateManagedTransferManifest(movingBytes);
     await third.db.sql`INSERT INTO pending_migration_imports(transfer_id,did,source_service_base,destination_service_base,manifest_bytes,manifest_digest,source_messaging_public_key,
       signature,state,verified_plc_document,verified_plc_data,verified_plc_operation_log,destination_address,destination_binding_cose,destination_binding_digest,custody_profile,

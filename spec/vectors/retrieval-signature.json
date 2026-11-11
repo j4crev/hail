@@ -1,0 +1,13 @@
+{
+  "profile": "hail-retrieval-v1",
+  "method": "GET",
+  "url": "https://sender.example/hail/bodies/CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+  "recipient": "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb",
+  "now": 1800000000,
+  "authorization": "Bearer BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+  "signatureInput": "hail=(\"@method\" \"@target-uri\" \"authorization\");created=1800000000;expires=1800000060;nonce=\"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg\";keyid=\"did:plc:bbbbbbbbbbbbbbbbbbbbbbbb#hail-messaging\";alg=\"ed25519\";tag=\"hail-retrieval-v1\"",
+  "signature": "hail=:SIUagnKvkbxcMy3BFVPEPrDnGk202pmUCqvBiLKHzhnHRDjl0PBfzouQj+cfnt1+YrHKrNv99F9akbFPErFJCQ==:",
+  "signatureBase": "\"@method\": GET\n\"@target-uri\": https://sender.example/hail/bodies/CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\n\"authorization\": Bearer BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc\n\"@signature-params\": (\"@method\" \"@target-uri\" \"authorization\");created=1800000000;expires=1800000060;nonce=\"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg\";keyid=\"did:plc:bbbbbbbbbbbbbbbbbbbbbbbb#hail-messaging\";alg=\"ed25519\";tag=\"hail-retrieval-v1\"",
+  "publicKeySpki": "MCowBQYDK2VwAyEA11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=",
+  "testPrivateKeySeed": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+}

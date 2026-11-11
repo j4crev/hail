@@ -1,5 +1,5 @@
 import { base58btc } from "multiformats/bases/base58";
-import { createWebCryptoSigner, signPayload } from "@racrproto/codec";
+import { createWebCryptoSigner, signPayload, inspectSignedPayload, encodePayload, encodeHashEnvelope, inspectHashEnvelope } from "@racrproto/codec";
 import { describe, expect, it, vi } from "vitest";
 import { EnvelopeReceiver } from "../src/envelopes/receiver.js";
 import type { EnvelopeRepository } from "../src/envelopes/repository.js";
@@ -60,4 +60,23 @@ describe("bounded envelope validation", () => {
     expect(candidate).not.toHaveBeenCalled();
     expect(accept).not.toHaveBeenCalled();
   });
+});
+
+it('rejects substituted parties, consent, expiry and content before admission even with a recomputed digest',async()=>{
+ const {bytes,publicKey}=await signedEnvelope();
+ const resolve=vi.fn(async()=>({did:alice,messagingDidKey:publicKey,identityDidKey:publicKey,
+  serviceBase:'https://alice.example/hail',evidence:{document:{},data:{},log:[]}}));
+ const candidate=vi.fn(async()=>false),accept=vi.fn<EnvelopeRepository['accept']>();
+ const receiver=new EnvelopeReceiver({getAccountByDid:vi.fn()},{candidate,accept},{resolve},'https://bob.example/hail');
+ for(const field of ['to','authorization','expires_at','body']){
+  const payload=structuredClone(inspectSignedPayload('hail.envelope',bytes).payload);
+  if(field==='to')payload.to='did:plc:'+ 'c'.repeat(24);
+  if(field==='authorization'&&payload.authorization.type==='grant')payload.authorization.grant_id='01954144-8097-7a9d-a7a8-ef29a823eaf2';
+  if(field==='expires_at')payload.expires_at++;
+  if(field==='body')payload.body.digest.value[0]=1;
+  const descriptor=encodePayload('hail.envelope',payload),original=inspectHashEnvelope(bytes,'application/hail-envelope+cbor',16384);
+  const changed=encodeHashEnvelope(descriptor,original.signature,'application/hail-envelope+cbor',original.keyId);
+  expect(await receiver.receive(changed)).toBe('ignored');
+ }
+ expect(resolve).toHaveBeenCalledTimes(4);expect(candidate).not.toHaveBeenCalled();expect(accept).not.toHaveBeenCalled();
 });

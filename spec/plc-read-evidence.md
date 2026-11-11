@@ -95,7 +95,7 @@ bindings; newly read evidence does not rewrite accepted history.
 
 Grant revisions, Address Bindings, Sender Profiles and Delivery Status wrappers
 also retain action-specific links to their exact strict-public decisions. Portable
-migration snapshot v7 (managed v8) carries the account-scoped envelope, Grant and signing links
+migration snapshot v11 (managed v12) carries the account-scoped envelope, Grant and signing links
 plus exactly the resolution bundles they reference. The destination validates that
 every link belongs to the transferred account and exact signed representation, that
 every bundle digest and subject agrees, and that no resolution bundle is dangling.

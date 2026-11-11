@@ -250,6 +250,15 @@ const migrations: readonly Migration[] = [
   {version:106,name:"unseen-connections",url:new URL("../../migrations/0106_unseen_connections.sql",import.meta.url)},
   {version:107,name:"conversation-participation",url:new URL("../../migrations/0107_conversation_participation.sql",import.meta.url)},
   {version:108,name:"monitor-handoff",url:new URL("../../migrations/0108_monitor_handoff.sql",import.meta.url)},
+  {version:109,name:"hash-snapshot-signatures",url:new URL("../../migrations/0109_hash_snapshot_signatures.sql",import.meta.url)},
+  {version:110,name:"provider-authentication",url:new URL("../../migrations/0110_provider_authentication.sql",import.meta.url)},
+  {version:111,name:"body-request-nonces",url:new URL("../../migrations/0111_body_request_nonces.sql",import.meta.url)},
+  {version:112,name:"jmap-messages",url:new URL("../../migrations/0112_jmap_messages.sql",import.meta.url)},
+  {version:113,name:"jmap-drafts",url:new URL("../../migrations/0113_jmap_drafts.sql",import.meta.url)},
+  {version:114,name:"sent-history",url:new URL("../../migrations/0114_sent_history.sql",import.meta.url)},
+  {version:115,name:"jmap-blobs",url:new URL("../../migrations/0115_jmap_blobs.sql",import.meta.url)},
+  {version:116,name:"jmap-collections",url:new URL("../../migrations/0116_jmap_collections.sql",import.meta.url)},
+  {version:117,name:"remove-inbox-cursor",url:new URL("../../migrations/0117_remove_inbox_cursor.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

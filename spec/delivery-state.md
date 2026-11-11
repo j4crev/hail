@@ -261,7 +261,11 @@ The recipient may enter `on-hold`, but local constraints do not extend sender co
 
 #### `body-authorization-failed`
 
-The body service rejects the signed bearer authorization while it should still be valid. Because the envelope and token are immutable, the same envelope cannot repair this failure. If retrieval instead remains pending until the access expiration becomes the effective deadline, the terminal reason is `delivery-expired`.
+Reserved for a definitive authorization failure established independently of a
+concealed HTTP response. The current token-plus-signature retrieval profile MUST
+NOT infer this reason from `404`: slow verification, key rotation or temporary
+lookup failure can produce that response. Retry within the effective deadline;
+exhaustion produces `delivery-expired`.
 
 #### `body-integrity-failed`
 
@@ -312,7 +316,7 @@ The HTTP binding defines exact status-code handling. The POC uses these semantic
 | Interrupted or truncated body response | `on-hold`: `body-transfer-interrupted` |
 | `429` rate limit with or without `Retry-After` | `on-hold`: `sender-rate-limited` |
 | Temporary local resource shortage | `on-hold`: `receiver-resource-constrained` |
-| Uniform `404` authorization rejection after the required sender-DID refresh and any changed-endpoint retry | `failed`: `body-authorization-failed` |
+| Uniform `404` after sender-DID refresh and any changed-endpoint retry | `on-hold`: `body-temporarily-unavailable`; fresh nonce/signature on retry, then `delivery-expired` at the effective deadline |
 | Size or digest mismatch | `failed`: `body-integrity-failed` |
 | Invalid or non-deterministic CBOR or invalid SPT document | `failed`: `body-invalid` |
 | Unsupported required representation | `failed`: `body-unsupported` |
@@ -429,7 +433,7 @@ defined in [did-profile.md](did-profile.md#provider-migration):
 3. The client talks directly to the new provider. Using its current `#hail-identity` key it signs an Address Selection for one full address beneath that provider's domain, bound to the grant, Offer, nonce and transfer ID. The provider atomically reserves the address, returns an exact-retryable signed reservation receipt, and does **not** yet publish WebFinger or activate the DID. A different name or expired selection requires new user authorization.
 4. The new provider pushes a final Transfer Request to the old provider's fixed HTTPS endpoint, signed by the same key in the origin-proven Offer and binding the user-signed address selection and reservation receipt. The old provider validates current PLC identity authority, exact grant/Offer/request/reservation correlation and one-time expiry. Exact retries receive durable acknowledgement. An operator command, provider-only signature, or self-signed target key without origin proof cannot start a Hail transfer.
 5. Only after those checks does the old provider acquire an exclusive migration fence and stop accepting envelopes, committing delivery transitions, changing grants or reply capabilities, and creating status revisions for the DID.
-6. While fenced, the old provider exports the complete serialization domain: current grants and tombstones, reply-capability state, all retained envelope idempotency and rejection records, accepted and terminal delivery records, deterministic current status payloads and revision history, body/cache provenance needed for continuation, and retained signature-verification evidence. Current reference-provider exports use portable snapshot v7 or managed snapshot v8 (see [transfer-formats.md](transfer-formats.md)), whose closed table domains also carry account-scoped strict-public envelope, Grant and signing authority links and exactly their referenced immutable PLC resolution bundles. A destination preserves that source history but never treats it as fresh authority for a destination action. Earlier snapshot versions are outside the current alpha contract.
+6. While fenced, the old provider exports the complete serialization domain: current grants and tombstones, reply-capability state, all retained envelope idempotency and rejection records, accepted and terminal delivery records, deterministic current status payloads and revision history, body/cache provenance needed for continuation, and retained signature-verification evidence. Current reference-provider exports use portable snapshot v11 or managed snapshot v12 (see [transfer-formats.md](transfer-formats.md)), whose closed table domains also carry account-scoped strict-public envelope, Grant and signing authority links and exactly their referenced immutable PLC resolution bundles. A destination preserves that source history but never treats it as fresh authority for a destination action. Earlier snapshot versions are outside the current alpha contract.
 7. The user reviews the exact snapshot and prepared destination; the new provider validates and durably imports that complete state inactive and acknowledges the exact snapshot. The user signs final consent with `#hail-identity` and signs the exact full-state PLC operation with the current highest-priority recovery key.
 8. The exact user-signed PLC operation updates `#hail-messaging` and `#hail` to the new provider. Independently operated PLC read paths confirm that exact operation is current and not nullified; the new provider verifies the selected domain's binding and takes sole ownership, resumes pending work, and signs status wrappers with its current key. A top-priority-user-signed operation need not sit idle for 72 hours, but observer disagreement or an unexpected intervening operation blocks activation.
 9. The old provider remains fenced and rejects stale requests. It never commits state after export and never receives the new provider's private key.

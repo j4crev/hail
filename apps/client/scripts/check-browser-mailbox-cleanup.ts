@@ -1,5 +1,18 @@
+import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
+async function fixtureOperation(origin:string,name:string,args:Record<string,unknown>={}){
+ const capability='https://haili.app/ns/jmap/account';
+ const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
+ const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];
+ assert.equal(typeof accountId,'string');assert(session.accounts[accountId].accountCapabilities[capability]);
+ const response=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{...args,accountId},'fixture']]})});
+ assert(response.ok);
+ const envelope=await response.json();assert.equal(envelope.methodResponses.length,1);
+ const [method,result,tag]=envelope.methodResponses[0];
+ assert.equal(method,name,JSON.stringify(result));assert.equal(tag,'fixture');assert.equal(result.accountId,accountId);
+ return result;
+}
 const sharedMode=process.argv.includes('--shared');
 const work=await mkdtemp('/tmp/haili-layout-');
 const reserve=Bun.serve({hostname:'127.0.0.1',port:0,fetch:()=>new Response()});
@@ -27,7 +40,7 @@ async function navigate(path:string,title:string){
 }
 
 const click=async(label:string)=>evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&(b.getAttribute('aria-label')??b.textContent.trim())===${JSON.stringify(label)}).click()`);
-const sentItems=async(trash=false)=>(await(await fetch(origin+'/api/v1/account/sent?include=sends'+(trash?'&trash=true':''))).json()).messages;
+const sentItems=async(trash=false)=>(await fixtureOperation(origin,'HailMailbox/view',{view:'sentSends',trash,after:null})).messages;
 for(const width of [1440,390,320]){
   await cdp('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width<500});
   await navigate('/sent','Sent');
@@ -75,7 +88,7 @@ for(const width of [1440,390,320]){
 await navigate('/sent','Sent');
 await wait(async()=>evaluate(`!document.querySelector('.mobile-cleanup').disabled`));
 // A setting change on another page must not turn Move to Trash into permanent deletion.
-await fetch(origin+'/api/v1/account/message-preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashEnabled:false})});
+await fixtureOperation(origin,'HailMailbox/preferences',{input:{trashEnabled:false}});
 await click('Move all to Trash');await click('Confirm');
 await wait(async()=>evaluate(`Boolean(document.querySelector('[role="alert"]'))`));
 assert.equal((await sentItems()).length,1);
@@ -93,14 +106,14 @@ await click('Delete selected messages');
 await click('Delete permanently');await wait(async()=> (await sentItems()).length===0);
 assert.equal((await sentItems(true)).length,0);
 // Seed received Trash to exercise the whole-folder permanent action.
-await fetch(origin+'/api/v1/account/message-preferences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashEnabled:true})});
-const incoming=(await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json()).messages;
-for(const m of incoming)await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(m.sender)+'/'+m.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+await fixtureOperation(origin,'HailMailbox/preferences',{input:{trashEnabled:true}});
+const incoming=(await fixtureOperation(origin,'HailMailbox/view',{view:'inboxFeed',channel:'connections',after:null})).messages;
+for(const m of incoming)await fixtureMessageMutation(origin,m,{isInTrash:true});
 await navigate('/trash','Trash');await wait(async()=>evaluate(`!document.querySelector('.mobile-cleanup').disabled`));
 await click('Empty Trash');await click('Cancel');
-assert((await(await fetch(origin+'/api/v1/account/trash')).json()).messages.length>0);
+assert((await fixtureOperation(origin,'HailMailbox/view',{view:'inboxFeed',trash:true,after:null})).messages.length>0);
 await click('Empty Trash');await click('Confirm');
 await wait(async()=>evaluate(`document.querySelector('.mobile-cleanup').disabled`));
-assert.equal((await(await fetch(origin+'/api/v1/account/trash')).json()).messages.length,0);
+assert.equal((await fixtureOperation(origin,'HailMailbox/view',{view:'inboxFeed',trash:true,after:null})).messages.length,0);
 console.log('PASS: stale setting protection, permanent Sent deletion, and Empty Trash');
 }finally{socket?.close();chrome.kill();fixture.kill();await Promise.all([chrome.exited,fixture.exited]);await rm(work,{recursive:true,force:true});}

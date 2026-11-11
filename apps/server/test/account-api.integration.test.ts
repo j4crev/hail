@@ -1,3 +1,5 @@
+import {HAIL_ACCOUNT} from '../src/jmap/collections.js';
+import {JmapMessages,JMAP_CORE} from '../src/jmap/messages.js';
 import { createLocalTlsFixture } from "./client-support/tls.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -74,7 +76,15 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
   const senderAddress = `api-sender-${randomUUID()}@target.example.com`;
   const otherAddress = `api-other-${randomUUID()}@source.example.com`;
   const authorization = () => ({ Authorization: `Bearer ${credential.token}` });
-  const grantUrl = () => `${origin}/api/v1/account/grants/${grantId}`;
+  const call=async(method:string,args:Record<string,unknown>,token=credential.token)=>{
+    const session=await accounts.authenticate(`Bearer ${token}`);
+    const response=await app.request(origin+"/jmap",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+      body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[[method,{accountId:session?new JmapMessages(db.sql,origin).accountId(session):"unavailable",...args},"test"]]})});
+    if(!response.ok)return response;
+    const [name,value]=(await response.json() as {methodResponses:[string,Record<string,unknown>,string][]}).methodResponses[0]!;
+    const {accountId:_,...result}=value;
+    return Response.json(result,{status:name==="error"?Number(value.httpStatus??({forbidden:403,invalidArguments:400,notFound:404,requestTooLarge:413} as Record<string,number>)[String(value.type)]??500):200});
+  };
   const json = async (path: string, value: unknown) => writeFile(join(directory, path), JSON.stringify(value), { mode: 0o600 });
   const credentialRecord = (value: Awaited<ReturnType<AccountApiRepository["issue"]>>) =>
     ({ type: "racr.api-credential", version: 1, provider: origin, ...value });
@@ -106,12 +116,14 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
       fetch() { redirectedRequests++; return Response.json({}); } });
     server = Bun.serve({ hostname: "localhost", port: 0, tls, async fetch(request) {
       if (redirect) return new Response(null, { status: 302, headers: { Location: `https://localhost:${receiver.port}/` } });
+      const isSubmission=new URL(request.url).pathname==="/jmap"&&request.method==="POST"&&
+        (await request.clone().json() as {methodCalls:[string,unknown,string][]}).methodCalls.some(row=>row[0]==="HailGrant/submit");
       const response = await app.fetch(request);
       if (loseCredentialResponse && request.method === "POST" && new URL(request.url).pathname === "/api/v1/account/credentials" && response.ok) {
         loseCredentialResponse = false;
         return new Response(null, { status: 503 });
       }
-      if (losePutResponse && request.method === "PUT" && response.ok) {
+      if (losePutResponse && isSubmission && response.ok) {
         losePutResponse = false;
         return new Response(null, { status: 503 });
       }
@@ -184,7 +196,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     grantId = proposed.grant_id;
     signedGrant = await user.signGrant(proposed);
     app = createApp({ publicOrigin: origin, hailServiceBase: `${origin}/hail`, providerId: "test" } as AppConfig,
-      { accountApi: { accounts, grants, service,messaging }, async checkReadiness() { return { ready: true }; } });
+      { jmap:new JmapMessages(db.sql,origin),accountApi: { accounts, grants, service,messaging }, async checkReadiness() { return { ready: true }; } });
     await json("vault.json", vault.vault);
     await writeFile(join(directory, "initial.cose"), signedGrant, { mode: 0o600 });
     const bootstrap = Bun.spawn(["bun", "src/cli/create-account-credential.ts", address,
@@ -250,9 +262,9 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect(retried.exit).toBe(0);
     expect(JSON.parse(retried.stdout).grantId).toBe(grantId);
     expect(JSON.parse((await cli(["grant","list"])).stdout).grants).toHaveLength(1);
-    const filtered=await app.request(`${origin}/api/v1/account/grants?sender=${senderDid}`,{headers:authorization()});
+    const filtered=await call("HailGrant/list",{sender:senderDid});
     expect(await filtered.json()).toMatchObject({grants:[{grantId,localRole:"grantor",grantee:senderDid}],next:null});
-    const unrelated=await app.request(`${origin}/api/v1/account/grants?sender=${otherDid}`,{headers:authorization()});
+    const unrelated=await call("HailGrant/list",{sender:otherDid});
     expect(await unrelated.json()).toEqual({grants:[],next:null});
 
     expect((await cli(["grant", "submit", join(directory, "initial.cose")])).exit).toBe(0);
@@ -266,8 +278,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
   });
 
   it("enforces scopes, cross-account isolation and collocated sender read-only ownership", async () => {
-    const put = (headers: HeadersInit) => app.request(grantUrl(), { method: "PUT", headers,
-      body: Uint8Array.from(signedGrant) });
+    const put = (headers: HeadersInit) => call("HailGrant/submit",{grantId,cose:encodeBase64Url(signedGrant)},new Headers(headers).get("Authorization")!.slice(7));
     expect((await put({ Authorization: `Bearer ${readonlyCredential.token}` })).status).toBe(403);
     const readonlyOutput = join(directory, "readonly-revocation.cose");
     const readonlyAttempt = await cli(["grant", "revoke", grantId, "--vault", join(directory, "vault.json"),
@@ -276,7 +287,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect(readonlyAttempt.stderr).toContain("write permission");
     await expect(readFile(readonlyOutput)).rejects.toMatchObject({ code: "ENOENT" });
     const other = await accounts.issue(otherAddress, true);
-    expect((await app.request(grantUrl(), { headers: { Authorization: `Bearer ${other.token}` } })).status).toBe(404);
+    expect((await call("HailGrant/read",{grantId},other.token)).status).toBe(404);
     expect((await put({ Authorization: `Bearer ${other.token}`, "Content-Type": 'application/cose; cose-type="cose-sign1"' })).status).toBe(404);
     await db.sql`INSERT INTO collocated_grant_receivers (grant_id,grantee_account_id) VALUES (${grantId},${senderId})`;
     const sender = await accounts.issue(senderAddress, true);
@@ -290,8 +301,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect(JSON.parse(refused.stderr).error.code).toBe("CLIENT_ERROR");
     const bad = Uint8Array.from(signedGrant);
     bad[bad.length - 1] = bad[bad.length - 1]! ^ 1;
-    expect((await app.request(grantUrl(), { method: "PUT", headers: { ...authorization(),
-      "Content-Type": 'application/cose; cose-type="cose-sign1"' }, body: bad })).status).toBe(400);
+    expect((await call("HailGrant/submit",{grantId,cose:encodeBase64Url(bad)})).status).toBe(400);
     expect((await grants.findCurrentByGrantId(grantId))?.payload.status).toBe("active");
   });
 
@@ -388,7 +398,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
       await db.sql`INSERT INTO account_keys (account_id,role,algorithm,public_key,encrypted_private_key,encryption_nonce,encryption_version,kek_id)
         VALUES (${id},'hail-messaging','ed25519',${publicKey},${encrypted.ciphertext},${encrypted.nonce},1,'poc-v1')`;}
     senderCredential=await accounts.issue(senderAddress,false,undefined,[...ALL_ACCOUNT_SCOPES]);
-    const received=await app.request(`${origin}/api/v1/account/grants?sender=${senderDid}`,{headers:{Authorization:`Bearer ${senderCredential.token}`}});
+    const received=await call("HailGrant/list",{sender:senderDid},senderCredential.token);
     expect(await received.json()).toEqual({grants:[],next:null});
     await json("message-sender.credential.json",credentialRecord(senderCredential));
     const ownerMessageCredential=await accounts.issue(address,false,undefined,[...ALL_ACCOUNT_SCOPES]);
@@ -414,28 +424,19 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     const read=await cli(["inbox","show",senderDid,id],"message-owner.credential.json");if(read.exit)throw new Error(read.stderr);
     expect(JSON.parse(read.stdout).body.blocks[0].children[0].text).toBe("CLI message");
     expect(JSON.parse(read.stdout).reply.allowed).toBe(true);
-    // Rehearse startup migration against populated storage with no account
-    // admission context. A DML backfill would trip hail_guard_did_write.
-    const retained=await db.sql`SELECT to_jsonb(m)-'delivery_sequence' AS row FROM delivered_messages m ORDER BY recipient_did,sender_did,message_id`;
-    await db.sql.begin(async tx=>{
-      await tx.unsafe(await Bun.file(new URL("../migrations/rollback/0084_inbox_delivery_cursor.sql",import.meta.url)).text());
-      await tx`DELETE FROM schema_migrations WHERE version=84`;
-    });
-    await db.migrate();
-    expect(await db.sql`SELECT to_jsonb(m)-'delivery_sequence' AS row FROM delivered_messages m ORDER BY recipient_did,sender_did,message_id`).toEqual(retained);
-    expect(await db.sql`SELECT 1 FROM delivered_messages WHERE delivery_sequence IS NULL`).toHaveLength(0);
     const waiting=await cli(["inbox","wait","--from",senderDid,"--timeout","1"],"message-owner.credential.json");
     expect(waiting.exit,waiting.stderr).toBe(0);
     const checkpoint=JSON.parse(waiting.stdout).cursor;
-    expect(JSON.parse(waiting.stdout).messages.map((m:any)=>m.messageId)).toEqual([id]);
+    // A new JMAP watch starts at current state; existing mail was verified above.
+    expect(JSON.parse(waiting.stdout).messages).toEqual([]);
     const timedOut=await cli(["inbox","wait","--from",senderDid,"--after",checkpoint,"--timeout","1"],"message-owner.credential.json");
     expect(JSON.parse(timedOut.stdout)).toMatchObject({cursor:checkpoint,messages:[],wait:{timedOut:true}});
     const richId="01a15eb5-0000-7000-8000-000000000001";
-    const rich=await app.request(`${origin}/api/v1/account/messages`,{method:"POST",headers:{Authorization:`Bearer ${senderCredential.token}`,"Content-Type":"application/json"},body:JSON.stringify({
+    const rich=await call("HailSubmission/submit",{kind:"message",input:{
       messageId:richId,grantId,category:"updates",body:{version:1,profile:"spt-2",blocks:[
         {_type:"block",style:"h1",children:[{_type:"span",text:"Rich message",marks:["strong"]}],markDefs:[]},
         {_type:"block",style:"normal",children:[{_type:"span",text:"Open update",marks:["link","em"]}],markDefs:[{_key:"link",_type:"spt.link",href:"https://sender.example.com/update"}]},
-      ]}})});
+      ]}}},senderCredential.token);
     expect(rich.status).toBe(200);
     // The newly delivered ID predates the checkpoint's message ID.
     const resumed=await cli(["inbox","wait","--from",senderDid,"--after",checkpoint,"--timeout","1"],"message-owner.credential.json");
@@ -456,48 +457,49 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect((await cli(["conversation","trash",senderDid],"message-owner.credential.json")).exit).toBe(1);
     expect(JSON.parse((await cli(["inbox","list"],"message-owner.credential.json")).stdout).messages).toHaveLength(2);
     await messaging.trash.saveSettings(conversationSession,true);
-    expect((await app.request(`${origin}/api/v1/account/inbox/updates?after=${checkpoint}&from=${otherDid}`,{headers:{Authorization:`Bearer ${ownerMessageCredential.token}`}})).status).toBe(400);
+    const otherReader=await cli(["inbox","wait","--from",otherDid,"--after",checkpoint,"--timeout","1"],"message-owner.credential.json");
+    expect(otherReader.exit,otherReader.stderr).toBe(0);
+    expect(JSON.parse(otherReader.stdout).messages).toEqual([]);
 
     const richRead=await cli(["inbox","show",senderDid,richId],"message-owner.credential.json");
     expect(richRead.exit,richRead.stderr).toBe(0);
     expect(JSON.parse(richRead.stdout)).toMatchObject({senderAddress,replyAvailable:false,
       body:{blocks:[{}, {markDefs:[{href:"https://sender.example.com/update"}]}]}});
     const imageId="01a15eb5-0000-7000-8000-000000000002",imageData=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=","base64");
-    const image=await app.request(`${origin}/api/v1/account/messages`,{method:"POST",headers:{Authorization:`Bearer ${senderCredential.token}`,"Content-Type":"application/json"},body:JSON.stringify({
+    const image=await call("HailSubmission/submit",{kind:"message",input:{
       messageId:imageId,grantId,category:"updates",body:{version:1,profile:"spt-3",assets:{version:1,assets:[{id:"hero",role:"header",media_type:"image/png",loading:"bundled",
         size:imageData.length,digest:{algorithm:"sha-256",value:createHash("sha256").update(imageData).digest("base64url")},width:1,height:1,data:imageData.toString("base64url")}]},
-        blocks:[{_type:"spt.image",asset:"hero",alt:"Hail mark"},{_type:"block",style:"normal",children:[{_type:"span",text:"Image message",marks:[]}],markDefs:[]}]}})});
+        blocks:[{_type:"spt.image",asset:"hero",alt:"Hail mark"},{_type:"block",style:"normal",children:[{_type:"span",text:"Image message",marks:[]}],markDefs:[]}]}}},senderCredential.token);
     expect(image.status).toBe(200);
     const imageRead=await cli(["inbox","show",senderDid,imageId],"message-owner.credential.json");expect(imageRead.exit,imageRead.stderr).toBe(0);
     expect(JSON.parse(imageRead.stdout).body.assets.assets[0].data).toBe(imageData.toString("base64url"));
-    const sentResponse=await app.request(`${origin}/api/v1/account/sent`,{headers:{Authorization:`Bearer ${senderCredential.token}`}});
+    const sentResponse=await call("HailMailbox/view",{view:"sent"},senderCredential.token);
     expect(sentResponse.status).toBe(200);
     const sentPage=await sentResponse.json();expect(sentPage.messages.map((message:{messageId:string})=>message.messageId)).toEqual([id,imageId,richId]);
     expect(sentPage.messages[0]).toMatchObject({recipient:did,state:"indeterminate",revision:null});
-    const sentDetail=await app.request(`${origin}/api/v1/account/sent/${richId}`,{headers:{Authorization:`Bearer ${senderCredential.token}`}});
+    const sentDetail=await call("HailMailbox/view",{view:"sentMessage",messageId:richId},senderCredential.token);
     expect(sentDetail.status).toBe(200);
     const sentBody=await sentDetail.json();
     expect(sentBody).toMatchObject({messageId:richId,sender:senderDid,recipient:did,recipientAddress:null,state:"indeterminate",reason:null,retryAt:null,
       category:"updates",body:{profile:"spt-2"}});expect(sentBody.body.blocks[0].style).toBe("h1");
-    expect((await app.request(`${origin}/api/v1/account/sent/${richId}`,{headers:{Authorization:`Bearer ${ownerMessageCredential.token}`}})).status).toBe(404);
-    expect((await app.request(`${origin}/api/v1/account/sent?after=bad`,{headers:{Authorization:`Bearer ${senderCredential.token}`}})).status).toBe(400);
-    expect((await app.request(`${origin}/api/v1/account/sent?include=other`,{headers:{Authorization:`Bearer ${senderCredential.token}`}})).status).toBe(400);
+    expect((await call("HailMailbox/view",{view:"sentMessage",messageId:richId},ownerMessageCredential.token)).status).toBe(404);
+    expect((await call("HailMailbox/view",{view:"sent",after:"bad"},senderCredential.token)).status).toBe(400);
+    expect((await call("HailMailbox/view",{view:"other"},senderCredential.token)).status).toBe(400);
     for(const extraId of ["01afffff-0000-7000-8000-000000000003","01afffff-0000-7000-8000-000000000004","01afffff-0000-7000-8000-000000000005"]){
-      const response=await app.request(`${origin}/api/v1/account/messages`,{method:"POST",headers:{Authorization:`Bearer ${senderCredential.token}`,"Content-Type":"application/json"},
-        body:JSON.stringify({messageId:extraId,grantId,category:"updates",text:`Page ${extraId.at(-1)}`})});expect(response.status).toBe(200);
+      const response=await call("HailSubmission/submit",{kind:"message",input:{messageId:extraId,grantId,category:"updates",text:`Page ${extraId.at(-1)}`}},senderCredential.token);expect(response.status).toBe(200);
     }
-    const sentFeed=await (await app.request(`${origin}/api/v1/account/sent?include=body`,{headers:{Authorization:`Bearer ${senderCredential.token}`}})).json();
+    const sentFeed=await (await call("HailMailbox/view",{view:"sentFeed"},senderCredential.token)).json();
     expect(sentFeed.messages).toHaveLength(5);expect(sentFeed.next).toBe(imageId);expect(sentFeed.messages[0]).toMatchObject({recipient:did,
       recipientAddress:null,state:"indeterminate",reason:null,retryAt:null,body:{profile:"spt-1"}});
-    const sends=await (await app.request(`${origin}/api/v1/account/sent?include=sends`,{headers:{Authorization:`Bearer ${senderCredential.token}`}})).json();
+    const sends=await (await call("HailMailbox/view",{view:"sentSends"},senderCredential.token)).json();
     expect(sends.messages).toHaveLength(5);
     expect(sends.messages.every((message:{kind:string})=>message.kind==="message")).toBe(true);
     expect(sends.next).toBe(`${imageId}/message`);
-    const sentOlder=await (await app.request(`${origin}/api/v1/account/sent?include=body&after=${sentFeed.next}`,{headers:{Authorization:`Bearer ${senderCredential.token}`}})).json();
+    const sentOlder=await (await call("HailMailbox/view",{view:"sentFeed",after:sentFeed.next},senderCredential.token)).json();
     expect(sentOlder.messages.map((message:{messageId:string})=>message.messageId)).toEqual([richId]);expect(sentOlder.next).toBeNull();
-    const inboxFeed=await (await app.request(`${origin}/api/v1/account/inbox?include=body`,{headers:{Authorization:`Bearer ${ownerMessageCredential.token}`}})).json();
+    const inboxFeed=await (await call("HailMailbox/view",{view:"inboxFeed"},ownerMessageCredential.token)).json();
     expect(inboxFeed.messages).toHaveLength(5);expect(inboxFeed.messages[0]).toMatchObject({sender:senderDid,senderAddress,body:{profile:"spt-1"}});
-    const inboxOlder=await (await app.request(`${origin}/api/v1/account/inbox?include=body&after=${encodeURIComponent(inboxFeed.next)}`,{headers:{Authorization:`Bearer ${ownerMessageCredential.token}`}})).json();
+    const inboxOlder=await (await call("HailMailbox/view",{view:"inboxFeed",after:inboxFeed.next},ownerMessageCredential.token)).json();
     expect(inboxOlder.messages).toHaveLength(1);expect(inboxOlder.next).toBeNull();
     expect((await cli(["inbox","show",senderDid,id],"message-sender.credential.json")).exit).toBe(1);
     const reply=await cli(["reply",id,"--file",join(directory,"text.txt"),"--state",join(directory,"reply-state.json")],"message-owner.credential.json");if(reply.exit)throw new Error(reply.stderr);
@@ -507,20 +509,38 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect(await db.sql`SELECT message_id FROM delivered_messages WHERE sender_did=${senderDid} AND message_id=${id}`).toHaveLength(1);
     const ownerSession=(await accounts.authenticate(`Bearer ${ownerMessageCredential.token}`))!;
     const senderSession=(await accounts.authenticate(`Bearer ${senderCredential.token}`))!;
-    const countsUrl=`${origin}/api/v1/account/unread-counts`;
-    const countsHeaders={Authorization:`Bearer ${ownerMessageCredential.token}`};
-    expect(await (await app.request(countsUrl,{headers:countsHeaders})).json()).toEqual({subscriptions:6,connections:0,unseenConnections:0});
-    expect((await app.request(countsUrl+'?after=x',{headers:countsHeaders})).status).toBe(400);
-    expect((await app.request(countsUrl,{method:'POST',headers:countsHeaders})).status).toBe(405);
+    expect(await (await call("HailMailbox/view",{view:"unreadCounts"},ownerMessageCredential.token)).json()).toEqual({subscriptions:6,connections:0,unseenConnections:0});
+    expect((await call("HailMailbox/view",{view:"unreadCounts",after:"x"},ownerMessageCredential.token)).status).toBe(400);
     expect((await messaging.read(ownerSession,senderDid,id))?.isRead).toBe(false);
-    expect(await messaging.setRead(senderSession,senderDid,id,true)).toBeNull();
-    await messaging.setRead(ownerSession,senderDid,id,true);
-    await messaging.setRead(ownerSession,senderDid,id,true);
+    const jmap=new JmapMessages(db.sql,origin);
+    expect((await jmap.query(senderSession,{filter:{sender:senderDid,messageId:id}})).ids).toEqual([]);
+    const markRead=async(isRead:boolean)=>{
+      const query=await jmap.query(ownerSession,{filter:{sender:senderDid,messageId:id}});
+      // Domain-service coverage uses a synthetic browser-authorized session;
+      // HTTP authentication and bearer rejection are covered by JMAP route tests.
+      const result=await jmap.set({...ownerSession,scopes:['messages:read','messages:write'],passkey_credential_id:'fixture'},
+        {ifInState:query.queryState,update:{[query.ids[0]!]:{isRead}}});
+      expect(result.updated).toHaveProperty(query.ids[0]!,null);
+    };
+    const restoreCopies=async(items:{sender:string;messageId:string}[])=>{
+      let restored=0;
+      for(const item of items){
+        const query=await jmap.query(ownerSession,{filter:{...item,inTrash:true}});
+        if(!query.ids.length)continue;
+        const result=await jmap.set({...ownerSession,scopes:['messages:read','messages:write'],passkey_credential_id:'fixture'},
+          {ifInState:query.queryState,ifTrashEnabled:true,update:{[query.ids[0]!]:{isInTrash:false}}});
+        if(result.updated)restored++;
+        else expect(result.notUpdated).toEqual({[query.ids[0]!]:{type:'notFound'}});
+      }
+      return restored;
+    };
+    await markRead(true);
+    await markRead(true);
     expect((await messaging.read(ownerSession,senderDid,id))?.isRead).toBe(true);
     expect((await messaging.inbox(ownerSession,null)).messages.find(m=>m.messageId===id)?.isRead).toBe(true);
     expect((await messaging.inboxFeed(ownerSession,null)).messages.find(m=>m.messageId===id)?.isRead).toBe(true);
     expect(await messaging.unreadCounts(ownerSession)).toEqual({subscriptions:5,connections:0,unseenConnections:0});
-    await messaging.setRead(ownerSession,senderDid,id,false);
+    await markRead(false);
     expect(await messaging.unreadCounts(ownerSession)).toEqual({subscriptions:6,connections:0,unseenConnections:0});
     expect((await messaging.read(ownerSession,senderDid,id))?.isRead).toBe(false);
     expect(await messaging.trash.settings(ownerSession)).toEqual({trashEnabled:true,theme:null,showHeaderImages:null,startScreen:'feed'});
@@ -540,25 +560,24 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     expect(await messaging.read(senderSession,senderDid,id)).toBeNull();
     expect((await messaging.inbox(ownerSession,null)).messages.some(m=>m.messageId===id)).toBe(false);
     await messaging.trash.remove(ownerSession,senderDid,richId);
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:id},{sender:senderDid,messageId:richId}])).toEqual({restored:2});
+    expect(await restoreCopies([{sender:senderDid,messageId:id},{sender:senderDid,messageId:richId}])).toBe(2);
     expect(await messaging.read(ownerSession,senderDid,id)).not.toBeNull();
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages).toHaveLength(0);
     const sharedId="01afffff-0000-7000-8000-000000000006";
-    expect((await app.request(`${origin}/api/v1/account/messages`,{method:"POST",headers:{Authorization:`Bearer ${senderCredential.token}`,"Content-Type":"application/json"},
-      body:JSON.stringify({messageId:sharedId,grantId,category:"updates",text:"CLI message"})})).status).toBe(200);
+    expect((await call("HailSubmission/submit",{kind:"message",input:{messageId:sharedId,grantId,category:"updates",text:"CLI message"}},senderCredential.token)).status).toBe(200);
     const sharedBody=(await db.sql<{body_digest:Uint8Array}[]>`SELECT body_digest FROM delivered_messages WHERE message_id=${sharedId}`)[0]!.body_digest;
     await messaging.trash.remove(ownerSession,senderDid,id);
     await messaging.trash.remove(ownerSession,senderDid,richId);
     await db.sql`UPDATE delivered_messages SET trashed_at=clock_timestamp()-interval '30 days' WHERE message_id=${richId}`;
     expect(await messaging.read(ownerSession,senderDid,richId)).toBeNull();
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:richId}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:richId}])).toBe(0);
     expect((await messaging.trash.purgeExpired()).deleted).toBe(1);
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages.map(m=>m.messageId)).toEqual([id]);
     await messaging.trash.saveSettings(ownerSession,false);
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages).toHaveLength(0);
     await expect(db.sql.begin(tx=>tx.unsafe(rollbackTrash))).rejects.toThrow('Restore or purge Trash');
     expect(await messaging.read(ownerSession,senderDid,sharedId)).not.toBeNull(); // Shared body survives.
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:id}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:id}])).toBe(0);
     expect(await messaging.trash.remove(ownerSession,senderDid,sharedId)).toMatchObject({state:"deleted"});
     expect(await messaging.read(ownerSession,senderDid,sharedId)).toBeNull();
     const body=await db.sql`SELECT 1 FROM verified_body_provenance WHERE recipient_did=${did} AND sender_did=${senderDid}
@@ -575,12 +594,12 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     const cliDeleted=await cli(["message","delete",senderDid,imageId],"message-owner.credential.json");
     expect(cliDeleted.exit,cliDeleted.stderr).toBe(0);expect(JSON.parse(cliDeleted.stdout)).toMatchObject({messageId:imageId,state:"deleted"});
     expect(await messaging.read(ownerSession,senderDid,imageId)).toBeNull();
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:imageId}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:imageId}])).toBe(0);
     expect((await cli(["inbox","delete",senderDid,imageId],"message-owner.credential.json")).exit).toBe(0); // Retry alias.
     const trashId="01afffff-0000-7000-8000-000000000003";
     await messaging.trash.remove(ownerSession,senderDid,trashId);
     expect((await cli(["inbox","delete",senderDid,trashId],"message-owner.credential.json")).exit).toBe(0);
-    expect(await messaging.trash.restore(ownerSession,[{sender:senderDid,messageId:trashId}])).toEqual({restored:0});
+    expect(await restoreCopies([{sender:senderDid,messageId:trashId}])).toBe(0);
     expect((await messaging.inboxFeed(ownerSession,null,"all",true)).messages).toHaveLength(0);
 
 
@@ -592,8 +611,7 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
       senderAddress, join(directory, "fence.cose"), vault.recoverySecret);
     await db.sql`INSERT INTO provider_migration_fences (did,account_id,transfer_id,destination_service_base,state)
       VALUES (${did},${ownerId},${randomUUID()},'https://target.example.com/hail','fenced')`;
-    expect((await app.request(grantUrl(), { method: "PUT", headers: { ...authorization(),
-      "Content-Type": 'application/cose; cose-type="cose-sign1"' }, body: Uint8Array.from(revoked) })).status).toBe(409);
+    expect((await call("HailGrant/submit",{grantId,cose:encodeBase64Url(Uint8Array.from(revoked))})).status).toBe(409);
     await expect(accounts.issue(address)).rejects.toThrow("migration-fenced");
     expect((await grants.findCurrentByGrantId(grantId))?.payload.status).toBe("active");
     await db.sql`DELETE FROM provider_migration_fences WHERE account_id=${ownerId}`;
@@ -607,27 +625,25 @@ integration("authenticated account API and real racr HTTPS CLI", () => {
     const retry = await cli(args, "owner.credential.json", true);
     if (retry.exit) throw new Error(retry.stderr);
     expect(JSON.parse(retry.stdout)).toMatchObject({ grantId, status: "revoked", revision: 2 });
-    const filtered=await app.request(`${origin}/api/v1/account/grants?sender=${senderDid}`,{headers:authorization()});
+    const filtered=await call("HailGrant/list",{sender:senderDid});
     expect(await filtered.json()).toEqual({grants:[],next:null});
     expect(await readFile(join(directory, "revoked.cose"))).toEqual(first);
     expect(await db.sql`SELECT revision FROM grant_revisions WHERE grant_id=${grantId}`).toHaveLength(2);
     expect(await db.sql`SELECT revision FROM grant_publications WHERE grant_id=${grantId}`).toHaveLength(2);
     expect((await grants.findReceivedForSender(grantId, senderDid))?.payload.status).toBe("revoked");
     const rejectedId="01afffff-0000-7000-8000-000000000099";
-    expect((await app.request(`${origin}/api/v1/account/messages`,{method:"POST",headers:{Authorization:`Bearer ${senderCredential.token}`,"Content-Type":"application/json"},
-      body:JSON.stringify({messageId:rejectedId,grantId,category:"updates",text:"revoked"})})).status).toBe(409);
+    expect((await call("HailSubmission/submit",{kind:"message",input:{messageId:rejectedId,grantId,category:"updates",text:"revoked"}},senderCredential.token)).status).toBe(409);
     expect(await db.sql`SELECT 1 FROM sent_envelopes WHERE sender_did=${senderDid} AND message_id=${rejectedId}`).toHaveLength(0);
     expect(await db.sql`SELECT role FROM account_keys WHERE account_id=${ownerId} AND role='hail-identity'`).toHaveLength(0);
   });
 
   it("bounds transport and authenticates before revealing account or Grant validation", async () => {
-    expect((await app.request(`${origin}/api/v1/account/grants/not-an-id`)).status).toBe(401);
-    expect((await app.request(grantUrl(), { method: "POST", headers: authorization() })).status).toBe(405);
+    expect((await app.request(origin+"/jmap",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[["HailGrant/read",{grantId:"not-an-id"},"test"]]})})).status).toBe(401);
+    expect((await app.request(origin+"/jmap",{headers:authorization()})).status).toBe(405);
     expect((await app.request(`${origin}/api/v1/account?account=${otherId}`, { headers: authorization() })).status).toBe(400);
-    expect((await app.request(grantUrl(), { method: "PUT", headers: { ...authorization(),
-      "Content-Type": "application/json" }, body: "{}" })).status).toBe(415);
-    expect((await app.request(grantUrl(), { method: "PUT", headers: { ...authorization(),
-      "Content-Type": 'application/cose; cose-type="cose-sign1"' }, body: new Uint8Array(262_145) })).status).toBe(413);
+    expect((await app.request(origin+"/jmap",{method:"POST",headers:{...authorization(),"Content-Type":"application/cose"},body:"{}"})).status).toBe(415);
+    expect((await call("HailGrant/submit",{grantId,cose:encodeBase64Url(new Uint8Array(262_145))})).status).toBe(400);
+    expect((await app.request(origin+"/jmap",{method:"POST",headers:{...authorization(),"Content-Type":"application/json"},body:" ".repeat(8*1024*1024+1)})).status).toBe(413);
     const hidden = await cli(["account", "show"], credential.token);
     expect(hidden.exit).toBe(1);
     expect(JSON.parse(hidden.stderr).error.code).toBe("CLIENT_ERROR");

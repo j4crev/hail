@@ -15,7 +15,8 @@ it('imports legacy choices only for an unset account and accepts the server resu
   cache.set(preferences.THEME_PREFERENCE,'dark');cache.set(preferences.HEADER_PREFERENCE,'false');
   request.mockResolvedValueOnce({theme:null,showHeaderImages:null,startScreen:'feed'}).mockResolvedValueOnce({theme:'light',showHeaderImages:false,startScreen:'feed'});
   await preferences.syncAccountPreferences('alice');
-  expect(request).toHaveBeenLastCalledWith('message-preferences',{theme:'dark',showHeaderImages:false,initialize:true});
+  expect(request).toHaveBeenNthCalledWith(1,'HailMailbox/view',{view:'settings'});
+  expect(request).toHaveBeenLastCalledWith('HailMailbox/preferences',{input:{theme:'dark',showHeaderImages:false,initialize:true}});
   expect(get(preferences.themePreference)).toBe('light');
   expect(get(preferences.showInboxHeaders)).toBe(false);
 });
@@ -26,13 +27,13 @@ it('loads account values on a fresh browser and refreshes changes from another d
   await preferences.syncAccountPreferences('alice');
   expect(get(preferences.themePreference)).toBe('light');
   expect(get(preferences.showInboxHeaders)).toBe(true);
-  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls).toEqual([['HailMailbox/view',{view:'settings'}],['HailMailbox/view',{view:'settings'}]]);
 });
 it('does not import another account’s cached choices',async()=>{
   cache.set('hail.gui.preferencesAccount','alice');cache.set(preferences.THEME_PREFERENCE,'dark');
   request.mockResolvedValueOnce({theme:null,showHeaderImages:null,startScreen:'feed'}).mockResolvedValueOnce({theme:'system',showHeaderImages:true,startScreen:'feed'});
   await preferences.syncAccountPreferences('bob');
-  expect(request).toHaveBeenLastCalledWith('message-preferences',{theme:'system',showHeaderImages:true,initialize:true});
+  expect(request).toHaveBeenLastCalledWith('HailMailbox/preferences',{input:{theme:'system',showHeaderImages:true,initialize:true}});
 });
 it('saves to the account even when browser storage is blocked',async()=>{
   vi.stubGlobal('localStorage',{getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}});
@@ -73,7 +74,7 @@ it('loads and saves the start screen across account refreshes',async()=>{
   expect(get(preferences.startScreenPreference)).toBe('feed');
   await preferences.syncAccountPreferences('alice');
   await preferences.saveAccountPreferences({startScreen:'inbox'});
-  expect(request).toHaveBeenLastCalledWith('message-preferences',{startScreen:'inbox'});
+  expect(request).toHaveBeenLastCalledWith('HailMailbox/preferences',{input:{startScreen:'inbox'}});
   expect(get(preferences.startScreenPreference)).toBe('inbox');
   await preferences.syncAccountPreferences('alice');
   expect(get(preferences.startScreenPreference)).toBe('inbox');

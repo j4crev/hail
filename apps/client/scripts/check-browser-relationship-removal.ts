@@ -40,12 +40,13 @@ for(const width of [390,320]){
   await tap('[aria-label="Your connections"] button[aria-pressed]');
   assert(await evaluate(`!document.querySelector('.mobile-floating-action')`),'Selection hides Add connection');
   await evaluate(`window.prepareCalls=0;const original=window.fetch;window.fetch=async(...args)=>{
-    if(String(args[0]).endsWith('/connections/prepare')){
+    const call=String(args[0]).endsWith('/api/jmap')?JSON.parse(args[1].body).methodCalls[0]:null;
+    if(call?.[0]==='HailRelationship/prepare'){
       window.prepareCalls++;
-      const input=JSON.parse(args[1].body);
+      const input=call[1].input;
       await new Promise(resolve=>window.releasePrepare=resolve);
       if(window.failPrepare)return Response.json({error:'Temporarily unavailable'},{status:503});
-      return Response.json({requestId:input.requestId,action:'disconnect-batch',review:{connections:input.connectionIds.map(id=>({connectionId:id,did:'did:plc:'+'e'.repeat(24),address:'alex@example.com'}))},expiresAt:new Date(Date.now()+300000).toISOString(),result:null,options:{challenge:'AQID',rpId:'localhost'}});
+      return Response.json({sessionState:'fixture',methodResponses:[[call[0],{accountId:call[1].accountId,requestId:input.requestId,action:'disconnect-batch',review:{connections:input.connectionIds.map(id=>({connectionId:id,did:'did:plc:'+'e'.repeat(24),address:'alex@example.com'}))},expiresAt:new Date(Date.now()+300000).toISOString(),result:null,options:{challenge:'AQID',rpId:'localhost'}},call[2]]]});
     }
     return original(...args);
   };`);
@@ -82,15 +83,16 @@ for(const width of [390,320]){
     await evaluate(`window.passkeyCalls=0;window.releasePrepare=null;window.prepared=null;
       Object.defineProperty(navigator.credentials,'get',{configurable:true,value:async()=>{window.passkeyCalls++;throw new DOMException('Cancelled','NotAllowedError');}});
       const original=window.fetch;window.fetch=async(...args)=>{
-        const path=String(args[0]);
-        if(path.endsWith('/permissions/prepare')){
-          const input=JSON.parse(args[1].body),grants=input.grants??[{grantId:input.grantId}];
+        const call=String(args[0]).endsWith('/api/jmap')?JSON.parse(args[1].body).methodCalls[0]:null;
+        const reply=value=>Response.json({sessionState:'fixture',methodResponses:[[call[0],{accountId:call[1].accountId,...value},call[2]]]});
+        if(call?.[0]==='HailGrant/prepareApproval'){
+          const input=call[1].input,grants=input.grants??[{grantId:input.grantId}];
           const permissions=grants.map(grant=>({grant_id:grant.grantId,revision:1,grantor:'did:plc:'+'a'.repeat(24),grantee:'did:plc:'+'b'.repeat(24),expires_at:null,scope:[{type:'categories',values:['general']}],consent_context:{grantee_address:'sender@example.com'}}));
           window.prepared={requestId:input.requestId,action:input.grants?'revoke-batch':'revoke',permission:permissions[0],...(input.grants?{permissions}:{}),expiresAt:new Date(Date.now()+300000).toISOString(),approved:false,result:null,options:{challenge:'AQID',rpId:'localhost'}};
           await new Promise(resolve=>window.releasePrepare=resolve);
-          return Response.json(window.prepared);
+          return reply(window.prepared);
         }
-        if(path.includes('/permissions/'))return Response.json(window.prepared);
+        if(call?.[0]==='HailGrant/approvalStatus')return reply(window.prepared);
         return original(...args);
       };`);
     await evaluate(`Array.from(document.querySelectorAll('[aria-label="Subscription actions"] button')).find(b=>b.textContent==='Unsubscribe').dataset.testAction='unsubscribe'`);

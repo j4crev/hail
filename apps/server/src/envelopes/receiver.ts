@@ -24,7 +24,7 @@ export class EnvelopeReceiver {
       const inspected = inspectSignedPayload("hail.envelope", representation);
       const payload = inspected.payload;
       if (payload.from === payload.to ||
-        payload.created_at > this.now() + 300 || representation.length > 16_384) return "ignored";
+        payload.created_at > this.now() + 300 || representation.length > 17_408) return "ignored";
       signal?.throwIfAborted();
       const sender = await (this.resolver.resolveForAuthentication?.(payload.from) ?? this.resolver.resolve(payload.from));
       signal?.throwIfAborted();

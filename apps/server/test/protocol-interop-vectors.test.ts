@@ -43,10 +43,10 @@ for(const v of vectors.records){it('accepts frozen '+v.id+' with the real server
  expect(decodeSignedRecord(v.wire,65536)).toEqual({payloadBytes:bytes(v.payloadHex),signature:bytes(v.signatureHex)});
  const corrupt=bytes(v.signatureHex);corrupt[0]=corrupt[0]!^1;await expect(verifyRecord(v,corrupt)).rejects.toThrow();
  });}
-it('links the managed v8 chain and separates handover roles and activation digest domains',async()=>{
+it('links the managed v12 chain and separates handover roles and activation digest domains',async()=>{
  const record=(id:string)=>vectors.records.find((r:any)=>r.id===id);
  const signed=(id:string)=>decodeSignedRecord(record(id).wire,65536);
- await expect(verifyManagedHandshakeChain({grant:signed('managed-grant'),acknowledgement:signed('managed-acknowledgement'),offer:signed('managed-offer'),selection:signed('managed-selection'),approval:signed('managed-approval')},record('managed-grant').didKey,vectors.time)).resolves.toMatchObject({approval:{snapshot_version:8}});
+ await expect(verifyManagedHandshakeChain({grant:signed('managed-grant'),acknowledgement:signed('managed-acknowledgement'),offer:signed('managed-offer'),selection:signed('managed-selection'),approval:signed('managed-approval')},record('managed-grant').didKey,vectors.time)).resolves.toMatchObject({approval:{snapshot_version:12}});
  await expect(verifyConnectionHandover(signed('handover-source'),'destination',record('handover-source').didKey,vectors.time)).rejects.toThrow();
  const complete=decodeDeterministic(signed('handover-complete').payloadBytes) as Record<string,HailValue>;
  expect(complete.activation_digest).toEqual(connectionActivationDigest(signed('activation')));
@@ -55,6 +55,7 @@ it('links the managed v8 chain and separates handover roles and activation diges
 for(const kind of ['portable','managed'] as const){it('imports the fixed actual '+kind+' export shape, hashes and original signature',async()=>{
  const v=await fixture(kind+'-history'),raw=new Uint8Array(Buffer.from(v.manifestBase64,'base64url'));
  const snapshot={bytes:raw,digest:bytes(v.digestHex),signature:bytes(v.signatureHex),sourceMessagingPublicKey:v.sourceMessagingPublicKey};
+ expect(snapshot.signature.length).toBeGreaterThan(64);
  // Validation only: never rewrite the frozen fixture during unit tests.
  expect(process.env.HAIL_WRITE_HISTORY_VECTORS).not.toBe('1');await assertExportConformance(snapshot,kind);
  const m=JSON.parse(new TextDecoder().decode(raw));

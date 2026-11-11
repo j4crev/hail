@@ -73,10 +73,8 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
     output.set('Referrer-Policy','no-referrer');output.set('Content-Security-Policy',"sandbox; default-src 'none'");
     return new Response(response.body,{status:response.status,headers:output});
   });
-  let attachmentUploadsInFlight=0;
   const ingress=new FixedWindowRateLimit(),anonymous=new FixedWindowRateLimit(),authenticated=new FixedWindowRateLimit(),mediaIssuance=new FixedWindowRateLimit();
   const handle = async (context: Context, grantId: string | null, action?: string):Promise<Response> => {
-    let batchRequestId:string|undefined;
     context.header("Cache-Control", "no-store");
     context.header("Vary", "Authorization, Cookie");
     const problem = (status: 400 | 401 | 403 | 404 | 405 | 409 | 413 | 415 | 429 | 503, code?:string) => {
@@ -110,100 +108,19 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
         if(!token)return problem(503);
         return context.json({url:`${provider}/api/v1/media/${token}`,expiresIn:60});
       }
-      if(action==='attachment-upload'||action==='attachment-download'){
-        const upload=action==='attachment-upload';
-        if(!session.scopes.includes(upload?'messages:write':'messages:read'))return problem(403,'MISSING_SCOPE');
+      if(action==='attachment-download'){
+        if(!session.scopes.includes('messages:read'))return problem(403,'MISSING_SCOPE');
         if(!messaging)return problem(503);
-        if(upload?query.size:[...query.keys()].some(k=>k!=='index'||query.getAll(k).length!==1)||query.has('index')&&!/^(?:[0-9]|1[0-9])$/.test(query.get('index')!))return problem(400);
-        if(context.req.method!==(upload?'POST':'GET'))return problem(405);
-        if(upload){
-          if(session.migration_state)return problem(409);
-          if(context.req.header('Content-Type')!=='application/json'||context.req.header('Content-Encoding'))return problem(415);
-          if(attachmentUploadsInFlight>=2){context.header('Retry-After','5');return problem(429);}
-          attachmentUploadsInFlight++;
-          try{
-          const bytes=await accountRequestBytes(context.req.raw,35*1024*1024,60_000);if(!bytes)return problem(413);
-          let input:unknown;try{input=parseJsonWithoutDuplicateKeys(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{return problem(400);}
-          if(!input||typeof input!=='object'||Array.isArray(input))return problem(400);
-          return context.json(await messaging.attachments.upload(session,input as Record<string,unknown>));
-          }finally{attachmentUploadsInFlight--;}
-        }
+        if([...query.keys()].some(k=>k!=='index'||query.getAll(k).length!==1)||query.has('index')&&!/^(?:[0-9]|1[0-9])$/.test(query.get('index')!))return problem(400);
+        if(context.req.method!=='GET')return problem(405);
         const found=await messaging.attachment(session,context.req.param('sender')!,context.req.param('messageId')!,context.req.param('digest')!,query.has('index')?Number(query.get('index')):undefined);
         if(!found)return problem(404);
         return new Response(Uint8Array.from(found.bytes),{headers:{'Content-Type':found.file.media_type,'Content-Length':String(found.bytes.length),
-          'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(found.file.filename).replace(/'/g,'%27')}`,
+          'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(found.file.filename).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}`,
           'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Cache-Control':'private, no-store'}});
       }
-      if(action==="drafts"){
-        const operation=context.req.param("operation"),id=context.req.param("id")??null,reading=context.req.method==="GET";
-        if(!session.scopes.includes(reading?"messages:read":"messages:write"))return problem(403,"MISSING_SCOPE");
-        if(!session.passkey_credential_id)return problem(403,"PASSKEY_REQUIRED");
-        if(!messaging)return problem(503);
-        if(reading){
-          if(operation||[...query.keys()].some(k=>!["trash","after"].includes(k)||query.getAll(k).length!==1)||query.has("trash")&&query.get("trash")!=="true"||id&&query.size)return problem(400);
-          const result=await messaging.drafts.read(session,id,query.get("trash")==="true",query.get("after"));
-          return result?context.json(result):problem(404);
-        }
-        if(context.req.method!=="POST")return problem(405);
-        if(!id||!operation||query.size)return problem(400);
-        if(session.migration_state)return problem(409);
-        if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding"))return problem(415);
-        const bytes=await accountRequestBytes(context.req.raw,400000);if(!bytes)return problem(413);
-        let input:unknown;try{input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes));}catch{return problem(400);}
-        if(!input||typeof input!=="object"||Array.isArray(input))return problem(400);
-        return context.json(await messaging.drafts.mutate(session,id,operation,input as Record<string,unknown>));
-      }
-      if(action==="inbox-updates"||action==="conversations"){
-        const operation=context.req.param("operation")??(context.req.param("peer")?"show":"list");
-        const reading=action==="inbox-updates"||operation==="list"||operation==="show";
-        if(!session.scopes.includes(reading?"messages:read":"messages:write"))return problem(403,"MISSING_SCOPE");
-        if(context.req.method!==(reading?"GET":"POST"))return problem(405);
-        if(!messaging)return problem(503);
-        const allowed=action==="inbox-updates"?["after","from"]:operation==="list"?["after","trash"]:reading?["after"]:[];
-        if([...query.keys()].some(k=>!allowed.includes(k)||query.getAll(k).length!==1)||query.has("trash")&&query.get("trash")!=="true")return problem(400);
-        if(!reading){
-          if(session.migration_state)return problem(409);
-          if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding"))return problem(415);
-          const bytes=await accountRequestBytes(context.req.raw,1024);if(!bytes)return problem(413);
-          if(new TextDecoder().decode(bytes)!=="{}")return problem(400);
-        }
-        return context.json(action==="inbox-updates"?await messaging.updates(session,query.get("after"),query.get("from")):
-          await messaging.conversations(session,context.req.param("peer")??null,operation,query.get("after"),query.get("trash")==="true"));
-      }
-      if (query.size && action !== "list" && action !== "inbox" && action !== "sent" && action !== "sent-read" && action !== "credential" && action !== "trash" && action !== "connection-inbox" && action !== "connection-thread") return problem(400);
+      if (query.size && action !== "credential") return problem(400);
       const method = context.req.method;
-      if(action==="connection-address"){
-        if(!session.scopes.includes("messages:read"))return problem(403,"MISSING_SCOPE");
-        if(method!=="GET")return problem(405);
-        if(!/^did:plc:[a-z2-7]{24}$/.test(grantId!))return problem(400);
-        return context.json(await accounts.connectionAddress(session,grantId!));
-      }
-      if(action?.startsWith("publication-")||action?.startsWith("connection-message-")){
-        const kind=action.startsWith("connection-message-")?"connections":"category",operation=kind==="connections"?action.slice("connection-message-".length):action.slice("publication-".length);
-        const required=operation==="audiences"?"grants:read":operation==="targets"||operation==="status"||operation==="create"&&method==="GET"?"messages:read":"messages:write";
-        if(!session.scopes.includes(required))return problem(403,"MISSING_SCOPE");
-        if(!publications)return problem(503);
-        if(operation==="create"&&method==="GET")return context.json(await publications.recent(session,kind));
-        if(operation==="audiences"||operation==="targets"||operation==="status"){
-          if(method!=="GET")return problem(405);
-          if(operation==="audiences")return context.json(await publications.audiences(session));
-          if(operation==="targets"){
-            if(!session.passkey_credential_id)return problem(403,"PASSKEY_REQUIRED"); // Existing message-read bearers do not gain a new contact inventory.
-            return context.json(await publications.connectionTargets(session));
-          }
-          const found=await publications.status(session,grantId!,kind);return found?context.json(found):problem(404);
-        }
-        if(method!=="POST")return problem(405);if(session.migration_state)return problem(409);
-        if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding")!==undefined)return problem(415);
-        const bytes=await accountRequestBytes(context.req.raw,MESSAGE_JSON_MAX_BYTES);if(!bytes)return problem(413);
-        let input:unknown;try{input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes));}catch{return problem(400);}
-        if(!input||typeof input!=="object"||Array.isArray(input))return problem(400);
-        if(kind==='connections'&&'publicationId' in input&&typeof input.publicationId==='string'&&GRANT_ID.test(input.publicationId))batchRequestId=input.publicationId;
-        if(operation==="create")return context.json(kind==="connections"?await publications.createConnections(session,input as Record<string,unknown>):await publications.create(session,input as Record<string,unknown>),202);
-        if(operation==='reply-all')return context.json(await publications.replyConversation(session,input as Record<string,unknown>),202);
-        if(Object.keys(input).length)return problem(400);
-        const found=await publications.cancel(session,grantId!,kind);return found?context.json(found):problem(404);
-      }
       if(action==="sender-avatar"||action==="sender-avatar-image"){
         if(!session.scopes.includes("messages:read"))return problem(403,"MISSING_SCOPE");
         if(method!=="GET")return problem(405);
@@ -300,33 +217,6 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
           if(!input||typeof input!=="object"||Array.isArray(input))throw new Error("Invalid object");}catch{return problem(400);}
         return context.json(action==="managed-transfer-export"?await managedTransfer.exportSnapshot(session,input):await managedTransfer.offer(session,input));
       }
-      if(action==="update-proposal"||action==="managed-update") {
-        if(!session.scopes.includes("grants:write"))return problem(403,"MISSING_SCOPE");
-        if(method!=="POST")return problem(405);if(session.migration_state)return problem(409);
-        if(!grantId||!GRANT_ID.test(grantId))return problem(400);
-        const current=await grants.findCurrentByGrantId(grantId);
-        if(!current||current.localAccountId!==session.account_id||current.localRole!=="grantor")return problem(404);
-        if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding")!==undefined)return problem(415);
-        const bytes=await accountRequestBytes(context.req.raw);if(!bytes||bytes.length>16384)return problem(413);
-        let input:Record<string,unknown>;
-        try{input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;
-          if(!input||typeof input!=="object"||Array.isArray(input))throw new Error("Invalid input");}catch{return problem(400);}
-        if(action==="managed-update") {
-          if(!await accounts.isManaged(session.account_id))return problem(403);
-          if(Object.keys(input).length!==2||Object.keys(input).some(k=>!["payload","signingKey"].includes(k))||typeof input.signingKey!=="string")return problem(400);
-          const payload=fromDiagnosticJson("hail.grant",input.payload as DiagnosticJson);if(payload.grant_id!==grantId||payload.grantor!==session.did||payload.status!=="active")return problem(400);
-          const saved=await service.updateManaged(session.did,payload,input.signingKey);
-          return context.json({grantId,revision:saved.payload.revision,status:saved.payload.status,digest:encodeBase64Url(saved.digest),publication:"durable",cose:encodeBase64Url(saved.representation)});
-        }
-        if(Object.keys(input).some(k=>!["scope","expiresAt","expectedRevision","expectedDigest","refreshConsent","sender"].includes(k))||
-          !Number.isSafeInteger(input.expectedRevision)||typeof input.expectedDigest!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(input.expectedDigest)||
-          typeof input.refreshConsent!=="boolean"||input.expiresAt!==null&&!Number.isSafeInteger(input.expiresAt)||
-          input.sender!==undefined&&typeof input.sender!=="string"||!input.scope||typeof input.scope!=="object"||Array.isArray(input.scope))return problem(400);
-        const proposed=await service.prepareUserSignedUpdate(session.did,grantId,{scope:input.scope as import("@racrproto/codec").HailGrantScope,
-          expiresAt:input.expiresAt as number|null,expectedRevision:input.expectedRevision as number,expectedDigest:decodeBase64Url(input.expectedDigest),
-          refreshConsent:input.refreshConsent,...(input.sender?{sender:input.sender as string}:{})});
-        return context.json({type:"racr.grant-proposal",version:1,grant:toDiagnosticJson("hail.grant",proposed)});
-      }
       if(action==="binding") {
         if(!session.scopes.includes(method==="GET"?"account:read":"account:write"))return problem(403,"MISSING_SCOPE");
         if(!binding)return problem(503);
@@ -374,108 +264,7 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
           digest:encodeBase64Url(saved.digest),cose:encodeBase64Url(saved.cose),
           profile:toDiagnosticJson("hail.sender-profile",saved.payload)});
       }
-      if(["message-read","message-unread","trash","trash-restore","trash-empty","sent-clear","sent-restore","message-delete","message-purge","message-preferences"].includes(action??"")){
-        if(!messaging)return problem(503);
-        const reading=method==="GET";
-        if(!session.scopes.includes(reading?"messages:read":"messages:write"))return problem(403,"MISSING_SCOPE");
-        // CLI deletion is always permanent; web deletion always honors the account setting.
-        if(action==="message-purge"?Boolean(session.passkey_credential_id):!session.passkey_credential_id)return problem(403);
-        if(action==="trash"){
-          if(!reading)return problem(405);
-          if([...query.keys()].some(k=>k!=="after")||query.getAll("after").length>1)return problem(400);
-          return context.json(await messaging.inboxFeed(session,query.get("after"),"all",true));
-        }
-        if(action==="message-preferences"&&reading)return context.json(await messaging.trash.settings(session));
-        if(method!=="POST")return problem(405);
-        if(session.migration_state)return problem(409);
-        if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding"))return problem(415);
-        const bytes=await accountRequestBytes(context.req.raw,32768);if(!bytes)return problem(413);
-        const input=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));
-        if(!input||typeof input!=="object"||Array.isArray(input))return problem(400);
-        if(action==="message-preferences"){
-          if("trashEnabled" in input){
-            if(Object.keys(input).length!==1)return problem(400);
-            return context.json(await messaging.trash.saveSettings(session,input.trashEnabled));
-          }
-          return context.json(await messaging.trash.saveDisplaySettings(session,input));
-        }
-        if(action==="sent-clear"){
-          if(!("trashEnabled" in input)||Object.keys(input).some(key=>key!=="trashEnabled"&&key!=="messages"))return problem(400);
-          return context.json(await messaging.trash.clearSent(session,input.trashEnabled,input.messages));
-        }
-        if(action==="sent-restore"){
-          if(Object.keys(input).length!==2||!("kind" in input)||!("messageId" in input))return problem(400);
-          return context.json(await messaging.trash.restoreSent(session,input.kind,input.messageId));
-        }
-        if(action==="trash-empty"){
-          if(Object.keys(input).length)return problem(400);
-          return context.json(await messaging.trash.empty(session));
-        }
-        if(action==="trash-restore"){
-          if(Object.keys(input).length!==1||!("messages" in input))return problem(400);
-          return context.json(await messaging.trash.restore(session,input.messages));
-        }
-        if(Object.keys(input).length)return problem(400);
-        if(action==="message-read"||action==="message-unread"){
-          const result=await messaging.setRead(session,context.req.param("sender")!,grantId!,action==="message-read");
-          return result?context.json(result):problem(404);
-        }
-        return context.json(await messaging.trash.remove(session,context.req.param("sender")!,grantId!,action==="message-purge"));
-      }
-      const scope = action === "send" || action === "resubmit" ? "messages:write" : ["inbox","read","status","sent","sent-read","thread","connection-inbox","connection-thread","unread-counts"].includes(action ?? "") ? "messages:read" : action === "credential" ? "credentials:write" : action === "proposal" || action === "managed-create" || action === "managed-revoke" ? "grants:write" : action === "list" ? "grants:read" :
-        grantId === null ? "account:read" : method === "PUT" ? "grants:write" : "grants:read";
-      if (!session.scopes.includes(scope)) return problem(403,"MISSING_SCOPE");
-      if(["send","resubmit","inbox","read","status","sent","sent-read","thread","connection-inbox","connection-thread","unread-counts"].includes(action ?? "")) {
-        if(!messaging)return problem(503);
-        if(action==="send"||action==="resubmit") {
-          if(method!=="POST")return problem(405);if(session.migration_state)return problem(409);
-          if(action==="resubmit") {
-            if(!grantId||!GRANT_ID.test(grantId))return problem(400);
-            if(!await messaging.status(session,grantId))return problem(404);
-            return context.json(await messaging.submit(session.did,grantId));
-          }
-          if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding")!==undefined)return problem(415);
-          const bytes=await accountRequestBytes(context.req.raw,MESSAGE_JSON_MAX_BYTES);if(!bytes)return problem(413);
-          const input=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));if(!input||typeof input!=="object"||Array.isArray(input))return problem(400);
-          return context.json(await messaging.send(session,input));
-        }
-        if(method!=="GET")return problem(405);
-        if(action==="unread-counts")return context.json(await messaging.unreadCounts(session));
-        if(action==="connection-inbox"||action==="connection-thread") {
-          const key=action==="connection-inbox"?"after":"offset";
-          if([...query.keys()].some(k=>k!==key)||query.getAll(key).length>1)return problem(400);
-          const found=action==="connection-inbox"?await messaging.connectionInbox(session,query.get(key)):
-            await messaging.connectionThread(session,context.req.param("sender")!,grantId!,query.get(key));
-          return found?context.json(found):problem(404);
-        }
-        if(action==="thread") {
-          const found=await messaging.thread(session,context.req.param("sender")!,grantId!);
-          return found?context.json(found):problem(404);
-        }
-        if(action==="sent") {
-          if([...query.keys()].some(k=>!["after","include","trash"].includes(k))||query.getAll("after").length>1||query.getAll("include").length>1||query.getAll("trash").length>1||
-            ![null,"body","sends"].includes(query.get("include")))return problem(400);
-          if(query.has("trash")&&(query.get("trash")!=="true"||query.get("include")!=="sends"))return problem(400);
-          if(query.get("include")==="sends")return context.json(await messaging.sentSends(session,query.get("after"),undefined,query.get("trash")==="true"));
-          return context.json(query.get("include")==="body"?await messaging.sentFeed(session,query.get("after")):await messaging.sent(session,query.get("after")));
-        }
-        if(action==="sent-read") {
-          if([...query.keys()].some(k=>!["kind","trash"].includes(k))||query.getAll("trash").length>1||query.getAll("kind").length>1)return problem(400);
-          if(query.has("trash")&&(query.get("trash")!=="true"||!query.has("kind")))return problem(400);
-          if(query.has("kind")){
-            const found=(await messaging.sentSends(session,null,{id:grantId!,kind:query.get("kind")!},query.get("trash")==="true")).messages[0];
-            return found?context.json(found):problem(404);
-          }
-          const found=await messaging.sentMessage(session,grantId!);return found?context.json(found):problem(404);
-        }
-        if(action==="inbox") {
-          if([...query.keys()].some(k=>!["after","include","kind"].includes(k))||query.getAll("after").length>1||query.getAll("include").length>1||query.getAll("kind").length>1||
-            ![null,"body"].includes(query.get("include"))||![null,"subscriptions","connections"].includes(query.get("kind"))||query.has("kind")&&query.get("include")!=="body")return problem(400);
-          return context.json(query.get("include")==="body"?await messaging.inboxFeed(session,query.get("after"),query.get("kind") as "subscriptions"|"connections"|null??"all"):await messaging.inbox(session,query.get("after")));
-        }
-        const found=action==="read"?await messaging.read(session,context.req.param("sender")!,grantId!):await messaging.status(session,grantId!);
-        return found?context.json(found):problem(404);
-      }
+      if (!session.scopes.includes(action === "credential" ? "credentials:write" : "account:read")) return problem(403,"MISSING_SCOPE");
       if (action === "credential") {
         if (method === "GET") {
           const after = query.get("after");
@@ -505,86 +294,10 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
         const credential=await accounts.issue(session.did,false,input.token,scopes);
         return context.json({type:"racr.api-credential",version:1,provider,...credential});
       }
-      if (action === "managed-revoke") {
-        if (method !== "POST") return problem(405);
-        if(session.migration_state)return problem(409);
-        if(!await accounts.isManaged(session.account_id))return problem(403);
-        const current=await grants.findCurrentByGrantId(grantId!);
-        if(!current||current.localAccountId!==session.account_id||current.localRole!=="grantor")return problem(404);
-        const saved=await service.revoke(session.did,grantId!);
-        return context.json({grantId,revision:saved.payload.revision,status:saved.payload.status,digest:encodeBase64Url(saved.digest),publication:"durable"});
-      }
-      if (action === "proposal" || action === "managed-create") {
-        if (method !== "POST") return problem(405);
-        if (session.migration_state) return problem(409);
-        if (context.req.header("Content-Type") !== "application/json" || context.req.header("Content-Encoding") !== undefined) return problem(415);
-        const bytes = await accountRequestBytes(context.req.raw);
-        if (!bytes || bytes.length > 16_384) return problem(413);
-        const input = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-        if (!input || typeof input !== "object" || Array.isArray(input) ||
-          Object.keys(input).some(key => !["sender", "category", "scope", "expiresAt"].includes(key)) ||
-          typeof input.sender !== "string" || (input.scope===undefined ? typeof input.category!=="string" :
-            input.category!==undefined||!input.scope||typeof input.scope!=="object"||Array.isArray(input.scope)) ||
-          (input.expiresAt !== null && !Number.isSafeInteger(input.expiresAt))) return problem(400);
-        if(action === "managed-create") {
-          if(!await accounts.isManaged(session.account_id))return problem(403);
-          const saved=await service.createOrReuse(session.did,input.sender,
-            {scope:input.scope ?? {type:"categories",values:[input.category]},expiresAt:input.expiresAt});
-          return context.json({grantId:saved.payload.grant_id,revision:saved.payload.revision,status:saved.payload.status,digest:encodeBase64Url(saved.digest),publication:"durable"});
-        }
-        const payload = await service.prepareUserSignedGrant(session.did, input.sender,
-          { scope: input.scope ?? { type: "categories", values: [input.category] }, expiresAt: input.expiresAt });
-        return context.json({ type: "racr.grant-proposal", version: 1, grant: toDiagnosticJson("hail.grant", payload) });
-      }
-      if (action === "list") {
-        if (method !== "GET") return problem(405);
-        if ([...query.keys()].some(key => !["after","sender"].includes(key)) ||
-          query.getAll("after").length>1 || query.getAll("sender").length>1) return problem(400);
-        const after = query.get("after"), sender = query.get("sender");
-        if (after !== null && !GRANT_ID.test(after) || sender !== null && !/^did:plc:[a-z2-7]{24}$/.test(sender)) return problem(400);
-        return context.json(await accounts.listGrants(session, after, sender));
-      }
-      if (method !== "GET" && !(grantId !== null && method === "PUT")) {
-        context.header("Allow", grantId === null ? "GET" : "GET, PUT");
-        return problem(405);
-      }
-      if (grantId === null) return context.json(await accounts.describe(session, provider));
-      if (!GRANT_ID.test(grantId)) return problem(400);
-      const current = await grants.findCurrentByGrantId(grantId);
-      if (method === "GET") {
-        const owned = current?.localAccountId === session.account_id ? current :
-          await grants.findReceivedForSender(grantId, session.did);
-        if (!owned || owned.localAccountId !== session.account_id) return problem(404);
-        const digest = encodeBase64Url(owned.digest);
-        context.header("ETag", `"${digest}"`);
-        return context.json({ type: "racr.grant", version: 1, localRole: owned.localRole,
-          digest, cose: encodeBase64Url(owned.representation) });
-      }
-      if (session.migration_state) return problem(409);
-      if (current && (current.localAccountId !== session.account_id || current.localRole !== "grantor")) return problem(404);
-      if (!isCoseSign1MediaType(context.req.header("Content-Type") ?? null) || context.req.header("Content-Encoding") !== undefined) {
-        return problem(415);
-      }
-      const representation = await accountRequestBytes(context.req.raw);
-      if (representation === null) return problem(413);
-      const payload = inspectSignedPayload("hail.grant", representation).payload;
-      if (payload.grant_id !== grantId) return problem(400);
-      const saved = await service.acceptUserSignedGrant(session.did,
-        payload.consent_context.grantee_address, representation);
-      context.header("ETag", `"${encodeBase64Url(saved.digest)}"`);
-      return context.json({ grantId, revision: saved.payload.revision, status: saved.payload.status,
-        digest: encodeBase64Url(saved.digest), publication: "durable" });
+      if(method!=="GET")return problem(405);
+      return context.json(await accounts.describe(session,provider));
       });
     } catch (error) {
-      if(action==='connection-message-create'||action==='connection-message-reply-all'){
-        // Keep request bodies, credentials and raw database errors out of logs.
-        // Source frames identify unexpected failures without their possibly sensitive message.
-        console.error(JSON.stringify({type:'hail.connection-batch',operation:action,outcome:'rejected',requestId:batchRequestId,
-          errorType:error instanceof Error?error.constructor.name:'unknown',
-          ...(error instanceof UserGrantError?{reason:error.message,status:error.status}:{}),
-          ...(error instanceof HailCodecError?{code:error.code}:{}),
-          frames:error instanceof Error?error.stack?.split('\n').filter(line=>/^\s+at /.test(line)).slice(0,6):undefined}));
-      }
       if(error instanceof RequestBodyTimeout)return new Response(null,{status:408,headers:{'Cache-Control':'no-store'}});
       if (error instanceof UserGrantError) return problem(error.status);
       if (error instanceof BindingError || error instanceof CustomDomainAuthorityError) return problem(error.status);
@@ -611,57 +324,12 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
   app.all("/api/v1/account/custody/owner-controlled/review",context=>handle(context,null,"custody-review-owner"));
   app.all("/api/v1/account/custody/owner-controlled",context=>handle(context,null,"custody-prepare-owner"));
   app.all("/api/v1/account/custody/managed/commit",context=>handle(context,null,"custody-commit"));
-  app.all("/api/v1/account/connection-addresses/:did",context=>handle(context,context.req.param("did"),"connection-address"));
   app.all("/api/v1/account/binding",context=>handle(context,null,"binding"));
   app.all("/api/v1/account/profile",context=>handle(context,null,"profile"));
   app.all("/api/v1/account/media-ticket",context=>handle(context,null,"media-ticket"));
   app.all("/api/v1/account/senders/:sender/avatar/image",context=>handle(context,context.req.param("sender"),"sender-avatar-image"));
   app.all("/api/v1/account/senders/:sender/avatar",context=>handle(context,context.req.param("sender"),"sender-avatar"));
   app.all("/api/v1/account/senders/:sender/profile",context=>handle(context,context.req.param("sender"),"sender-profile"));
-  app.all("/api/v1/account/messages",context=>handle(context,null,"send"));
-  app.all("/api/v1/account/publications/audiences",context=>handle(context,null,"publication-audiences"));
-  app.all("/api/v1/account/publications",context=>handle(context,null,"publication-create"));
-  app.all("/api/v1/account/publications/:publicationId/cancel",context=>handle(context,context.req.param("publicationId"),"publication-cancel"));
-  app.all("/api/v1/account/publications/:publicationId",context=>handle(context,context.req.param("publicationId"),"publication-status"));
-  app.all('/api/v1/account/attachments',context=>handle(context,null,'attachment-upload'));
   app.all('/api/v1/account/attachments/:sender/:messageId/:digest',context=>handle(context,null,'attachment-download'));
-  app.all("/api/v1/account/connection-messages/targets",context=>handle(context,null,"connection-message-targets"));
-  app.all('/api/v1/account/connection-messages/reply-all',context=>handle(context,null,'connection-message-reply-all'));
-  app.all("/api/v1/account/connection-messages",context=>handle(context,null,"connection-message-create"));
-  app.all("/api/v1/account/connection-messages/:publicationId/cancel",context=>handle(context,context.req.param("publicationId"),"connection-message-cancel"));
-  app.all("/api/v1/account/connection-messages/:publicationId",context=>handle(context,context.req.param("publicationId"),"connection-message-status"));
-  app.all("/api/v1/account/message-preferences",context=>handle(context,null,"message-preferences"));
-  app.all("/api/v1/account/drafts/:id/:operation",context=>handle(context,null,"drafts"));
-  app.all("/api/v1/account/drafts/:id",context=>handle(context,null,"drafts"));
-  app.all("/api/v1/account/drafts",context=>handle(context,null,"drafts"));
-  app.all("/api/v1/account/trash",context=>handle(context,null,"trash"));
-  app.all("/api/v1/account/trash/empty",context=>handle(context,null,"trash-empty"));
-  app.all("/api/v1/account/sent/clear",context=>handle(context,null,"sent-clear"));
-  app.all("/api/v1/account/sent/restore",context=>handle(context,null,"sent-restore"));
-  app.all("/api/v1/account/trash/restore",context=>handle(context,null,"trash-restore"));
-  app.all("/api/v1/account/inbox/:sender/:messageId/permanent-delete",context=>handle(context,context.req.param("messageId"),"message-purge"));
-  app.all("/api/v1/account/inbox/:sender/:messageId/mark-read",context=>handle(context,context.req.param("messageId"),"message-read"));
-  app.all("/api/v1/account/inbox/:sender/:messageId/mark-unread",context=>handle(context,context.req.param("messageId"),"message-unread"));
-  app.all("/api/v1/account/inbox/:sender/:messageId/delete",context=>handle(context,context.req.param("messageId"),"message-delete"));
-  app.all("/api/v1/account/connection-inbox",context=>handle(context,null,"connection-inbox"));
-  app.all("/api/v1/account/connection-threads/:sender/:messageId",context=>handle(context,context.req.param("messageId"),"connection-thread"));
-  app.all("/api/v1/account/threads/:sender/:messageId",context=>handle(context,context.req.param("messageId"),"thread"));
-  app.all("/api/v1/account/inbox/updates",context=>handle(context,null,"inbox-updates"));
-  app.all("/api/v1/account/conversations/:peer/:operation",context=>handle(context,null,"conversations"));
-  app.all("/api/v1/account/conversations/:peer?",context=>handle(context,null,"conversations"));
-  app.all("/api/v1/account/unread-counts",context=>handle(context,null,"unread-counts"));
-  app.all("/api/v1/account/inbox",context=>handle(context,null,"inbox"));
-  app.all("/api/v1/account/inbox/:sender/:messageId",context=>handle(context,context.req.param("messageId"),"read"));
-  app.all("/api/v1/account/messages/:messageId/submit",context=>handle(context,context.req.param("messageId"),"resubmit"));
-  app.all("/api/v1/account/messages/:messageId",context=>handle(context,context.req.param("messageId"),"status"));
-  app.all("/api/v1/account/sent",context=>handle(context,null,"sent"));
-  app.all("/api/v1/account/sent/:messageId",context=>handle(context,context.req.param("messageId"),"sent-read"));
   app.all("/api/v1/account/credentials", context => handle(context,null,"credential"));
-  app.all("/api/v1/account/grants/managed", context => handle(context,null,"managed-create"));
-  app.all("/api/v1/account/grants/:grantId/revoke", context => handle(context,context.req.param("grantId"),"managed-revoke"));
-  app.all("/api/v1/account/grants/proposals", context => handle(context, null, "proposal"));
-  app.all("/api/v1/account/grants/:grantId/proposals",context=>handle(context,context.req.param("grantId"),"update-proposal"));
-  app.all("/api/v1/account/grants/:grantId/update",context=>handle(context,context.req.param("grantId"),"managed-update"));
-  app.all("/api/v1/account/grants", context => handle(context, null, "list"));
-  app.all("/api/v1/account/grants/:grantId", context => handle(context, context.req.param("grantId")));
 }

@@ -86,6 +86,40 @@ export class AccountApiClient {
     return new AccountApiClient(record.provider, record.token, record.accountId,undefined,transport);
   }
 
+  async jmap(name:string,args:JsonObject={},maxResponse=40*1024*1024):Promise<JsonObject>{
+    const capability='https://haili.app/ns/jmap/account';
+    const session=await this.request('/.well-known/jmap',undefined,'');
+    const accountId=object(session.primaryAccounts)[capability];
+    if(typeof accountId!=='string')throw new AccountApiError(403);
+    const response=await this.request('/jmap',{using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{...args,accountId},'account']]},'',maxResponse);
+    const calls=response.methodResponses;
+    if(!Array.isArray(calls)||calls.length!==1||!Array.isArray(calls[0])||calls[0][2]!=='account')throw new ClientError('RESPONSE_ERROR','Invalid JMAP response');
+    const result=object(calls[0][1]);
+    if(calls[0][0]==='error')throw new AccountApiError(typeof result.httpStatus==='number'?result.httpStatus:result.type==='stateMismatch'?409:result.type==='forbidden'?403:result.type==='notFound'?404:result.type==='rateLimit'?429:['serverFail','serverUnavailable'].includes(String(result.type))?503:400,undefined,typeof result.code==='string'?result.code:'JMAP_'+String(result.type));
+    if(calls[0][0]!==name||result.accountId!==accountId)throw new ClientError('RESPONSE_ERROR','Invalid JMAP account response');
+    return result;
+  }
+
+  async uploadAttachment(filename:string,bytes:Uint8Array):Promise<JsonObject>{
+    if(bytes.length<1||bytes.length>25*1024*1024)throw new Error('Invalid attachment size');
+    const session=await this.request('/.well-known/jmap',undefined,'');
+    const accountId=object(session.primaryAccounts)['https://haili.app/ns/jmap/account'];
+    if(typeof accountId!=='string')throw new AccountApiError(403);
+    const response=await fetch(`${this.transport}/jmap/upload/${encodeURIComponent(accountId)}`,{
+      method:'POST',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(60_000),
+      headers:{...(this.sessionOrigin?{Cookie:`hail_session=${this.token}`,Origin:this.sessionOrigin}:{Authorization:`Bearer ${this.token}`}),
+        'Content-Type':'application/octet-stream','Accept-Encoding':'identity'},body:Uint8Array.from(bytes)});
+    if(!response.ok){await response.body?.cancel();throw new AccountApiError(response.status);}
+    const reader=response.body?.getReader();if(!reader)throw new Error('Missing upload response');
+    let text='',size=0;const decoder=new TextDecoder('utf-8',{fatal:true});
+    try{while(true){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;
+      if(size>16384)throw new Error('Upload response too large');text+=decoder.decode(chunk.value,{stream:true});}text+=decoder.decode();}
+    catch(error){await reader.cancel().catch(()=>{});throw error;}
+    const uploaded=object(JSON.parse(text));
+    if(uploaded.accountId!==accountId||typeof uploaded.blobId!=='string'||uploaded.size!==bytes.length)throw new Error('Invalid upload response');
+    return this.jmap('HailAttachment/import',{filename,blobId:uploaded.blobId});
+  }
+
   async attachment(path:string):Promise<Response>{
     if(!/^\/attachments\/[^/]+\/[^/]+\/[A-Za-z0-9_-]{43}(?:\?index=(?:[0-9]|1[0-9]))?$/.test(path))throw new Error('Invalid attachment path');
     const response=await fetch(`${this.transport}/api/v1/account${path}`,{redirect:'error',signal:AbortSignal.timeout(60_000),headers:{
@@ -114,7 +148,7 @@ export class AccountApiClient {
     try {
       response = await fetch(`${this.transport}${namespace}${path}`, {
         method: bytes ? bytes instanceof Uint8Array ? "PUT" : "POST" : "GET", headers, redirect: "error", credentials: "omit",
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(path==="/attachments"?60_000:20_000)]) : AbortSignal.timeout(path==="/attachments"?60_000:20_000), ...(bytes ? { body: bytes instanceof Uint8Array ? Uint8Array.from(bytes) : JSON.stringify(bytes) } : {}),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000), ...(bytes ? { body: bytes instanceof Uint8Array ? Uint8Array.from(bytes) : JSON.stringify(bytes) } : {}),
       });
     } catch { throw new ClientError("TRANSPORT_ERROR", "Provider API transport failed; check connectivity/HTTPS trust and retain exact retry artifacts"); }
     if (!response.ok) {
@@ -200,7 +234,7 @@ export class AccountApiClient {
 
   async grant(id: string): Promise<{ representation: Uint8Array; payload: HailGrant; localRole: "grantor" | "grantee"; digest: string }> {
     if (!GRANT_ID.test(id)) throw new Error("Grant ID must be a canonical UUIDv7");
-    const result = await this.request(`/grants/${id}`);
+    const result = await this.jmap("HailGrant/read",{grantId:id});
     if (result.type !== "racr.grant" || result.version !== 1 ||
       typeof result.cose !== "string" || result.cose.length > 349_528 || typeof result.digest !== "string" ||
       !["grantor", "grantee"].includes(result.localRole as string)) throw new ClientError("RESPONSE_ERROR", "Invalid provider Grant response");
@@ -214,7 +248,7 @@ export class AccountApiClient {
   async submit(representation: Uint8Array) {
     if (representation.length > 262_144) throw new Error("Signed Grant exceeds its limit");
     const payload = inspectSignedPayload("hail.grant", representation).payload;
-    const result = await this.request(`/grants/${payload.grant_id}`, representation);
+    const result = await this.jmap("HailGrant/submit",{grantId:payload.grant_id,cose:encodeBase64Url(representation)});
     const digest = encodeBase64Url(new Uint8Array(createHash("sha256").update(representation).digest()));
     if (result.grantId !== payload.grant_id || result.revision !== payload.revision || result.status !== payload.status ||
       result.digest !== digest || result.publication !== "durable") throw new ClientError("RESPONSE_ERROR", "Provider did not acknowledge the exact signed Grant");
@@ -251,7 +285,7 @@ export class AccountApiClient {
   }
 
   async propose(sender: string, category: string|string[] | null, expiresAt: number | null): Promise<HailGrant> {
-    const result = await this.request("/grants/proposals", Array.isArray(category)?{sender,scope:{type:"categories",values:[...category].sort()},expiresAt}:{sender,category,expiresAt});
+    const result = await this.jmap("HailGrant/propose",{input:Array.isArray(category)?{sender,scope:{type:"categories",values:[...category].sort()},expiresAt}:{sender,category,expiresAt}});
     if (result.type !== "racr.grant-proposal" || result.version !== 1) throw new ClientError("RESPONSE_ERROR", "Invalid Grant proposal");
     return fromDiagnosticJson("hail.grant", result.grant as DiagnosticJson);
   }

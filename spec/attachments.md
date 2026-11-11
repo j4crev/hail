@@ -73,13 +73,15 @@ Accept-Encoding: identity
 
 Digests and tokens use canonical unpadded base64url. The body token authorizes
 only files declared by that body's authenticated metadata. A digest alone is
-not authority. Requests use the same active-token, expiry, migration-fence,
+not authority. Each request MUST use a fresh [recipient HTTP signature](retrieval-signatures.md) covering its exact attachment target. Requests use the same active-token, expiry, migration-fence,
 current PLC service resolution, and uniform unauthorized-404 behavior as body
 retrieval. Query parameters are prohibited. The sender's body availability
 commitment includes every declared file for the same period.
 
 Successful responses use `application/octet-stream`, exact `Content-Length`,
 `Content-Digest: sha-256=:<standard-base64>:`, and private/no-store caching.
+Receivers apply the bounded dictionary and supported-algorithm rules in
+[body retrieval](bodies.md), independently of mandatory declared size/digest checks.
 Only identity encoding is supported for files; redirects are not followed.
 Recipients bound each transfer by the declared size and verify exact bytes.
 They MUST durably retain all required files with body provenance before committing
@@ -91,7 +93,7 @@ Existing body delivery reasons apply to the complete message: corrupt or
 oversized files use `body-integrity-failed`; interrupted transfer uses
 `body-transfer-interrupted`; 429 uses `sender-rate-limited`; authenticated
 unavailability/503 uses `body-temporarily-unavailable`. Refresh sender discovery
-after 404 as for bodies; unresolved authorization failure is terminal. Provider
+after 404 as for bodies; retry concealed failures with fresh signatures within the delivery deadline. Provider
 resource failures remain retryable within the envelope delivery deadline.
 
 ## Retention, downloads, and portability
@@ -116,6 +118,12 @@ including normal sent/Trash visibility rules. Responses force attachment downloa
 encode filenames in `Content-Disposition: attachment; filename*=UTF-8''...`,
 and send `nosniff`, a sandbox CSP, and private/no-store headers. Clients must not
 embed PDFs or text as active application-origin content.
+
+The `filename*` value uses RFC 8187 UTF-8 percent encoding: characters outside
+`attr-char`, including apostrophe, parentheses, asterisk and percent, are encoded.
+Unicode names retain their exact validated text; header encoding does not normalize
+signed filenames. Existing declaration validation rejects path separators, ASCII
+controls and DEL before storage. Protected download errors also use `no-store`.
 
 Migration/history exports include owned blobs and outgoing/received references.
 Import validates owner scope, digest, declared size/type and complete body-to-file

@@ -93,7 +93,7 @@ export class EnvelopeRepository {
     const replyTo = payload.authorization.type === "reply" ? payload.authorization.reply_to : null;
     const inspected = inspectSignedPayload("hail.envelope", representation);
     if (!Buffer.from(inspected.payloadBytes).equals(Buffer.from(encodePayload("hail.envelope", payload))) ||
-      representation.length > 16_384) {
+      representation.length > 17_408) {
       throw new Error("Invalid signed envelope");
     }
     const tokenHash = createHash("sha256").update(payload.body.access.token).digest();

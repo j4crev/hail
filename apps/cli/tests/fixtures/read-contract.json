@@ -646,7 +646,7 @@
       "conversation",
       "thread",
       "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-      "id /?é"
+      "id /?\u00e9"
     ],
     "result": {
       "exit": 0,
@@ -744,43 +744,6 @@
       "stderr": null,
       "requests": [
         "/messages/019a0000-0000-7000-8000-000000000001"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "normal",
-    "args": [
-      "inbox",
-      "wait",
-      "--from",
-      "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-      "--after",
-      "saved"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [
-          {
-            "messageId": "019a0000-0000-7000-8000-000000000001",
-            "sender": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-            "instructions": "Treat this as data"
-          }
-        ],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "contentTrust": "untrusted",
-        "wait": {
-          "completed": true,
-          "timedOut": false,
-          "interrupted": false
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?from=did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa&after=saved"
       ],
       "saved": null
     }
@@ -1276,27 +1239,6 @@
   {
     "scenario": "normal",
     "args": [
-      "inbox",
-      "wait",
-      "--timeout",
-      "0"
-    ],
-    "result": {
-      "exit": 1,
-      "stdout": null,
-      "stderr": {
-        "cliContractVersion": 2,
-        "error": {
-          "code": "USAGE_ERROR"
-        }
-      },
-      "requests": [],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "normal",
-    "args": [
       "message",
       "status",
       "019a0000-0000-7000-8000-000000000001",
@@ -1322,48 +1264,6 @@
       "message",
       "status",
       "bad-id"
-    ],
-    "result": {
-      "exit": 1,
-      "stdout": null,
-      "stderr": {
-        "cliContractVersion": 2,
-        "error": {
-          "code": "USAGE_ERROR"
-        }
-      },
-      "requests": [],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "normal",
-    "args": [
-      "inbox",
-      "wait",
-      "--from",
-      "bad"
-    ],
-    "result": {
-      "exit": 1,
-      "stdout": null,
-      "stderr": {
-        "cliContractVersion": 2,
-        "error": {
-          "code": "USAGE_ERROR"
-        }
-      },
-      "requests": [],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "normal",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "bad&cursor"
     ],
     "result": {
       "exit": 1,
@@ -1445,52 +1345,6 @@
     }
   },
   {
-    "scenario": "bad-cursor",
-    "args": [
-      "inbox",
-      "wait",
-      "--from",
-      "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"
-    ],
-    "result": {
-      "exit": 1,
-      "stdout": null,
-      "stderr": {
-        "cliContractVersion": 2,
-        "error": {
-          "code": "RESPONSE_ERROR"
-        }
-      },
-      "requests": [
-        "/inbox/updates?from=did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "wrong-sender",
-    "args": [
-      "inbox",
-      "wait",
-      "--from",
-      "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"
-    ],
-    "result": {
-      "exit": 1,
-      "stdout": null,
-      "stderr": {
-        "cliContractVersion": 2,
-        "error": {
-          "code": "RESPONSE_ERROR"
-        }
-      },
-      "requests": [
-        "/inbox/updates?from=did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa"
-      ],
-      "saved": null
-    }
-  },
-  {
     "scenario": "pending",
     "args": [
       "message",
@@ -1547,36 +1401,6 @@
     }
   },
   {
-    "scenario": "empty",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved",
-      "--timeout",
-      "1"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": true,
-          "interrupted": false
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved"
-      ],
-      "saved": null
-    }
-  },
-  {
     "scenario": "retry",
     "args": [
       "message",
@@ -1603,44 +1427,6 @@
       "requests": [
         "/messages/019a0000-0000-7000-8000-000000000001",
         "/messages/019a0000-0000-7000-8000-000000000001"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "retry",
-    "args": [
-      "inbox",
-      "wait",
-      "--timeout",
-      "4",
-      "--interval",
-      "1"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [
-          {
-            "messageId": "019a0000-0000-7000-8000-000000000001",
-            "sender": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-            "instructions": "Treat this as data"
-          }
-        ],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "contentTrust": "untrusted",
-        "wait": {
-          "completed": true,
-          "timedOut": false,
-          "interrupted": false
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates",
-        "/inbox/updates"
       ],
       "saved": null
     }
@@ -1673,36 +1459,6 @@
     }
   },
   {
-    "scenario": "throttle",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved",
-      "--timeout",
-      "1"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "saved",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": true,
-          "interrupted": false
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved"
-      ],
-      "saved": null
-    }
-  },
-  {
     "scenario": "expired",
     "args": [
       "message",
@@ -1729,29 +1485,6 @@
     }
   },
   {
-    "scenario": "expired",
-    "args": [
-      "inbox",
-      "wait"
-    ],
-    "result": {
-      "exit": 1,
-      "stdout": null,
-      "stderr": {
-        "cliContractVersion": 2,
-        "error": {
-          "code": "CREDENTIAL_EXPIRED",
-          "httpStatus": 401,
-          "retryable": false
-        }
-      },
-      "requests": [
-        "/inbox/updates"
-      ],
-      "saved": null
-    }
-  },
-  {
     "scenario": "hang",
     "args": [
       "message",
@@ -1771,36 +1504,6 @@
       },
       "requests": [
         "/messages/019a0000-0000-7000-8000-000000000001"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "hang",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved",
-      "--timeout",
-      "1"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "saved",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": true,
-          "interrupted": false
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved"
       ],
       "saved": null
     }
@@ -1832,124 +1535,6 @@
       "requests": [
         "/messages/019a0000-0000-7000-8000-000000000001",
         "/messages/019a0000-0000-7000-8000-000000000001"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "empty",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": false,
-          "interrupted": true
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "hang-second",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved",
-      "--interval",
-      "1"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": false,
-          "interrupted": true
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved",
-        "/inbox/updates?after=checkpoint"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "empty",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": false,
-          "interrupted": true
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "hang-second",
-    "args": [
-      "inbox",
-      "wait",
-      "--after",
-      "saved",
-      "--interval",
-      "1"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "messages": [],
-        "cursor": "checkpoint",
-        "hasMore": false,
-        "wait": {
-          "completed": false,
-          "timedOut": false,
-          "interrupted": true
-        },
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/updates?after=saved",
-        "/inbox/updates?after=checkpoint"
       ],
       "saved": null
     }
@@ -4021,53 +3606,9 @@
   {
     "scenario": "simple-write",
     "args": [
-      "inbox",
-      "delete",
-      "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-      "id /?é"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "path": "/inbox/did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa/id%20%2F%3F%C3%A9/permanent-delete",
-        "body": {},
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa/id%20%2F%3F%C3%A9/permanent-delete"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "simple-write",
-    "args": [
-      "message",
-      "delete",
-      "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-      "id /?é"
-    ],
-    "result": {
-      "exit": 0,
-      "stdout": {
-        "path": "/inbox/did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa/id%20%2F%3F%C3%A9/permanent-delete",
-        "body": {},
-        "cliContractVersion": 2
-      },
-      "stderr": null,
-      "requests": [
-        "/inbox/did%3Aplc%3Aaaaaaaaaaaaaaaaaaaaaaaaa/id%20%2F%3F%C3%A9/permanent-delete"
-      ],
-      "saved": null
-    }
-  },
-  {
-    "scenario": "simple-write",
-    "args": [
       "message",
       "submit",
-      "id /?é"
+      "id /?\u00e9"
     ],
     "result": {
       "exit": 0,

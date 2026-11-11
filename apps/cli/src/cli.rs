@@ -289,13 +289,13 @@ const COMMANDS: &[(&str, &str, &str, &str)] = &[
         "inbox delete",
         "<sender-did> <message-id>",
         "",
-        "Apply the selected account action; requires the corresponding write scope.",
+        "Permanently delete through JMAP; requires messages:read and messages:write. A stale state requires an explicit retry.",
     ),
     (
         "message delete",
         "<sender-did> <message-id>",
         "",
-        "Apply the selected account action; requires the corresponding write scope.",
+        "Permanently delete through JMAP; requires messages:read and messages:write. A stale state requires an explicit retry.",
     ),
     (
         "message submit",
@@ -469,7 +469,7 @@ const COMMANDS: &[(&str, &str, &str, &str)] = &[
         "inbox wait",
         "",
         "from after timeout interval",
-        "Wait for delivered messages (default 60s). Resume --after with the returned cursor and the same account/provider/--from; inbox list cursors are incompatible. Does not mark read. Timeout and SIGINT/SIGTERM return the last observed cursor. --timeout 1–300 seconds, --interval 1–30 (default 2).",
+        "Wait for new deliveries (default 60s). Without --after, start from the current JMAP state. Resume with the returned state for the same account/provider; --from filters results locally. Inbox-list cursors are incompatible. Expired states require a fresh snapshot. Does not mark read. Timeout and SIGINT/SIGTERM return the last observed cursor. --timeout 1–300 seconds, --interval 1–30 (default 2).",
     ),
 ];
 

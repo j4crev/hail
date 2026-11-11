@@ -11,6 +11,10 @@ import {createUserVault,unlockUserIdentity} from "./client-support/vault.js";
 import {ProviderDatabase} from "../src/db/database.js";
 import {AccountApiRepository} from "../src/accounts/repository.js";
 import {registerAccountApiRoutes} from "../src/accounts/routes.js";
+import {registerJmapRoutes} from "../src/jmap/routes.js";
+import {JmapMessages,JMAP_CORE} from "../src/jmap/messages.js";
+import {JmapOperations} from "../src/jmap/operations.js";
+import {HAIL_ACCOUNT} from "../src/jmap/collections.js";
 import {GrantRepository} from "../src/grants/repository.js";
 import {GrantService} from "../src/grants/service.js";
 import {OnboardingRepository} from "../src/onboarding/repository.js";
@@ -45,9 +49,12 @@ integration("active Grant updates and consent refresh through HTTPS racr",()=>{
     directory=await mkdtemp(join(tmpdir(),"hail-grant-update-"));
     await createLocalTlsFixture(directory);
     server=Bun.serve({hostname:"localhost",port:0,tls:{cert:Bun.file(join(directory,"cert.pem")),key:Bun.file(join(directory,"key.pem"))},async fetch(request){
-      const response=await app.fetch(request),path=new URL(request.url).pathname;
-      if(changeEvidence&&path.endsWith("/proposals")&&response.ok){changeEvidence=false;await refreshProfile();}
-      if(loseResponse&&response.ok&&(request.method==="PUT"||path.endsWith("/update"))){loseResponse=false;return new Response(null,{status:503});}
+      const path=new URL(request.url).pathname;
+      const calls=path==="/jmap"&&request.method==="POST"?(await request.clone().json() as {methodCalls:[string,unknown,string][]}).methodCalls:[];
+      const response=await app.fetch(request);
+      const successful=response.ok&&calls.length>0&&(await response.clone().json() as {methodResponses:[string,unknown,string][]}).methodResponses.every(row=>row[0]!=="error");
+      if(changeEvidence&&successful&&calls.some(row=>row[0]==="HailGrant/proposeUpdate")){changeEvidence=false;await refreshProfile();}
+      if(loseResponse&&successful&&calls.some(row=>["HailGrant/submit","HailGrant/managedUpdate"].includes(row[0]))){loseResponse=false;return new Response(null,{status:503});}
       return response;}});origin=`https://localhost:${server.port}`;
     const senderIdentity=await crypto.subtle.generateKey("Ed25519",true,["sign","verify"]) as CryptoKeyPair;
     senderMessaging=await crypto.subtle.generateKey("Ed25519",true,["sign","verify"]) as CryptoKeyPair;
@@ -85,7 +92,16 @@ integration("active Grant updates and consent refresh through HTTPS racr",()=>{
     const service=new GrantService(new OnboardingRepository(db.sql),grants,encryptor,resolver,
       {async verify(){reads++;if(!available)throw new Error("Sender unavailable");return address;}},
       {async verify(){reads++;if(!available)throw new Error("Profile unavailable");return profile;}},`${origin}/hail`);
-    app=new Hono();registerAccountApiRoutes(app,accounts,grants,service,origin);
+    app=new Hono();registerAccountApiRoutes(app,accounts,grants,service,origin);registerJmapRoutes(app,accounts,new JmapMessages(db.sql,origin),origin,origin,undefined,undefined,undefined,new JmapOperations({accounts,grants,service}));
+  };
+  const call=async(token:string,method:string,args:Record<string,unknown>)=>{
+    const session=await accounts.authenticate(`Bearer ${token}`),messages=new JmapMessages(db.sql,origin);
+    const response=await app.request(origin+"/jmap",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+      body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[[method,{accountId:messages.accountId(session!),...args},"test"]]})});
+    if(!response.ok)return response;
+    const result=(await response.json() as {methodResponses:[string,Record<string,unknown>,string][]}).methodResponses[0]!;
+    const {accountId:_,...value}=result[1];
+      return Response.json(value,{status:result[0]==="error"?Number(result[1].httpStatus??({forbidden:403,invalidArguments:400,notFound:404} as Record<string,number>)[String(result[1].type)]??500):200});
   };
   afterAll(async()=>{server?.stop(true);if(db){for(const fixture of fixtures){
     const ids=await db.sql<{grant_id:string}[]>`SELECT grant_id FROM grant_lineages WHERE local_account_id=${fixture.id}`;
@@ -118,14 +134,11 @@ integration("active Grant updates and consent refresh through HTTPS racr",()=>{
     expect(revision3.payload.consent_context.sender_profile_hash.value).toEqual(profile.digest);
     expect(revision3.payload.previous).toEqual(revision2.digest);expect(revision3.payload.issued_at).toBe(initial.payload.issued_at);
     const fork:HailGrant={...revision3.payload,updated_at:revision3.payload.updated_at+1,scope:[{type:"categories",values:["updates"]}]};
-    const headers={Authorization:`Bearer ${fixture.token}`};
-    const rejected=managed?await app.request(`${origin}/api/v1/account/grants/${grantId}/update`,{method:"POST",headers:{...headers,"Content-Type":"application/json"},
-      body:JSON.stringify({payload:toDiagnosticJson("hail.grant",fork),signingKey:fixture.key})}):
-      await app.request(`${origin}/api/v1/account/grants/${grantId}`,{method:"PUT",headers:{...headers,"Content-Type":'application/cose; cose-type="cose-sign1"'},
-        body:Uint8Array.from(await (await unlockUserIdentity(fixture.vault.vault,fixture.vault.recoverySecret)).signGrant(fork))});
+    const rejected=managed?await call(fixture.token,"HailGrant/managedUpdate",{grantId,input:{payload:toDiagnosticJson("hail.grant",fork),signingKey:fixture.key}}):
+      await call(fixture.token,"HailGrant/submit",{grantId,cose:encodeBase64Url(await (await unlockUserIdentity(fixture.vault.vault,fixture.vault.recoverySecret)).signGrant(fork))});
     expect(rejected.status).toBe(409);expect((await grants.findCurrentByGrantId(grantId))!.digest).toEqual(revision3.digest);
     const reader=await accounts.issue(fixture.address);
-    expect((await app.request(`${origin}/api/v1/account/grants/${grantId}/proposals`,{method:"POST",headers:{Authorization:`Bearer ${reader.token}`,"Content-Type":"application/json"},body:"{}"})).status).toBe(403);
+    expect((await call(reader.token,"HailGrant/proposeUpdate",{grantId,input:{}})).status).toBe(403);
     available=true;const refreshedPath=join(directory,`${fixture.id}.refresh.cose`);
     const originalAddress=address;address={...address,did:freshDid()};
     const reassigned=await cli(fixture,["grant","update",grantId,"--category","receipts","--category","security","--refresh-consent","--output",join(directory,`${fixture.id}.reassigned.cose`),...signing]);
@@ -136,12 +149,12 @@ integration("active Grant updates and consent refresh through HTTPS racr",()=>{
     expect((await cli(fixture,expand)).code).toBe(0);expect((await grants.findCurrentByGrantId(grantId))!.payload.revision).toBe(4);
     changeEvidence=true;
     const stale=await cli(fixture,["grant","update",grantId,"--category","receipts","--category","security","--expires-at",String(expiry+3600),"--output",join(directory,`${fixture.id}.stale.cose`),...signing]);
-    expect(stale.code).toBe(1);expect(stale.stderr).toContain("HTTP_400");expect((await grants.findCurrentByGrantId(grantId))!.payload.revision).toBe(4);
+    expect(stale.code).toBe(1);expect(stale.stderr).toContain("JMAP_ERROR");expect(stale.stderr).toMatch(/HTTP status\s+400/);expect((await grants.findCurrentByGrantId(grantId))!.payload.revision).toBe(4);
     const switched=await cli(fixture,["grant","update",grantId,"--category","general","--expires-at",String(expiry+3600),"--output",join(directory,`${fixture.id}.general.cose`),...signing]);
     expect(switched.code,switched.stderr).toBe(0);expect((await grants.findCurrentByGrantId(grantId))!.payload.scope).toEqual([{type:"categories",values:["general"]}]);
     changedOwnerKey=true;
     const epoch=await cli(fixture,["grant","update",grantId,"--category","general","--refresh-consent","--output",join(directory,`${fixture.id}.epoch.cose`),...signing]);
-    expect(epoch.code).toBe(1);expect(epoch.stderr).toContain("HTTP_409");changedOwnerKey=false;available=false;
+    expect(epoch.code).toBe(1);expect(epoch.stderr).toContain("JMAP_ERROR");expect(epoch.stderr).toMatch(/HTTP status\s+409/);changedOwnerKey=false;available=false;
     const revoked=await cli(fixture,["grant","revoke",grantId,...(managed?[]:[...signing,"--output",join(directory,`${fixture.id}.revoked.cose`)])]);
     expect(revoked.code,revoked.stderr).toBe(0);expect((await grants.findCurrentByGrantId(grantId))!.payload.status).toBe("revoked");
     const terminal=await cli(fixture,["grant","update",grantId,"--category","general","--refresh-consent","--output",join(directory,`${fixture.id}.terminal.cose`),...signing]);expect(terminal.code).toBe(1);

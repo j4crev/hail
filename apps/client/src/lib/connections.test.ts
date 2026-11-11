@@ -4,6 +4,18 @@ import {encodeDeterministic} from "@racrproto/codec/cbor";
 import {encodeBase64Url} from "@racrproto/codec/base64url";
 import {returnPath} from "./auth-routing.js";
 
+const capability='https://haili.app/ns/jmap/account',accountId='a_fixture';
+function jmapFetch(result:unknown){
+  return vi.fn(async(path:string,init?:RequestInit)=>{
+    if(path==='/api/jmap/session')return Response.json({apiUrl:'https://evil.example/jmap',primaryAccounts:{[capability]:accountId}});
+    expect(path).toBe('/api/jmap');expect(init?.method).toBe('POST');
+    const wire=JSON.parse(String(init?.body));
+    expect(wire.using).toEqual(['urn:ietf:params:jmap:core',capability]);
+    expect(wire.methodCalls).toEqual([['HailRelationship/status',{accountId,requestId:recoveryId},'read-state']]);
+    return result instanceof Response?result:Response.json({methodResponses:[['HailRelationship/status',{accountId,...result as object},'read-state']]});
+  });
+}
+
 it("reads only a complete identity-pinned fragment code and keeps login destinations local",()=>{
   const value={id:"01954144-8097-7a9d-a7a8-ef29a823eaf1",did:"did:plc:"+"a".repeat(24),token:"x".repeat(43)};
   const fragment="#"+new URLSearchParams(value);
@@ -38,21 +50,23 @@ it("validates resumable exact-action reviews without treating an expired review 
 const recoveryId="01954144-8097-7a9d-a7a8-ef29a823eaf1";
 const unfinished={requestId:recoveryId,action:"create",review:{label:"Personal code"},expiresAt:new Date(Date.now()+300000).toISOString(),result:null,options:{challenge:"consent"}};
 it.each([null,{invitationId:recoveryId},{state:"connecting",attemptId:recoveryId}])("recovers connection status without submitting consent: %j",async result=>{
-  const request=vi.fn(async()=>Response.json({...unfinished,result}));vi.stubGlobal("fetch",request);
-  try{expect((await recoverConnection(recoveryId)).result).toEqual(result);expect(request).toHaveBeenCalledOnce();expect(request).toHaveBeenCalledWith(`/api/v1/account/connections/${recoveryId}`,expect.objectContaining({method:"GET"}));}
+  const request=jmapFetch({...unfinished,result});vi.stubGlobal("fetch",request);
+  try{expect((await recoverConnection(recoveryId)).result).toEqual(result);expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenNthCalledWith(1,'/api/jmap/session',expect.objectContaining({method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error'}));
+    expect(request).toHaveBeenNthCalledWith(2,'/api/jmap',expect.objectContaining({method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error'}));}
   finally{vi.unstubAllGlobals();}
 });
 it("retires expired reviews but preserves completed results past review expiry",async()=>{
-  vi.stubGlobal("fetch",async()=>Response.json({...unfinished,expiresAt:new Date(0).toISOString(),options:null}));
+  vi.stubGlobal("fetch",jmapFetch({...unfinished,expiresAt:new Date(0).toISOString(),options:null}));
   try{
     await expect(recoverConnection(recoveryId)).rejects.toMatchObject({status:410});
-    vi.stubGlobal("fetch",async()=>Response.json({...unfinished,expiresAt:new Date(0).toISOString(),options:null,result:{invitationId:recoveryId}}));
+    vi.stubGlobal("fetch",jmapFetch({...unfinished,expiresAt:new Date(0).toISOString(),options:null,result:{invitationId:recoveryId}}));
     expect((await recoverConnection(recoveryId)).result).toEqual({invitationId:recoveryId});
   }finally{vi.unstubAllGlobals();}
 });
 it.each([404,503])("preserves recovery failure %s without retry loops",async status=>{
-  const request=vi.fn(async()=>Response.json({}, {status}));vi.stubGlobal("fetch",request);
-  try{await expect(recoverConnection(recoveryId)).rejects.toMatchObject({status});expect(request).toHaveBeenCalledOnce();}finally{vi.unstubAllGlobals();}
+  const request=jmapFetch(Response.json({methodResponses:[["error",{type:"serverFail",httpStatus:status},"read-state"]]}));vi.stubGlobal("fetch",request);
+  try{await expect(recoverConnection(recoveryId)).rejects.toMatchObject({status});expect(request).toHaveBeenCalledTimes(2);}finally{vi.unstubAllGlobals();}
 });
 
 it("validates batch removal reviews and exact completion membership",()=>{
@@ -67,7 +81,7 @@ it("validates batch removal reviews and exact completion membership",()=>{
 it("retains account history in resumed connection reviews and rejects malformed identities",async()=>{
   const previous="did:plc:"+"d".repeat(24);
   const value={...unfinished,action:"connect",review:{address:"friend@example.com",did:"did:plc:"+"a".repeat(24),previousDids:[previous]}};
-  vi.stubGlobal("fetch",async()=>Response.json(value));
+  vi.stubGlobal("fetch",jmapFetch(value));
   try{expect((await recoverConnection(recoveryId)).review.previousDids).toEqual([previous]);}
   finally{vi.unstubAllGlobals();}
   expect(()=>connectApproval({...value,review:{...value.review,previousDids:["not-a-did"]}})).toThrow("identity history");

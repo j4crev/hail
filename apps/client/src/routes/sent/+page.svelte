@@ -27,7 +27,7 @@
   async function remove(){
     busy=true;error='';status='';
     try{
-      const result=await mailboxRequest('sent/clear',{trashEnabled:data.trashEnabled,messages:selectedMessages.map(({kind,messageId})=>({kind,messageId}))});
+      const result=await mailboxRequest('HailMailbox/clearSent',{input:{trashEnabled:data.trashEnabled,messages:selectedMessages.map(({kind,messageId})=>({kind,messageId}))}});
       confirming=false;
       status=`${result.affected} message(s) ${result.state==='trashed'?'moved to Trash':'deleted'}. Active sends stay in Sent.`;
       await invalidateAll();

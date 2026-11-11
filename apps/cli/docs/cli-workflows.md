@@ -546,7 +546,10 @@ first. Resume either with its returned `next` and `--after`. Thread reads use th
 existing reply relationships and report truncation. Conversation read/unread,
 trash and restore affect only received messages from that peer. Trash refuses
 when disabled instead of permanently deleting; restore respects the existing
-30-day retention. Existing `inbox delete` remains permanent.
+30-day retention. Existing `inbox delete` remains permanent. It now uses JMAP discovery/query/set,
+requires both `messages:read` and `messages:write`, and rejects stale mailbox
+state instead of deleting against an outdated selection. Retry explicitly after
+a state mismatch; no legacy endpoint fallback is used.
 
 Invitation listing exposes no admission tokens. Revocation is idempotent and
 requires `account:write`; it prevents future acceptance, without disconnecting
@@ -623,3 +626,12 @@ Use the current epoch returned by preferences or connection listing. Overrides
 apply to that connection lifetime; `default` clears the override. These commands
 require a provider with CLI conversation controls. Older providers may support
 shared sends while rejecting control endpoints; they must be upgraded for parity.
+
+Mailbox reads, Grants, connections, submissions and attachments now use the
+[typed JMAP profile](../../../spec/jmap-operations.md). `inbox wait` uses
+`HailMessage/get` and `/changes`; it starts at the current state unless `--after`
+is supplied. Updates/deletions advance that state without being emitted as new
+messages. A provider move or expired state returns `JMAP_RESYNC_REQUIRED`:
+refresh the mailbox and start a new wait. Never reuse a list pagination cursor
+as a synchronization state. Saved request IDs and exact signed retry files remain
+mandatory; transport replacement does not authorize generating new send identities.

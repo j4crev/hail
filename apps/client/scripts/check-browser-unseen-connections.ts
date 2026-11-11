@@ -29,8 +29,9 @@ async function navigate(path:string,title:string){
 await cdp('Page.addScriptToEvaluateOnNewDocument',{source:`
   const originalFetch=window.fetch;
   window.fetch=async(...args)=>{
-    if(String(args[0]).endsWith('/connections/seen')){
-      window.seenPayload=JSON.parse(args[1].body);
+    const call=String(args[0]).endsWith('/api/jmap')?JSON.parse(args[1].body).methodCalls[0]:null;
+    if(call?.[0]==='HailRelationship/seen'){
+      window.seenPayload=call[1].input;
       await new Promise(resolve=>window.releaseSeen=resolve);
       if(!window.seenFailed){window.seenFailed=true;window.releaseSeen=null;return Response.json({error:"Try again"},{status:503});}
     }

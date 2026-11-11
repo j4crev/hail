@@ -170,7 +170,7 @@ export class AccountPublications {
           AND a.activation_verification_mode='public' AND g.generation=${session.serving_generation??1}`;
       if(!account.length)throw new UserGrantError(409,"Current serving account is required");
       const prior=(await tx<Publication[]>`SELECT * FROM account_publications WHERE account_id=${session.account_id} AND id=${id}`)[0];
-      if(prior){if(Number(prior.serving_generation)!==(session.serving_generation??1)||!Buffer.from(prior.request_digest).equals(Buffer.from(requestDigest)))
+      if(prior){if(!Buffer.from(prior.request_digest).equals(Buffer.from(requestDigest)))
         throw new UserGrantError(409,"Publication ID already has another intent");return;}
       await publishAttachmentBody(tx as SQL,session.account_id,body);
       await consumeDraft(tx as SQL,session,id,input.draftRevision);

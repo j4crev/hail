@@ -13,7 +13,7 @@ const respond=(all:boolean)=>async({params,request,cookies,url}:import("./$types
   try {
     const {client,account}=await canaryAccount(cookies,url);
     const ownSharedReply=all&&params.sender===account.did;
-    const source=await client.request(ownSharedReply?`/sent/${encodeURIComponent(params.messageId)}`:`/inbox/${encodeURIComponent(params.sender)}/${encodeURIComponent(params.messageId)}`);
+    const source=await client.jmap("HailMailbox/view",{view:ownSharedReply?"sentMessage":"read",...(ownSharedReply?{}:{sender:params.sender}),messageId:params.messageId});
     const original=ownSharedReply?parseSentMessage(source):parseMessage(source);
     const body=replyBody(source,{sender:params.sender,messageId:params.messageId},text);
     if(encodePayload("hail.body.spt-2",body).length>1048576)
@@ -23,16 +23,16 @@ const respond=(all:boolean)=>async({params,request,cookies,url}:import("./$types
     if(all){
       const shared=original.sharedConversation;
       if(!shared||shared.state!=='active')return fail(409,{error:'Rejoin this conversation before replying to everyone.',messageId:id,text,replyUntil,allowReply});
-      const result=await client.request('/connection-messages/reply-all',{publicationId:id,creator:shared.creator,conversationId:shared.conversationId,
-        sender:original.sender,messageId:original.messageId,body:outbound});
+      const result=await client.jmap('HailSubmission/submit',{kind:'replyAll',input:{publicationId:id,creator:shared.creator,conversationId:shared.conversationId,
+        sender:original.sender,messageId:original.messageId,body:outbound}});
       if(result.publicationId!==id)throw new Error('Provider acknowledged another reply');
       redirect(303,`/compose?audience=connections&publication=${id}`);
     }
     if(original.kind==="connection"&&!original.connection?.active)
       return fail(409,{error:"This connection is no longer active.",messageId:id,text,replyUntil,allowReply});
-    const result=await client.request("/messages",{messageId:id,body:outbound,inReplyTo:{sender:original.sender,messageId:original.messageId},
+    const result=await client.jmap("HailSubmission/submit",{kind:"message",input:{messageId:id,body:outbound,inReplyTo:{sender:original.sender,messageId:original.messageId},
       ...(original.kind==="connection"?{connectionId:original.connection!.id,connectionEpoch:original.connection!.epoch,recipientDid:original.sender}:
-        {replyTo:original.messageId,...(allowReply?{replyUntil}:{})})});
+        {replyTo:original.messageId,...(allowReply?{replyUntil}:{})})}});
     if(result.messageId!==id)throw new Error("Provider acknowledged another message");
     redirect(303,`/sent/${id}`);
   } catch(error_) {if(isRedirect(error_))throw error_;return fail(502,{error:"The reply could not be confirmed. Check its sent status before trying again.",messageId:id,text,replyUntil,allowReply});}

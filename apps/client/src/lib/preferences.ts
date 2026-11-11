@@ -73,7 +73,7 @@ export function syncAccountPreferences(did: string): Promise<void> {
 async function loadAccountPreferences(did: string) {
   accountDid = did;
   const current = ++revision;
-  let preferences = await mailboxRequest("message-preferences");
+  let preferences = await mailboxRequest("HailMailbox/view",{view:"settings"});
   if (current !== revision) return;
   if (preferences.theme === null || preferences.showHeaderImages === null) {
     let theme: ThemePreference = "system", showHeaderImages = true;
@@ -84,7 +84,7 @@ async function loadAccountPreferences(did: string) {
         showHeaderImages = localStorage.getItem(HEADER_PREFERENCE) !== "false";
       }
     } catch { /* Use defaults when browser storage is blocked. */ }
-    preferences = await mailboxRequest("message-preferences", {theme, showHeaderImages, initialize: true});
+    preferences = await mailboxRequest("HailMailbox/preferences", {input:{theme, showHeaderImages, initialize: true}});
   }
   if (current !== revision) return;
   if (!validDisplayPreferences(preferences)) throw new Error("Account preferences are unavailable. Refresh and try again.");
@@ -94,7 +94,7 @@ export async function saveAccountPreferences(patch: Partial<DisplayPreferences>)
   const current = ++revision;
   savingAccount = true;
   try {
-    const preferences = await mailboxRequest("message-preferences", patch);
+    const preferences = await mailboxRequest("HailMailbox/preferences", {input:patch});
     if (current !== revision) throw new Error("Preferences changed while saving. Refresh and try again.");
     if (!validDisplayPreferences(preferences)) throw new Error("The change could not be confirmed. Refresh and try again.");
     applyAccountPreferences(preferences);

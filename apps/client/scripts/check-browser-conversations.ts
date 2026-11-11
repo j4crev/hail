@@ -17,6 +17,15 @@ const cdp=(method:string,params:unknown={})=>new Promise<any>((resolve,reject)=>
 const evaluate=async(expression:string)=>{const r=await cdp('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
 await cdp('Page.enable');await cdp('Runtime.enable');
 const origin=`http://localhost:${fixturePort}`;
+const accountOperation=async(name:string,args:Record<string,unknown>={})=>{
+ const capability='https://haili.app/ns/jmap/account';
+ const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
+ const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];assert.equal(accountId,'fixture_account');
+ const response=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{accountId,...args},'scenario']]})});
+ assert(response.ok);const result=(await response.json()).methodResponses[0];assert.equal(result[0],name,JSON.stringify(result));
+ assert.equal(result[2],'scenario');return result[1];
+};
 // The fixture API starts before the GUI; wait for rendered HTML before navigating.
 await wait(async()=>{try{return (await fetch(origin+'/?view=connections')).ok;}catch{return false;}});
 
@@ -28,18 +37,23 @@ async function navigate(path:string,title:string){
 
 async function assertReadSettled(){
  await wait(async()=>evaluate(`document.querySelector('.expanded .action-menu button')?.disabled===false`));
- const state=()=>evaluate(`({reads:performance.getEntriesByType('resource').filter(e=>e.name.includes('/mark-read')).length,selected:document.querySelector('.expanded')?.id,rows:document.querySelectorAll('.conversation-item').length})`);
+ const state=()=>evaluate(`({reads:performance.getEntriesByType('resource').filter(e=>e.name.endsWith('/api/jmap')).length,selected:document.querySelector('.expanded')?.id,rows:document.querySelectorAll('.conversation-item').length})`);
  const before=await state();
  await Bun.sleep(500);
  assert.deepEqual(await state(),before,'Sidebar count refresh must not repeat mark-read, reset the selected message, or reset loaded rows');
 }
 
-const api=async()=>await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json();
-const grouped=async()=>await(await fetch(origin+'/api/v1/account/connection-inbox')).json();
+const api=()=>accountOperation('HailMailbox/view',{view:'inboxFeed',channel:'connections'});
+const grouped=()=>accountOperation('HailMailbox/view',{view:'connectionInbox'});
 if(!sharedMode)for(const width of [1440,390,320]){
  const initial=await api();
  for(const m of initial.messages.filter((m:any)=>!m.body.blocks.some((b:any)=>b.children?.some((s:any)=>s.text==='The photos turned out beautifully')))){
-  await fetch(`${origin}/api/v1/account/inbox/${encodeURIComponent(m.sender)}/${m.messageId}/mark-unread`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  const capability='https://haili.app/ns/jmap/messages';
+  const session=await (await fetch(`${origin}/api/jmap/session`)).json();const accountId=session.primaryAccounts[capability];
+  const call=async(name:string,args:unknown)=>(await (await fetch(`${origin}/api/jmap`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,args,'test']]})})).json()).methodResponses[0][1];
+  const query=await call('HailMessage/query',{accountId,filter:{sender:m.sender,messageId:m.messageId,inTrash:false}});
+  const result=await call('HailMessage/set',{accountId,ifInState:query.queryState,update:{[query.ids[0]]:{isRead:false}}});
+  assert(result.updated?.[query.ids[0]]===null);
  }
  const inbox=await grouped(),oldest=inbox.messages[0];
  assert.equal(oldest.conversation.unreadCount,40);assert.equal(inbox.messages.length,2);
@@ -143,7 +157,7 @@ if(sharedMode){
   // Reset synthetic state for the independent sent-message checks.
   await fetch(origin+'/api/v1/account/fixture-active',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   assert(await evaluate(`document.documentElement.scrollWidth<=innerWidth`));
-  const own=(await(await fetch(origin+'/api/v1/account/sent')).json()).messages[0];
+  const own=(await accountOperation('HailMailbox/view',{view:'sent'})).messages[0];
   await navigate(`/conversation/${encodeURIComponent(own.sender)}/${own.messageId}`,'Saturday at the market?');
   await wait(async()=>evaluate(`Boolean(${button('Reply all')})`));
   await evaluate(`${button('Reply all')}.click()`);

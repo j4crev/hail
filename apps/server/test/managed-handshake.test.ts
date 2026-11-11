@@ -62,12 +62,12 @@ it("binds managed A-to-B intent, fresh destination roles, address, and exact v4 
     destination_rotation_key:destinationRotation.did(),destination_identity_key:destinationIdentity.did,
     destination_messaging_key:destinationMessaging.did,grant_digest:managedHandshakeDigest(grant.payloadBytes),
     offer_digest:managedHandshakeDigest(offer.payloadBytes),selection_digest:managedHandshakeDigest(selection.payloadBytes),
-    snapshot_version:4,snapshot_digest:new Uint8Array(randomBytes(32)),history_checkpoint_digest:new Uint8Array(randomBytes(32)),
+    snapshot_version:12,snapshot_digest:new Uint8Array(randomBytes(32)),history_checkpoint_digest:new Uint8Array(randomBytes(32)),
     source_generation:7,previous_operation_cid:"bafy-previous",operation_cid:"bafy-cutover",issued_at:now,expires_at:now+300};
   const approval = await ownerSign(approvalValue,owner);
   await expect(verifyManagedHandshakeChain({grant,acknowledgement,offer,selection,approval},owner.did(),now)).resolves.toMatchObject({
     grant:{source_identity_key:sourceIdentity.did},offer:{destination_identity_key:destinationIdentity.did},
-    selection:{address:"alice@b.example.com"},approval:{snapshot_version:4,source_generation:7},
+    selection:{address:"alice@b.example.com"},approval:{snapshot_version:12,source_generation:7},
   });
 
   const changedSelection = await ownerSign({...selectionValue,address:"other@b.example.com"},owner);

@@ -1,3 +1,4 @@
+import {verifySnapshotSignature} from './snapshot-signature.js';
 import type {ConversationHistory} from './conversation-history.js';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
@@ -17,8 +18,6 @@ import {decodeConnectionHandover,verifyConnectionHandoverSignature,verifyConnect
 import {verifyActivationReceipt} from './activation-receipt.js';
 import {verifyConnectionCancellation} from './connection-cancellation.js';
 import {decodeSignedRecord} from './wire.js';
-import {managedSnapshotSignatureInput} from './managed-snapshot.js';
-import {transferSnapshotSignatureInput} from './transfer.js';
 import {assertConnectionHandoverSelection,decodeConnectionHandoverAbort} from './connection-handover.js';
 
 const hash=(bytes:Uint8Array)=>new Uint8Array(createHash('sha256').update(bytes).digest());
@@ -189,8 +188,8 @@ export async function verifyConnectionHistoryAuthority(history:ConnectionHistory
     const snapshot=bytes(exported?.manifest_bytes,67108864),digest=hash(snapshot),m=parseJsonWithoutDuplicateKeys(new TextDecoder('utf-8',{fatal:true}).decode(snapshot)) as any;
     if(!same(digest,cancel.snapshot_digest)||!same(digest,bytes(exported.manifest_digest,32))||m.did!==history.did||m.accountId!==history.accountId||m.transferId!==row.transfer_id||
       m.sourceServiceBase!==cancel.source_service_base||m.destinationServiceBase!==cancel.destination_service_base||m.destinationMessagingPublicKey!==archive.destinationKey||exported.source_messaging_public_key!==source.key||
-      ![5,6,7,8].includes(m.version)||!await crypto.subtle.verify('Ed25519',await ed25519PublicKeyFromDidKey(source.key),Uint8Array.from(bytes(exported.signature,64)),
-        (m.version===6||m.version===8)?managedSnapshotSignatureInput(digest,m.version):transferSnapshotSignatureInput(digest,m.version as 5|7)))throw new Error('Historical cancellation lost its exact source snapshot');
+      ![11,12].includes(m.version))throw new Error('Historical cancellation lost its exact source snapshot');
+    await verifySnapshotSignature(bytes(exported.signature,1024),snapshot,m.version,m.did,source.key);
     await verifyConnectionCancellation({...cancelSigned,signature:bytes(row.destination_signature,64)},m.destinationMessagingPublicKey,'destination-cancelled');
     const peers=new Set<string>(m.connections?.tables.federated_connection_pairs.filter((p:any)=>p.state!=='empty').map((p:any)=>p.peer_did)??[]),seen=new Set<string>();
     if(!Array.isArray(archive.releases)||archive.releases.length!==peers.size)throw new Error('Historical cancellation lost peer releases');

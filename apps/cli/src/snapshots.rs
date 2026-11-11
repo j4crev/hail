@@ -2,7 +2,6 @@ use crate::contract::Error;
 use crate::{api::Client, cli::Args, codec, crypto, private, transfers as t};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 pub fn signed(tag: &str, payload: &[u8], signature: &[u8], key: &str) -> Result<(), Error> {
     crypto::ed_public(key)?;
     let mut input = format!("{tag}\0").into_bytes();
@@ -24,11 +23,7 @@ pub fn verify(snapshot: &Value, managed: bool) -> Result<Value, Error> {
             "version",
         ],
     )?;
-    let versions = if managed {
-        vec![4, 6, 8]
-    } else {
-        vec![2, 3, 5, 7]
-    };
+    let versions = if managed { vec![12] } else { vec![11] };
     if snapshot["type"]
         != if managed {
             "hail.managed-migration-transfer"
@@ -44,21 +39,23 @@ pub fn verify(snapshot: &Value, managed: bool) -> Result<Value, Error> {
     let bytes = codec::decode_base64(t::text(&snapshot["manifest"])?)?;
     let signature = codec::decode_base64(t::text(&snapshot["signature"])?)?;
     if bytes.len() > 67_108_864
-        || signature.len() != 64
+        || signature.len() > 1024
         || snapshot["digest"] != codec::digest(&bytes)
     {
         return Err(t::invalid());
     }
-    signed(
+    let manifest: Value = serde_json::from_slice(&bytes).map_err(|_| t::invalid())?;
+    codec::verify_hash_envelope(
+        &signature,
+        &bytes,
         &format!(
-            "hail-migration-snapshot-v{}",
+            "application/hail-{}-snapshot+json;version={}",
+            if managed { "managed" } else { "portable" },
             t::integer(&snapshot["version"])?
         ),
-        &Sha256::digest(&bytes),
-        &signature,
+        &format!("{}#hail-messaging", t::text(&manifest["did"])?),
         t::text(&snapshot["sourceMessagingPublicKey"])?,
     )?;
-    let manifest: Value = serde_json::from_slice(&bytes).map_err(|_| t::invalid())?;
     if !manifest.is_object()
         || manifest["version"] != snapshot["version"]
         || managed && manifest["custodyProfile"] != "managed"
@@ -138,8 +135,7 @@ pub fn matches(s: &Value, m: &Value, o: &Value, managed: bool) -> Result<(), Err
                 || m["sourceIdentityPublicKey"] != s["sourceIdentityKey"]
                 || m["destinationIdentityPublicKey"] != o["destination_identity_key"]
         } else {
-            m["custodyProfile"] != "portable"
-                || !matches!(m["version"].as_i64(), Some(2 | 3 | 5 | 7))
+            m["custodyProfile"] != "portable" || !matches!(m["version"].as_i64(), Some(11))
         }
     {
         return Err(t::invalid());

@@ -18,7 +18,7 @@ it.skipIf(!process.env.DATABASE_URL)("current schema preserves access and immuta
     const accounts = new AccountApiRepository(db.sql), credential = await accounts.issue(address);
     await db.sql`INSERT INTO pending_migration_imports(transfer_id,did,source_service_base,destination_service_base,manifest_bytes,
       manifest_digest,source_messaging_public_key,signature,state,verified_plc_document,verified_plc_data,verified_plc_operation_log,signed_plc_operation_bytes)
-      VALUES(${transfer},${did},'https://source.example.com/hail','https://target.example.com/hail',${bytes},${digest},'fixture-key',${randomBytes(64)},
+      VALUES(${transfer},${did},'https://source.example.com/hail','https://target.example.com/hail',${bytes},${digest},'fixture-key',${randomBytes(215)},
         'staged','{}','{}','[]',${bytes})`;
     await db.sql`INSERT INTO portable_cutover_observations(transfer_id,did,operation_cid,first_seen_at,last_seen_at,mirror_origins,monitor_attestation_digest,state,assessment_profile)
       VALUES(${transfer},${did},'bafkreifixture',now(),now(),'["https://reader.example.com"]',${digest},'eligible','public')`;

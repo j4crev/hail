@@ -6,6 +6,12 @@ federate without implementing this API. `racr.*` names designate shared client
 formats here, not a particular provider implementation or database schema.
 The CLI's terminal output contract v2 is separately versioned.
 
+The [Hail JMAP profile](jmap.md), [account collections](jmap-collections.md)
+and [typed operations](jmap-operations.md) are the current mailbox, submission,
+Grant and relationship transport. The reference web client and CLI use them;
+superseded mailbox HTTP routes are removed. Authentication, profile, credentials,
+media downloads, account recovery and transfer retain their distinct HTTP resources.
+
 ## Authentication boundary
 
 Providers choose their own user authentication: passkeys, passwords, enterprise
@@ -21,6 +27,16 @@ It is **not OAuth or OpenID Connect**. OAuth discovery, arbitrary API base paths
 headless device authorization and dynamic client registration are not defined.
 A provider may use an external identity service behind its authorization page,
 but credentials and exchange requests remain bound to the selected provider.
+
+Enterprise providers may integrate organization SSO using OIDC, SAML or a
+provider-controlled authentication service backed by Active Directory/LDAP. These
+are provider login integrations, not Hail federation requirements or client-side
+directory protocols. A provider may reuse its existing application login for both
+email and Hail. This profile does not require a separate Hail passkey enrollment.
+Trusted issuer/tenant selection, account binding and organizational access remain
+the provider's responsibility; ordinary login does not replace Hail owner/recovery
+authority. This permission does not claim that the reference provider implements
+SSO connectors. A future shared OAuth client API remains an optional profile.
 
 ## Provider selection and transport
 
@@ -94,8 +110,8 @@ express actual authority; providers MUST NOT invent a managed custody attestatio
 to satisfy a client. Nullable metadata remains null when inapplicable. The
 [account result contract](../apps/cli/docs/cli-contract.md#reference-account-api-v1)
 and [endpoint inventory](../apps/server/README.md#racr-account-api) define the
-current field shapes, scope requirements and requests for mailbox, submission,
-credential, Grant and profile operations. These shared wire shapes are retained;
+current account, credential and profile shapes. Mailbox, submission, Grant and
+relationship requests are defined by the JMAP documents above;
 implementers do not need reference-provider SQL tables or migration numbers.
 
 Implement the operations needed by the workflows offered to users. Missing
@@ -135,7 +151,8 @@ action, avoiding duplicate blockers. These are diagnostic hints, not authority
 or permission to start login automatically. Omission is not proof that an action
 will succeed; the actual operation MUST enforce authorization.
 
-Authenticated failures use Problem Details; clients rely on HTTP status and
+HTTP resource failures use Problem Details; JMAP method failures are in-band
+errors with the operation profile’s public status/code fields. For HTTP resources, clients rely on HTTP status and
 known `Hail-Error-Code` values, not untrusted prose. In addition to existing
 `CREDENTIAL_EXPIRED`/`CREDENTIAL_REVOKED` (401), `MISSING_SCOPE`/`PASSKEY_REQUIRED`
 (403) and `APPROVAL_EXPIRED` (410), providers may return `INTERACTION_REQUIRED`
@@ -249,3 +266,11 @@ destination native domains to service hostnames and rejects delegated-domain
 source addresses. Separating the native address domain does not relax those
 checks or define a new transfer protocol. Such transfers remain unavailable until
 that profile, schemas and conformance vectors are updated together.
+
+## Reference-provider authentication integration
+
+The optional [provider authentication boundary](provider-authentication.md) permits
+trusted existing application sessions to authorize the reference account API
+without passkey enrollment. It is a provider-local integration, not an OAuth or
+OIDC endpoint and not an extension of the CLI code exchange. Its restricted scopes,
+explicit identity bindings and organizational revocation rules are defined there.

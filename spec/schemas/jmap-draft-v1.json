@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hail JMAP draft projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "draftId", "revision", "content", "updatedAt", "isInTrash", "trashedAt"],
+  "properties": {
+    "id": {"type":"string", "pattern":"^[A-Za-z0-9_-]{1,255}$", "readOnly":true},
+    "draftId": {"type":"string", "format":"uuid", "readOnly":true},
+    "revision": {"type":"integer", "minimum":1, "readOnly":true},
+    "content": {"$ref":"provider-draft.json"},
+    "updatedAt": {"type":"string", "format":"date-time", "readOnly":true},
+    "isInTrash": {"type":"boolean", "readOnly":true},
+    "trashedAt": {"type":["string","null"], "format":"date-time", "readOnly":true}
+  }
+}

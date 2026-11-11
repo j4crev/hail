@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {setMessageRead} from "$lib/jmap.js";
   import {mailboxView} from "$lib/mailbox-view.svelte.js";
   import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
@@ -67,7 +68,7 @@
   async function markRead(row:{sender:string;messageId:string;sent:boolean},value:MessageView|SentMessageView){
     if(row.sent||value.isRead)return;
     readPending=true;
-    try{await mailboxRequest(`inbox/${encodeURIComponent(row.sender)}/${row.messageId}/mark-read`,{});
+    try{await setMessageRead(row.sender,row.messageId,true);
       rows=rows.map(m=>conversationKey(m)===conversationKey(row)?{...m,isRead:true}:m);
       await invalidate('hail:mailbox');
     }catch{error='Unable to mark this message read. Reopen it to try again.';}
@@ -78,7 +79,7 @@
     if(conversationKey(row)===selected)return;
     const token=++request;pending=true;error='';
     try{
-      const raw=await mailboxRequest(row.sent?`sent/${row.messageId}`:`inbox/${encodeURIComponent(row.sender)}/${row.messageId}`);
+      const raw=await mailboxRequest("HailMailbox/view",{view:row.sent?"sentMessage":"read",...(row.sent?{}:{sender:row.sender}),messageId:row.messageId});
       if(token!==request)return;
       const value=row.sent?parseSentMessage(raw):parseMessage(raw);
       selected=conversationKey(row);message=value;replyOpen=false;replyFailure={};
@@ -97,7 +98,7 @@
     const anchorTop=anchor?.getBoundingClientRect().top;
     try{
       const offset=newer?Math.max(0,start-30):start+rows.length;
-      const page=parseConversation(await mailboxRequest(`connection-threads/${encodeURIComponent(data.root.sender)}/${data.root.messageId}?offset=${offset}`));
+      const page=parseConversation(await mailboxRequest("HailMailbox/view",{view:"connectionThread",sender:data.root.sender,messageId:data.root.messageId,offset}));
       const existing=new Set(rows.map(conversationKey));
       const added=page.messages.filter(m=>!existing.has(conversationKey(m)));
       rows=newer?[...added,...rows]:[...rows,...added];total=page.total;

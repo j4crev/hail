@@ -1,0 +1,25 @@
+{
+  "description": "Draft capability routing vectors for account_fixture, an authenticated passkey session with messages:read. The metadata fixture has id draft_fixture and revision 1.",
+  "cases": [
+    {
+      "name": "query IDs feed metadata get through a result reference",
+      "request": {"using":["urn:ietf:params:jmap:core","https://haili.app/ns/jmap/drafts"],"methodCalls":[["HailDraft/query",{"accountId":"account_fixture"},"q"],["HailDraft/get",{"accountId":"account_fixture","#ids":{"resultOf":"q","name":"HailDraft/query","path":"/ids"},"properties":["revision"]},"g"]]},
+      "responses": [["HailDraft/query",{"accountId":"account_fixture","queryState":"draft_state","canCalculateChanges":false,"position":0,"ids":["draft_fixture"],"limit":50},"q"],["HailDraft/get",{"accountId":"account_fixture","state":"draft_state","list":[{"id":"draft_fixture","revision":1}],"notFound":[]},"g"]]
+    },
+    {
+      "name": "draft writes require messages:write",
+      "request": {"using":["urn:ietf:params:jmap:core","https://haili.app/ns/jmap/drafts"],"methodCalls":[["HailDraft/set",{"accountId":"account_fixture"},"a"]]},
+      "responses": [["error",{"type":"forbidden"},"a"]]
+    },
+    {
+      "name": "draft capability requires opt-in",
+      "request": {"using":["urn:ietf:params:jmap:core"],"methodCalls":[["HailDraft/get",{"accountId":"account_fixture"},"a"]]},
+      "responses": [["error",{"type":"unknownMethod"},"a"]]
+    },
+    {
+      "name": "foreign draft account is not visible",
+      "request": {"using":["urn:ietf:params:jmap:core","https://haili.app/ns/jmap/drafts"],"methodCalls":[["HailDraft/get",{"accountId":"foreign"},"a"]]},
+      "responses": [["error",{"type":"accountNotFound"},"a"]]
+    }
+  ]
+}

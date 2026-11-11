@@ -1,0 +1,80 @@
+{
+  "description": "Synthetic projection shapes only; COSE placeholder is not signature evidence. Exact signed vectors are defined separately.",
+  "valid": [
+    {
+      "type": "HailSent",
+      "object": {
+        "id": "o_11111111111111111111111111111111",
+        "sendId": "019a0000-0000-7000-8000-000000000001",
+        "kind": "category",
+        "category": "news",
+        "createdAt": "2026-11-10T00:00:00Z",
+        "bodyDigest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "isInTrash": true,
+        "trashedAt": "2026-11-10T00:00:00Z",
+        "bodyBlobId": "s_11111111111111111111111111111111"
+      }
+    },
+    {
+      "type": "HailSubmission",
+      "object": {
+        "id": "o_11111111111111111111111111111111",
+        "sendId": "019a0000-0000-7000-8000-000000000001",
+        "kind": "category",
+        "category": "news",
+        "createdAt": "2026-11-10T00:00:00Z",
+        "bodyDigest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "targets": []
+      }
+    },
+    {
+      "type": "HailGrant",
+      "object": {
+        "id": "o_22222222222222222222222222222222",
+        "grantId": "019a0000-0000-7000-8000-000000000001",
+        "localRole": "grantor",
+        "grantor": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+        "grantee": "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb",
+        "revision": 1,
+        "status": "active",
+        "digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "cose": "AQ"
+      }
+    },
+    {
+      "type": "HailRelationship",
+      "object": {
+        "id": "o_33333333333333333333333333333333",
+        "kind": "preferences",
+        "allowIntroductions": false,
+        "updatedAt": "2026-11-10T00:00:00Z"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "type": "HailSent",
+      "object": {
+        "id": "o_11111111111111111111111111111111",
+        "sendId": "019a0000-0000-7000-8000-000000000001",
+        "kind": "category",
+        "category": "news",
+        "createdAt": "2026-11-10T00:00:00Z",
+        "bodyDigest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "isInTrash": "true",
+        "trashedAt": "2026-11-10T00:00:00Z",
+        "bodyBlobId": "s_11111111111111111111111111111111"
+      }
+    },
+    {
+      "type": "HailRelationship",
+      "object": {
+        "id": "o_33333333333333333333333333333333",
+        "kind": "preferences",
+        "allowIntroductions": false,
+        "updatedAt": "2026-11-10T00:00:00Z",
+        "token": "secret"
+      }
+    }
+  ]
+}

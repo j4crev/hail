@@ -97,7 +97,7 @@ the result is recorded in the evidence log.
 Normal server startup applies `0086_handover_delivery_cursor.sql`. It replaces one
 trigger function and rewrites no account, message or evidence rows. The exception
 still requires the authenticated staged import and exact equality for every
-message field except the destination-assigned `delivery_sequence`.
+message field. The obsolete delivery-only sequence was removed in migration 117; JMAP states are provider-local.
 
 Application rollback should leave this additive database correction installed.
 The explicit schema rollback restores the old function without deleting data,

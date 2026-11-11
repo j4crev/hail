@@ -1,3 +1,4 @@
+import {jmapReadFixture} from './jmap-read-fixture.js';
 // Built GUI + Chromium + virtual WebAuthn; local API fixtures, no public writes or mail.
 import {strict as assert} from "node:assert";
 import {mkdir,mkdtemp,readFile,readdir,writeFile,rm} from "node:fs/promises";
@@ -23,6 +24,8 @@ let did:string|null=null;const sessionToken="hails_"+"A".repeat(43);
 let setupId="",setupToken="",enrollmentToken="",secret="",invitation="fixture-invitation",publicationAttempts=0,prepareCalls=0;
 const browserErrors:string[]=[];
 const requests:{path:string;body:string;authorization:string}[]=[];
+const operationCalls:{name:string;args:Record<string,any>}[]=[];
+const calls=(name:string)=>operationCalls.filter(call=>call.name===name);
 const policy={provider:"https://provider.example.com",monitorOrigin:"https://monitor.example",monitorKey:messaging.vault.identity.publicDidKey};
 const permissionSigner=await crypto.subtle.generateKey("Ed25519",true,["sign","verify"]),peerDid="did:plc:"+"b".repeat(24),peerAddress="peer@peer.example.com";
 let allowed:HailGrant|null=null,allowedCose="",allowedDigest="",generalAvailable=false;
@@ -80,7 +83,9 @@ const standaloneSetup=()=>({address:"publisher@publisher.example.com",token:stan
   delegationName:"_hail-provider.publisher.example.com",delegationValue:"v=hail1; provider=provider.example.com",
   expiresAt:new Date(Date.now()+86400000).toISOString(),verified:standaloneVerified});
 let signupMode:"invite"|"public"="invite";
-const server=Bun.serve({hostname:"::",port:0,async fetch(request){
+const jmapFixture=jmapReadFixture(()=>[...(incoming?[incomingMessage()]:[]),...(connectionIncoming?[connectionReply()]:[])].filter(m=>!deleted.has(m.messageId)).map(m=>({...m,trashedAt:trashed.get(m.messageId)??null})),(id,isRead)=>{if(isRead)readMessages.add(id);else readMessages.delete(id);},()=>trashEnabled,(id,value)=>{if(value===null){deleted.add(id);trashed.delete(id);}else if(value)trashed.set(id,new Date().toISOString());else trashed.delete(id);},undefined,()=>{throw Error("Async account operations use the wizard dispatcher");});
+// Rich domain fixtures remain internal; removed HTTP routes never reach them from the wire.
+async function domainFixture(request:Request):Promise<Response>{
   const path=new URL(request.url).pathname;
   assert(!request.url.includes(fixtureAdmissionToken),"Connection token leaked into an HTTP URL");
   assert(!request.headers.get("Referer")?.includes(fixtureAdmissionToken),"Connection token leaked into referrer");
@@ -93,7 +98,7 @@ const server=Bun.serve({hostname:"::",port:0,async fetch(request){
     try{return await guiProxy.fetch(request);}
     catch{return new Response("GUI starting",{status:503});}
   }
-  const body=await request.text();requests.push({path,body,authorization:request.headers.get("Authorization")??""});const input=body?JSON.parse(body):{};
+  const body=await request.text();const input=body?JSON.parse(body):{};
   if(path.endsWith('/avatar/image')){
     await avatarGate;
     if(missingAvatars)return new Response(null,{status:404});
@@ -120,23 +125,9 @@ const server=Bun.serve({hostname:"::",port:0,async fetch(request){
     }
     return json({trashEnabled,...displayPreferences});
   }
-  const readAction=path.match(/^\/api\/v1\/account\/inbox\/([^/]+)\/([^/]+)\/mark-(read|unread)$/);
-  if(readAction){
-    assert.equal(request.method,'POST');
-    assert(request.headers.get('Cookie')?.includes('hail_session='+sessionToken));
-    const [,sender,id,action]=readAction;
-    assert.equal(decodeURIComponent(sender),peerDid);
-    assert([incomingId,connectionIncomingId].includes(id));
-    if(action==='read')readMessages.add(id);else readMessages.delete(id);
-    return json({messageId:id,isRead:readMessages.has(id)});
-  }
-  if(path.endsWith('/delete')&&path.startsWith('/api/v1/account/inbox/')){
-    const id=path.split('/').at(-2)!;if(trashEnabled)trashed.set(id,new Date().toISOString());else deleted.add(id);
-    return json({state:trashEnabled?'trashed':'deleted'});
-  }
-  if(path==='/api/v1/account/drafts')return json({drafts:[],next:null});
+
+
   if(path==='/api/v1/account/trash')return json({messages:[incomingMessage(),connectionReply()].filter(m=>trashed.has(m.messageId)).map(m=>({...m,trashedAt:trashed.get(m.messageId)})),next:null});
-  if(path==='/api/v1/account/trash/restore'){let restored=0;for(const m of input.messages)if(trashed.delete(m.messageId))restored++;return json({restored});}
   if(connectionIncoming&&(path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${connectionIncomingId}`||path===`/api/v1/account/inbox/${peerDid}/${connectionIncomingId}`))return json(connectionReply());
   if(path.startsWith("/api/v1/account/connections")){
     assert(request.headers.get("Cookie")?.includes("hail_session="+sessionToken));
@@ -375,6 +366,87 @@ const server=Bun.serve({hostname:"::",port:0,async fetch(request){
   if(path==="/api/v1/auth/logout"){assert.equal(request.method,"POST");assert(request.headers.get("Cookie")?.includes(sessionToken));if(++logoutAttempts===1)return json({error:"Temporary logout failure"},503);authenticated=false;return json({ok:true});}
   if(path===`/api/v1/signup/${setupId}/complete`){assert(authenticated);retired=true;return json({state:"complete",signupId:setupId});}
   return json({},404);
+}
+const accountCapability='https://haili.app/ns/jmap/account';
+async function accountOperation(name:string,args:Record<string,any>,request:Request):Promise<Response>{
+  assert.equal(args.accountId,'fixture_account');
+  const fields=(...allowed:string[])=>assert(Object.keys(args).every(key=>['accountId',...allowed].includes(key)),`Unexpected arguments for ${name}`);
+  let path='',method='GET',input:unknown;
+  const enc=(value:string)=>encodeURIComponent(value);
+  const query=(values:Record<string,unknown>)=>{const q=new URLSearchParams();for(const [key,value] of Object.entries(values))if(value!==null&&value!==undefined)q.set(key,String(value));return q.size?'?'+q:'';};
+  if(name==='HailMailbox/view'){
+    fields('view','after','channel','trash','sender','messageId','kind','offset','peer');
+    switch(args.view){
+      case 'connectionAddress':return json({owner:did,contact:null});
+      case 'settings':path='/message-preferences';break;
+      case 'unreadCounts':path='/unread-counts';break;
+      case 'inbox':path='/inbox'+query({after:args.after});break;
+      case 'inboxFeed':path=args.trash?'/trash':'/inbox'+query({include:'body',kind:args.channel==='all'?undefined:args.channel,after:args.after});break;
+      case 'threads':path=`/threads/${enc(args.sender)}/${enc(args.messageId)}`;break;
+      case 'read':path=`/inbox/${enc(args.sender)}/${enc(args.messageId)}`;break;
+      case 'connectionInbox':path='/connection-inbox'+query({after:args.after});break;
+      case 'connectionThread':path=`/connection-threads/${enc(args.sender)}/${enc(args.messageId)}`+query({offset:args.offset});break;
+      case 'sent':case 'sentFeed':case 'sentSends':path='/sent'+query({include:args.view==='sentSends'?'sends':args.view==='sentFeed'?'body':undefined,after:args.after,trash:args.trash?true:undefined});break;
+      case 'sentSend':path=`/sent/${enc(args.messageId)}`+query({kind:args.kind,trash:args.trash?true:undefined});break;
+      case 'sentMessage':path=`/sent/${enc(args.messageId)}`;break;
+      default:assert.fail(`Unexpected mailbox view ${args.view}`);
+    }
+  }else if(name==='HailMailbox/preferences'){
+    fields('input');path='/message-preferences';method='POST';input=args.input;
+  }else if(name.startsWith('HailSubmission/')){
+    fields('kind','input','id');const base=args.kind==='connections'?'/connection-messages':'/publications';
+    switch(name.split('/')[1]){
+      case 'targets':path='/connection-messages/targets';break;
+      case 'audiences':path='/publications/audiences';break;
+      case 'recent':path=base;break;
+      case 'submit':path=args.kind==='message'?'/messages':base;method='POST';input=args.input;break;
+      case 'status':path=(args.kind==='message'?'/messages':base)+'/'+enc(args.id);break;
+      default:assert.fail(`Unexpected submission operation ${name}`);
+    }
+  }else if(name==='HailGrant/list'){fields('after','sender');path='/grants'+query({after:args.after,sender:args.sender});
+  }else if(name==='HailGrant/read'){fields('grantId');path='/grants/'+enc(args.grantId);
+  }else if(name.startsWith('HailGrant/')){
+    fields('input','requestId');const step:Record<string,string>={reviewApproval:'review',prepareApproval:'prepare',commitApproval:'commit'};
+    const action=name.split('/')[1]!;assert(action==='approvalStatus'||step[action]);
+    path='/permissions/'+(action==='approvalStatus'?enc(args.requestId):step[action]);
+    if(action!=='approvalStatus'){method='POST';input=args.input;}
+  }else if(name.startsWith('HailRelationship/')){
+    fields('input','requestId');const action=name.split('/')[1]!;
+    const step:Record<string,string>={list:'',review:'review',prepare:'prepare',commit:'commit',conversationPreferences:'conversation-preferences'};
+    assert(action==='status'||Object.hasOwn(step,action));path='/connections'+(action==='status'?'/'+enc(args.requestId):step[action]?'/'+step[action]:'');
+    if(args.input!==undefined){method='POST';input=args.input;}
+  }else assert.fail(`Unexpected JMAP account operation ${name}`);
+  return domainFixture(new Request(new URL('/api/v1/account'+path,request.url),{method,headers:request.headers,...(input===undefined?{}:{body:JSON.stringify(input)})}));
+}
+const server=Bun.serve({hostname:'::',port:0,async fetch(request){
+  const path=new URL(request.url).pathname;
+  assert(!request.url.includes(fixtureAdmissionToken),'Connection token leaked into an HTTP URL');
+  assert(!request.headers.get('Referer')?.includes(fixtureAdmissionToken),'Connection token leaked into referrer');
+  const jmapPath=path==='/.well-known/jmap'?'/api/jmap/session':path==='/jmap'?'/api/jmap':path;
+  if(jmapPath==='/api/jmap/session'||jmapPath==='/api/jmap'){
+    if(!authenticated||!request.headers.get('Cookie')?.includes('hail_session='+sessionToken))return json({error:'Unauthorized'},401);
+    const body=await request.text(),input=body?JSON.parse(body):{};
+    requests.push({path:jmapPath,body,authorization:request.headers.get('Authorization')??''});
+    if(jmapPath==='/api/jmap/session')return jmapFixture(jmapPath,request.method,input)!;
+    assert.equal(request.method,'POST');assert(Array.isArray(input.methodCalls));assert(input.using.includes('urn:ietf:params:jmap:core'));
+    const methodResponses=[];
+    for(const [name,args,tag] of input.methodCalls){
+      if(/^(HailMailbox|HailSubmission|HailGrant|HailRelationship)\//.test(name)){
+        assert(input.using.includes(accountCapability));operationCalls.push({name,args});
+        if(args.accountId!=='fixture_account'){methodResponses.push(['error',{type:'accountNotFound'},tag]);continue;}
+        const response=await accountOperation(name,args,request),value=await response.json();
+        methodResponses.push(response.ok?[name,{accountId:'fixture_account',...value},tag]:['error',{
+          type:({400:'invalidArguments',403:'forbidden',404:'notFound',409:'stateMismatch'} as Record<number,string>)[response.status]??'serverUnavailable',httpStatus:response.status,description:value.error??'Fixture operation failed'},tag]);
+      }else{
+        const response=jmapFixture(jmapPath,request.method,{...input,methodCalls:[[name,args,tag]]});assert(response);
+        methodResponses.push(...(await response.json()).methodResponses);
+      }
+    }
+    return json({methodResponses,sessionState:'fixture'});
+  }
+  assert(!/^\/api\/v1\/account\/(?:messages|connection-messages|publications|inbox|sent|trash|message-preferences|unread-counts|connection-inbox|connection-threads|connections|permissions|grants)(?:\/|$)/.test(path),`Removed account route reached wire: ${path}`);
+  if(path.startsWith('/api/'))requests.push({path,body:await request.clone().text(),authorization:request.headers.get('Authorization')??''});
+  return domainFixture(request);
 }});
 const origin=`http://localhost:${server.port}`;
 guiProxy=createApp({publicOrigin:origin,providerId:"browser-fixture",webClientOrigin:`http://127.0.0.1:${guiPort}`} as AppConfig);
@@ -458,7 +530,9 @@ try{
   };
   const fill=async(label:string,value:string)=>evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)})).querySelector('input');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   async function file(label:string,path:string){const {root}=await cdp("DOM.getDocument"),{nodeId}=await cdp("DOM.querySelector",{nodeId:root.nodeId,selector:`input[type=file][data-proof="${label}"]`});assert(nodeId);await cdp("DOM.setFileInputFiles",{nodeId,files:[path]});}
-  const upload=async(label:string,path:string)=>{await evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)})).querySelector('input');e.dataset.proof='upload';})()`);await file("upload",path);};
+  const upload=async(label:string,path:string)=>{
+    await wait(()=>evaluate(`!![...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)}))?.querySelector('input[type=file]')`),"file input: "+label);
+    await evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)})).querySelector('input');e.dataset.proof='upload';})()`);await file("upload",path);};
   await cdp("Page.enable");await cdp("Runtime.enable");await cdp("Log.enable");await cdp("WebAuthn.enable");
   if(process.env.HAIL_WIZARD_MOBILE==="true")await cdp("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:3,mobile:true});
   else await cdp("Emulation.setDeviceMetricsOverride",{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
@@ -721,15 +795,15 @@ try{
   incoming=true;
   avatarGate=new Promise<void>(resolve=>{releaseAvatars=resolve;});
   const accountReadsBefore=requests.filter(r=>r.path==='/api/v1/account').length;
-  const unreadReadsBefore=requests.filter(r=>r.path==='/api/v1/account/unread-counts').length;
+  const unreadReadsBefore=calls('HailMailbox/view').filter(call=>call.args.view==='unreadCounts').length;
   const messagePath=`/message/${encodeURIComponent(peerDid)}/${incomingId}`;
   await evaluate(`(()=>{const a=document.createElement('a');a.href=${JSON.stringify(messagePath)};a.textContent='Open received test';document.body.append(a);a.click();})()`);
   await wait(async()=>evaluate(`document.querySelector('button[aria-label="Reply"]')?.disabled===false`),"incoming reply action ready");
   assert.equal(requests.filter(r=>r.path==='/api/v1/account').length-accountReadsBefore,2,'Layout and reader share the initial account read; marking read refreshes the sidebar once');
-  assert.equal(requests.filter(r=>r.path==='/api/v1/account/unread-counts').length-unreadReadsBefore,2,'Unread counts load on navigation and refresh after marking read');
-  assert.equal(requests.filter(r=>r.path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${incomingId}/mark-read`).length,1,'Message is marked read once');
+  assert.equal(calls('HailMailbox/view').filter(call=>call.args.view==='unreadCounts').length-unreadReadsBefore,2,'Unread counts load on navigation and refresh after marking read');
+  assert.equal(requests.filter(r=>r.path==='/api/jmap'&&JSON.parse(r.body).methodCalls?.some((call:any)=>call[0]==='HailMessage/set'&&call[1].update?.['m_'+incomingId.replaceAll('-','')]?.isRead===true)).length,1,'Message is marked read once');
   assert(await evaluate(`!document.querySelector('nav[aria-label="Main navigation"] a[href="/?view=subscriptions"] [aria-label$="unread messages"]')`),'Feed count clears after reading the last unread message');
-  assert.equal(requests.filter(r=>r.path===`/api/v1/account/inbox/${encodeURIComponent(peerDid)}/${incomingId}`).length,1,'Message body loads once');
+  assert.equal(calls('HailMailbox/view').filter(call=>call.args.view==='read'&&call.args.sender===peerDid&&call.args.messageId===incomingId).length,1,'Message body loads once');
   assert(await evaluate(`!!document.querySelector('article header img[src*="/media/avatars/"]')`),'Reader renders while photo request is pending');
   releaseAvatars();
   await wait(async()=>evaluate(`document.querySelector('article header img[src*="/media/avatars/"]')?.naturalWidth>0`),'photo loads independently after reader is usable');
@@ -844,17 +918,17 @@ try{
   assert.equal(await evaluate(`document.querySelector('input[placeholder="sender@example.com"]').value`),"","Completed subscription clears the sender address");
   await evaluate(`document.querySelector('button[aria-label^="Select subscription to"]').click()`);
   // The list goes straight to passkey consent; cancellation must leave the grant active.
-  const unsubscribeCommitsBefore=requests.filter(r=>r.path==="/api/v1/account/permissions/commit").length;
+  const unsubscribeCommitsBefore=calls('HailGrant/commitApproval').length;
   await evaluate(`(()=>{const get=navigator.credentials.get.bind(navigator.credentials);navigator.credentials.get=async()=>{navigator.credentials.get=get;throw new DOMException('Cancelled by user','NotAllowedError');};})()`);
   await click("Unsubscribe");await wait(()=>has("Passkey confirmation wasn’t completed."),"subscription passkey cancellation");
   await wait(()=>evaluate(`document.querySelector('button[aria-label^="Select subscription to"]')?.disabled===false`),"cancelled unsubscribe unlocks selection");
   assert.equal(allowed!.status,"active","Cancelling passkey consent leaves the subscription active");
-  assert.equal(requests.filter(r=>r.path==="/api/v1/account/permissions/commit").length,unsubscribeCommitsBefore,"Cancelled consent must not submit a commit");
+  assert.equal(calls('HailGrant/commitApproval').length,unsubscribeCommitsBefore,"Cancelled consent must not submit a commit");
   assert.equal(await evaluate(`sessionStorage.getItem('hail.pending-grant-approval.v1')`),null,"Cancelled unsubscribe clears the pending review");
   assert(!await has("Confirm unsubscribe"));
   await click("Unsubscribe");await wait(()=>emptyState('[aria-label="Subscriptions"]'),"list unsubscribe commits directly after passkey consent");
   assert.equal(allowed!.status,"revoked");
-  assert.equal(requests.filter(r=>r.path==="/api/v1/account/permissions/commit").length,unsubscribeCommitsBefore+1,"Retry submits exactly one authorized commit");
+  assert.equal(calls('HailGrant/commitApproval').length,unsubscribeCommitsBefore+1,"Retry submits exactly one authorized commit");
   // Restore a subscription through the UI for the separate reader confirmation checks.
   await fill("Sender’s Hail address",peerAddress);await click("Continue");await wait(()=>has("Test sender"),"resubscribe sender review");
   await evaluate(`document.querySelector('fieldset input[value=updates]').click()`);
@@ -905,11 +979,11 @@ try{
   assert(await evaluate("document.documentElement.scrollWidth<=innerWidth"),"Categories fits viewport");
   await narrowLayouts();await screenshot("categories");
   await click("Show QR");assert(await evaluate("!!document.querySelector('svg[role=img] path')"));
-  const qrRequests=requests.filter(r=>r.path.endsWith("/permissions/prepare")).length;
+  const qrRequests=calls('HailGrant/prepareApproval').length;
   await cdp("Page.navigate",{url:origin+"/permissions#"+new URLSearchParams({sender:peerAddress,did:peerDid})});
   await wait(()=>has("QR identity pin:"),"scanned sender QR prefill");
   assert.equal(await evaluate(`document.querySelector('input[placeholder="sender@example.com"]').value`),peerAddress);
-  assert.equal(requests.filter(r=>r.path.endsWith("/permissions/prepare")).length,qrRequests,"Opening a QR must not prepare or approve a permission");
+  assert.equal(calls('HailGrant/prepareApproval').length,qrRequests,"Opening a QR must not prepare or approve a permission");
   await click("Continue");await wait(()=>has("Test sender"),"QR and typed address share the same review");
   await cdp("Page.navigate",{url:origin+"/compose"});await wait(()=>evaluate("!!document.querySelector('#category-search')"),"publisher styling");
   await selectedAudience("Subscribers");
@@ -974,7 +1048,7 @@ try{
   const cookies=await cdp("Network.getCookies",{urls:[origin]});assert(!cookies.cookies.some((cookie:any)=>cookie.name==="hail_session"),"Expired cookie must be cleared");
   await click("Sign in with a passkey");await wait(()=>has("QR identity pin:"),"shared passkey login returns to QR review");
   assert.equal(await evaluate(`document.querySelector('input[placeholder="sender@example.com"]').value`),peerAddress);
-  assert.equal(requests.filter(r=>r.path.endsWith("/permissions/prepare")).length,qrRequests,"Signing in through a QR must not approve or prepare it");
+  assert.equal(calls('HailGrant/prepareApproval').length,qrRequests,"Signing in through a QR must not approve or prepare it");
   // Verify each ordinary folder resumes after login, including its query string.
   for(const [path,text] of [["/sent?after=older","Sent"],["/compose","New publication"],["/account","Sign-in & security"]]){
     await cdp("Network.deleteCookies",{name:"hail_session",url:origin});
@@ -1019,16 +1093,16 @@ try{
   assert(await has("Connections permit personal messages while active"));assert(await has("No automatic expiry"));
   assert(!await has("Continue interrupted review"));assert(!await has("Check original status"));
   const pendingCodeReview=await evaluate(`sessionStorage.getItem('hail.connection-approval.v1')`);
-  const connectionCommitsBefore=requests.filter(r=>r.path==="/api/v1/account/connections/commit").length;
+  const connectionCommitsBefore=calls('HailRelationship/commit').length;
   await cdp("Page.reload");await wait(()=>has("Confirm new connection link"),"pending code review restored automatically");
   assert.equal(await evaluate(`sessionStorage.getItem('hail.connection-approval.v1')`),pendingCodeReview);
-  assert.equal(requests.filter(r=>r.path==="/api/v1/account/connections/commit").length,connectionCommitsBefore,"Restoring a review must not authorize it");
+  assert.equal(calls('HailRelationship/commit').length,connectionCommitsBefore,"Restoring a review must not authorize it");
   connectionCommitLost=true;
   await click("Confirm");await wait(()=>has("We couldn’t confirm whether your connection change was saved."),"uncertain save exposes retry");
   assert.equal(connectionCodes.length,1);
   assert(!await evaluate(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Cancel')`),"Uncertain save cannot be discarded");
   await click("Try again");await wait(()=>has("Show QR"),"saved result recovered without another passkey");
-  assert.equal(requests.filter(r=>r.path==="/api/v1/account/connections/commit").length,connectionCommitsBefore+1,"Recovery must not repeat the saved action");
+  assert.equal(calls('HailRelationship/commit').length,connectionCommitsBefore+1,"Recovery must not repeat the saved action");
   await click("Show QR");await wait(async()=>evaluate(`!!document.querySelector('svg[aria-label="Connection QR code"]')`),"local QR rendering");
   assert(await evaluate(`(()=>{const card=document.querySelector('[aria-label="Your personal code"]'),button=[...card.querySelectorAll('button')].find(b=>b.textContent==='Hide QR');return !!card.querySelector('svg[aria-label="Connection QR code"]')&&button?.getAttribute('aria-expanded')==='true'&&card.contains(document.getElementById(button.getAttribute('aria-controls')));})()`),"Personal QR and its toggle must stay in the personal card");
   assert(await evaluate("document.documentElement.scrollWidth<=innerWidth"),"Connection QR overflows viewport");
@@ -1128,7 +1202,7 @@ try{
   const ownerPath=join(work,"owner-consent.cose");await writeFile(ownerPath,ownerCose);
   await upload("Signed consent file",ownerPath);await wait(()=>has("Signed file ready."),"browser accepts exact signed consent file");
   const originalCodes=connectionCodes.length;await click("Confirm");await wait(async()=>connectionCodes.length===originalCodes+1&&await has("Connection link created."),"owner signed file and passkey submission");
-  assert.equal(JSON.parse(requests.filter(r=>r.path==="/api/v1/account/connections/commit").at(-1)!.body).cose,encodeBase64Url(ownerCose));
+  assert.equal(calls('HailRelationship/commit').at(-1)!.args.input.cose,encodeBase64Url(ownerCose));
   assert.equal(composePosts,1);assert.equal(replyPosts,1);
   for(const req of requests){assert(!req.body.includes(secret),"Recovery secret uploaded");assert(!req.body.includes('"ciphertext"'),"Recovery vault uploaded");}
   assert(requests.filter(r=>r.authorization).every(r=>r.authorization==="Bearer "+setupToken||r.path.endsWith("check-address")));

@@ -1,3 +1,4 @@
+import {signTestRetrieval} from "./support/retrieval-signing.js";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { encodeBase64Url, type HailEnvelope } from "@racrproto/codec";
@@ -25,7 +26,7 @@ function setup(responses: Response[], services = ["https://sender.example/hail"]
   const resolve = vi.fn(async () => destination(services[Math.min(resolve.mock.calls.length - 1, services.length - 1)]!));
   const fetch = vi.fn<(request: Request) => Promise<Response>>(async () => responses.shift()!);
   const validate = vi.fn(async () => {});
-  const retriever = new BodyRetriever({ resolve } as HailDidResolver, fetch, validate);
+  const retriever = new BodyRetriever({ resolve } as HailDidResolver, fetch, validate, signTestRetrieval);
   return { retriever, fetch, resolve, validate };
 }
 
@@ -63,7 +64,7 @@ describe("authenticated detached body retrieval", () => {
     expect(resolve).toHaveBeenCalledTimes(2);
     expect((fetch.mock.calls[1]![0] as Request).url).toContain("new.example");
     expect(await setup([new Response(null, { status: 404 })]).retriever.retrieve(envelope))
-      .toEqual({ kind: "fail", reason: "body-authorization-failed" });
+      .toEqual({ kind: "retry", reason: "body-temporarily-unavailable", retryAfter: null });
   });
 
   it("accepts gzip at the body ceiling and rejects output one byte beyond the signed size", async () => {
@@ -124,4 +125,23 @@ describe("authenticated detached body retrieval", () => {
       headers: { "Content-Type": "application/hail-body+cbor", "Content-Length": "3" } })]).retriever.retrieve(envelope))
       .toEqual({ kind: "retry", reason: "body-transfer-interrupted", retryAfter: null });
   });
+});
+
+it('checks all supported wire digests and always checks the signed uncompressed body',async()=>{
+ const coded=gzipSync(bytes),digest=(algorithm:string,data:Uint8Array)=>createHash(algorithm).update(data).digest('base64');
+ const response=(header:string,data=coded)=>new Response(data,{headers:{'Content-Type':'application/hail-body+cbor','Content-Encoding':'gzip','Content-Digest':header}});
+ const multiple=`sha-512=:${digest('sha512',coded)}:, sha-256=:${digest('sha256',coded)}:;note="two, hashes"`;
+ expect((await setup([response(multiple)]).retriever.retrieve(envelope)).kind).toBe('success');
+ // A header over plaintext is invalid for a gzip HTTP message.
+ expect(await setup([response(`sha-256=:${digest('sha256',bytes)}:`)]).retriever.retrieve(envelope)).toEqual({kind:'fail',reason:'body-integrity-failed'});
+ const other=gzipSync(bodyFromText('Different content'));
+ expect(await setup([response(`sha-512=:${digest('sha512',other)}:`,other)]).retriever.retrieve(envelope)).toEqual({kind:'fail',reason:'body-integrity-failed'});
+ expect(await setup([response(multiple+', sha-512=:AA==:')]).retriever.retrieve(envelope)).toEqual({kind:'fail',reason:'body-integrity-failed'});
+});
+
+it('does not send an unsigned request when recipient signing is unavailable',async()=>{
+  const fetch=vi.fn(async()=>new Response());
+  const retriever=new BodyRetriever({resolve:async()=>destination('https://sender.example/hail')},fetch,async()=>{},async()=>{throw new Error('Recipient key unavailable');});
+  expect((await retriever.retrieve(envelope)).kind).toBe('retry');
+  expect(fetch).not.toHaveBeenCalled();
 });

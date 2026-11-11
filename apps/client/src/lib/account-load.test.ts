@@ -13,15 +13,39 @@ const account={type:"racr.account",version:1,provider,accountId:"12345678-1234-1
   credential:{credentialId:"12345678-1234-1234-1234-123456789def",expiresAt:"2027-01-01T00:00:00.000Z"}};
 
 it("loads a new alpha account's empty inbox through the real session account client without relabeling assurance",async()=>{
-  const request=vi.fn(async(url:string)=>new Response(JSON.stringify(url===provider+"/api/v1/account"?account:{messages:[],next:null}),{headers:{"Content-Type":"application/json"}}));
+  const capability='https://haili.app/ns/jmap/account',jmapAccount='a_fixture';
+  const json=(value:unknown)=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+  const request=vi.fn(async(url:string,init?:RequestInit)=>{
+    expect(init?.headers).toMatchObject({Cookie:`hail_session=${token}`});
+    expect(init?.headers).not.toHaveProperty('Authorization');
+    expect(init?.redirect).toBe('error');
+    if(url===provider+'/api/v1/account'){expect(init?.method).toBe('GET');return json(account);}
+    if(url===provider+'/.well-known/jmap'){
+      expect(init?.method).toBe('GET');
+      return json({apiUrl:'https://foreign.example/jmap',primaryAccounts:{[capability]:jmapAccount}});
+    }
+    expect(url).toBe(provider+'/jmap');expect(init?.method).toBe('POST');
+    const wire=JSON.parse(String(init?.body));
+    expect(wire.using).toEqual(['urn:ietf:params:jmap:core',capability]);expect(wire.methodCalls).toHaveLength(1);
+    const [name,args,tag]=wire.methodCalls[0];expect(name).toBe('HailMailbox/view');expect(tag).toBe('account');
+    expect(args.accountId).toBe(jmapAccount);
+    if(args.view==='settings'){
+      expect(args).toEqual({accountId:jmapAccount,view:'settings'});
+      return json({methodResponses:[[name,{accountId:jmapAccount,startScreen:'feed'},tag]]});
+    }
+    expect(args).toEqual({accountId:jmapAccount,view:'inboxFeed',channel:'subscriptions',after:null});
+    return json({methodResponses:[[name,{accountId:jmapAccount,messages:[],next:null},tag]]});
+  });
   vi.stubGlobal("fetch",request);
   const cookies={get:()=>token,delete:vi.fn()};
   try{
     const result=await load({url:new URL(provider+"/"),cookies,setHeaders:vi.fn()} as never);
     expect(result).toMatchObject({configured:true,account:{monitorVerificationMode:"reduced-assurance-alpha-v1",custodyProfile:"managed"},messages:[],next:null});
     expect(cookies.delete).not.toHaveBeenCalled();
-    expect(request).toHaveBeenCalledTimes(3);
-    expect(request).toHaveBeenLastCalledWith(provider+"/api/v1/account/inbox?include=body&kind=subscriptions",expect.objectContaining({headers:expect.objectContaining({Cookie:`hail_session=${token}`})}));
+    expect(request.mock.calls.map(([url])=>url)).toEqual([
+      provider+'/api/v1/account',provider+'/.well-known/jmap',provider+'/jmap',provider+'/.well-known/jmap',provider+'/jmap',
+    ]);
+    expect(request).toHaveBeenLastCalledWith(provider+'/jmap',expect.objectContaining({headers:expect.objectContaining({Cookie:`hail_session=${token}`})}));
   }finally{vi.unstubAllGlobals();}
 });
 

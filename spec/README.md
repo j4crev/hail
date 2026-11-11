@@ -35,7 +35,7 @@ Historical implementation/rollout notes do not override the current profile belo
 
 | Area | Current format and specification |
 | --- | --- |
-| Data encoding | Deterministic Hail CBOR and COSE in [encoding](encoding.md); explicitly separate transfer representations below |
+| Data encoding | Deterministic Hail CBOR and COSE; RFC 9995 envelopes in [encoding](encoding.md); explicit transfer representations below |
 | Identity and address discovery | `did:plc`, Address Binding v2; [DID profile](did-profile.md), [address binding](address-binding.md), [PLC evidence](plc-read-evidence.md) |
 | Sender discovery and consent | Sender Profile v2, Grant v1; [sender profile](sender-profile.md), [grants](grants.md) |
 | Message delivery | Envelope v1 for Grant delivery; v2 for unthreaded connection delivery; v3 for threaded direct/reply-capability delivery; v4 for shared conversations; [envelopes](envelopes.md) |
@@ -45,7 +45,8 @@ Historical implementation/rollout notes do not override the current profile belo
 | Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
 | Custody | [Account onboarding](account-onboarding.md), [managed custody](managed-custody.md); [reduced-assurance alpha](alpha-onboarding.md) is an explicitly weaker deployment profile |
 | Reference monitor service | Provider registration, scoped enrollment, management handoff and signed receiver lifecycle v1 in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
-| Transfer | Handshake v1, portable snapshot v7, managed snapshot v8, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
+| Client synchronization | [Hail JMAP v1](jmap.md), [drafts](jmap-drafts.md), [account collections](jmap-collections.md) and [typed operations](jmap-operations.md); web/CLI mailbox workflows use JMAP; events are phase 6 |
+| Transfer | Handshake v1, portable snapshot v11, managed snapshot v12, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
 
 Envelope versions select different authority models. V4 is not a replacement for
 Grant delivery. New direct replies use v3 rather than the historical unthreaded
@@ -65,6 +66,10 @@ Connection, reply-capability, and shared-conversation authorization are separate
 from subscription Grants. Their messages MUST NOT contain a category.
 
 ## Client interoperability
+
+[Provider authentication](provider-authentication.md) defines the reference server's
+optional trusted-backend integration, enterprise account bindings, session
+revocation and separation from independent owner authority.
 
 The optional [RACR client profile](client-api.md) defines CLI provider
 interoperability, authentication-method-neutral browser authorization and the
@@ -104,6 +109,26 @@ field, reference mapping and continuity requirement. Schema and signature validi
 alone do not replace live cutover, owner and monitor authority checks.
 
 ## Conformance and publication work
+
+The nonnormative [standards adoption baseline](../agents/standards-baseline.md)
+maps planned work to current implementation/specification owners and records
+cutover and history-preservation requirements. It does not change the current
+profiles above or establish conformance to the planned standards.
+
+The [phase 1 completion record](../agents/standards-phase-1.md) covers bounded
+Content-Digest dictionaries, private caching, safe download headers and real TLS
+hostname tests. These HTTP changes do not introduce a signed format version;
+phase 3 now additionally requires [RFC 9421 recipient proof](retrieval-signatures.md)
+for body and attachment retrieval, with durable replay rejection and no bearer-only fallback.
+
+The [phase 2 implementation record](../agents/standards-phase-2.md) replaces
+ordinary envelope and snapshot signatures with RFC 9995 hash COSE_Sign1.
+[Encoding](encoding.md#rfc-9995-hash-profile), [envelopes](envelopes.md) and
+[transfer formats](transfer-formats.md) define the current profiles;
+[account history](account-history.md#signature-profiles-in-history) uses the same
+current signatures, with no superseded-format reader. The [experimental schema](experiments/rfc9995.cddl)
+and [experimental vectors](vectors/experimental-rfc9995.json) remain test-only,
+with different extension labels. Implementation is not a production deployment.
 
 The separate [first Internet-Draft workspace](../drafts/README.md) contains
 `draft-creviston-racr-00`, its RFCXML source and readable renderings. It is an
@@ -195,9 +220,9 @@ it introduces no signed protocol version.
 ## Reference-client start screen
 
 The reference provider stores the account's `startScreen` preference through its
-passkey-session-authenticated `/api/v1/account/message-preferences` API. GET returns
+passkey-session-authenticated `HailMailbox/view {view:"settings"}` method. It returns
 `"feed"` (the default, including accounts with no saved preference) or `"inbox"`.
-POST accepts either value as a partial display-preference update, returns the
+`HailMailbox/preferences {input:{startScreen:VALUE}}` accepts either value as a partial display-preference update, returns the
 confirmed display preferences, and preserves omitted fields and Trash policy.
 Other values, including null, are rejected with HTTP 400. As with other display
 preferences, writes require `messages:write`; reads require `messages:read`.
@@ -227,3 +252,5 @@ This does not add federation credentials or make mailbox approval independent-ow
 Unseen connection indicators are reference-provider presentation policy, documented
 with the [account navigation counts and acknowledgment API](provider-mailbox.md#unseen-connections-reference-provider-account-api).
 They do not change federation wire formats or connection authorization.
+
+Full account collection projections: [JSON Schema](schemas/jmap-account-object-v1.json) and [shape vectors](vectors/jmap-account.json). Signed COSE evidence uses the separate protocol vectors.

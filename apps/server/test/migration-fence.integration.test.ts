@@ -758,7 +758,7 @@ integration("fenced transfer and concurrent cutover", () => {
     expect(manifest.did).toBe(did);
     expect(manifest.custodyProfile).toBe("portable");
     expect(manifest.tables.account_keys).toHaveLength(2);
-    expect(manifest.version).toBe(7);
+    expect(manifest.version).toBe(11);
     expect(manifest.tables.public_plc_resolution_evidence).toHaveLength(1);
     expect(manifest.tables.public_signing_authority_evidence).toHaveLength(1);
     expect(manifest.tables.public_grant_authority_evidence).toHaveLength(1);
@@ -787,18 +787,17 @@ integration("fenced transfer and concurrent cutover", () => {
       SELECT state FROM pending_migration_imports WHERE transfer_id = ${fence.transferId}`;
     expect(imported[0]?.state).toBe("staged");
     const changed: SignedTransferSnapshot = { ...snapshot, signature: Uint8Array.from(snapshot.signature) };
-    changed.signature[0] = changed.signature[0]! ^ 1;
+    changed.signature[changed.signature.length-1] = changed.signature[changed.signature.length-1]! ^ 1;
     await expect(transferTarget.stageImport(changed, consent, operationBytes, destinationBinding))
-      .rejects.toThrow("signature is invalid");
+      .rejects.toThrow("signature verification failed");
     const damagedHistory=JSON.parse(new TextDecoder().decode(snapshot.bytes));
     damagedHistory.tables.public_plc_resolution_evidence=[];
     expect(()=>validateTransferManifest(new TextEncoder().encode(JSON.stringify(damagedHistory))))
       .toThrow("missing or unreferenced resolution evidence");
-    const legacy=JSON.parse(new TextDecoder().decode(snapshot.bytes));legacy.version=2;
-    delete legacy.conversations;delete legacy.conversationCheckpointDigest;delete legacy.connections;delete legacy.connectionCheckpointDigest;delete legacy.sourceGeneration;
-    for(const table of ["public_plc_resolution_evidence","public_envelope_authority_evidence",
-      "public_grant_authority_evidence","public_signing_authority_evidence"])delete legacy.tables[table];
-    expect(validateTransferManifest(new TextEncoder().encode(JSON.stringify(legacy))).version).toBe(2);
+    for(const version of [2,3,5,7,9]){
+      const obsolete={...JSON.parse(new TextDecoder().decode(snapshot.bytes)),version};
+      expect(()=>validateTransferManifest(new TextEncoder().encode(JSON.stringify(obsolete)))).toThrow('invalid or incomplete serialization domain');
+    }
     const changedConsent: SignedPortableConsent = { ...consent, signature: Uint8Array.from(consent.signature) };
     changedConsent.signature[0] = changedConsent.signature[0]! ^ 1;
     await expect(transferTarget.stageImport(snapshot, changedConsent, operationBytes, destinationBinding))

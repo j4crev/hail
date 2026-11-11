@@ -1,3 +1,6 @@
+import {SENT_TABLES,collectSentHistory,validateSentHistory} from './sent-history.js';
+import {DRAFT_TABLES,collectDraftHistory,validateDraftHistory} from './draft-history.js';
+import {signSnapshot,inspectSnapshotSignature,verifySnapshotSignature} from './snapshot-signature.js';
 import {ATTACHMENT_TABLES,collectAttachmentHistory,validateAttachmentHistory} from './attachment-history.js';
 import {collectConversationHistory,conversationHistoryDigest,type ConversationHistory} from './conversation-history.js';
 import { createHash } from "node:crypto";
@@ -25,10 +28,9 @@ import {validateSnapshotConnections} from "./connection-snapshot.js";
 import {verifyConnectionHistoryAuthority} from "./connection-history-verification.js";
 import {encodeBase64Url} from "@racrproto/codec";
 
-const context = (version: 2 | 3 | 5 | 7) => new TextEncoder().encode(`hail-migration-snapshot-v${version}\0`);
 
 export const TRANSFER_TABLES = [
-  ...ATTACHMENT_TABLES,
+  ...ATTACHMENT_TABLES,...DRAFT_TABLES,...SENT_TABLES,
   "provider_accounts", "account_keys", "portable_custody_evidence", "plc_operation_evidence", "address_bindings",
   "sender_profiles", "grant_lineages", "grant_revisions", "grant_consent_evidence",
   "grant_publications", "detached_bodies", "body_authorizations", "sent_envelopes",
@@ -46,7 +48,7 @@ type TransferTables = Record<TransferTable, Record<string, unknown>[]> &
   Partial<Record<AuthorityTable, Record<string, unknown>[]>>;
 
 export interface TransferManifest {
-  version: 2 | 3 | 5 | 7;
+  version: 11;
   sourceGeneration?:number;
   conversations?:ConversationHistory;conversationCheckpointDigest?:string;
   connections?:ConnectionHistory;
@@ -78,15 +80,6 @@ interface ExportRow {
 }
 
 function digest(bytes: Uint8Array): Uint8Array { return new Uint8Array(createHash("sha256").update(bytes).digest()); }
-
-function signatureInput(hash: Uint8Array, version: 2 | 3 | 5 | 7): Uint8Array<ArrayBuffer> {
-  const prefix = context(version);
-  const message = new Uint8Array(prefix.length + hash.length);
-  message.set(prefix);
-  message.set(hash, prefix.length);
-  return message;
-}
-export {signatureInput as transferSnapshotSignatureInput};
 
 function decodeHex(value: unknown, label: string): Uint8Array {
   if (typeof value !== "string" || !/^\\x(?:[0-9a-f]{2})+$/i.test(value)) {
@@ -166,8 +159,8 @@ export function validateTransferManifest(bytes: Uint8Array): TransferManifest {
   const value = parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid transfer manifest");
   const manifest = value as TransferManifest;
-  const tables = manifest.version !== 2 ? [...TRANSFER_TABLES, ...TRANSFER_AUTHORITY_TABLES] : TRANSFER_TABLES;
-  if (![2, 3, 5, 7].includes(manifest.version) ||
+  const tables = [...TRANSFER_TABLES, ...TRANSFER_AUTHORITY_TABLES];
+  if (manifest.version !== 11 ||
     !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(manifest.transferId) ||
     !/^did:plc:[a-z2-7]{24}$/.test(manifest.did) ||
     !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(manifest.accountId) ||
@@ -345,9 +338,11 @@ export function validateTransferManifest(bytes: Uint8Array): TransferManifest {
       throw new Error("Transfer reply claim conflicts with its signed permission or accepted reply");
     }
   }
-  if (manifest.version !== 2) validateAuthorityHistory(manifest);
+  validateAuthorityHistory(manifest);
   validateSnapshotConnections(manifest);
   validateAttachmentHistory(manifest);
+  validateDraftHistory(manifest);
+  validateSentHistory(manifest);
   return manifest;
 }
 
@@ -389,6 +384,8 @@ export class MigrationTransferService {
           FROM provider_migration_exports WHERE transfer_id = ${fence.transferId}
         `;
         if (!existing[0]) throw new Error("Exported migration snapshot is missing");
+        const retainedManifest=validateTransferManifest(existing[0].manifest_bytes);
+        inspectSnapshotSignature(existing[0].signature,existing[0].manifest_bytes,retainedManifest.version,retainedManifest.did);
         return { bytes: new Uint8Array(existing[0].manifest_bytes), digest: new Uint8Array(existing[0].manifest_digest),
           signature: new Uint8Array(existing[0].signature), sourceMessagingPublicKey: existing[0].source_messaging_public_key };
       }
@@ -398,7 +395,7 @@ export class MigrationTransferService {
       const sourceGeneration=Number((await tx<{generation:number|string}[]>`SELECT generation FROM account_serving_generations WHERE account_id=${fence.accountId}`)[0]?.generation);
       const connections=await collectConnectionHistory(tx as SQL,{accountId:fence.accountId,did:fence.did,sourceGeneration,sourceServiceBase:this.serviceBase},capturedAt);
       const conversations=await collectConversationHistory(tx as SQL,{accountId:fence.accountId,did:fence.did,sourceGeneration,sourceServiceBase:this.serviceBase},capturedAt);
-      const manifest: TransferManifest = { version: 7, did: fence.did, accountId: fence.accountId,
+      const manifest: TransferManifest = { version: 11, did: fence.did, accountId: fence.accountId,
         transferId: fence.transferId, sourceServiceBase: this.serviceBase,
         destinationServiceBase: fence.destinationServiceBase,
         destinationRotationPublicKey: fence.destinationRotationPublicKey,
@@ -413,7 +410,7 @@ export class MigrationTransferService {
       let signature: Uint8Array;
       try {
         const key = await importEd25519PrivateKey(secret);
-        signature = new Uint8Array(await crypto.subtle.sign("Ed25519", key, signatureInput(hash, manifest.version)));
+        signature = await signSnapshot(bytes,manifest.version,manifest.did,key);
       } finally { secret.fill(0); }
       await tx`
         INSERT INTO provider_migration_exports (transfer_id, did, manifest_bytes, manifest_digest,
@@ -432,18 +429,16 @@ export class MigrationTransferService {
     operationBytes: Uint8Array, destinationBinding: Uint8Array): Promise<TransferManifest> {
     const hash = digest(snapshot.bytes);
     if (hash.length !== 32 || !Buffer.from(hash).equals(Buffer.from(snapshot.digest)) ||
-      snapshot.signature.length !== 64) throw new Error("Transfer digest or signature has an invalid shape");
+      snapshot.signature.length > 1024) throw new Error("Transfer digest or signature has an invalid shape");
     const manifest = validateTransferManifest(snapshot.bytes);
+    inspectSnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did);
     if (manifest.destinationServiceBase !== this.serviceBase) throw new Error("Snapshot names another destination");
     const resolved = await this.resolver.resolve(manifest.did);
     if (resolved.did !== manifest.did || resolved.serviceBase !== manifest.sourceServiceBase ||
       resolved.messagingDidKey !== snapshot.sourceMessagingPublicKey) {
       throw new Error("Current PLC state does not authenticate the source snapshot");
     }
-    const key = await ed25519PublicKeyFromDidKey(snapshot.sourceMessagingPublicKey);
-    if (!await crypto.subtle.verify("Ed25519", key, Uint8Array.from(snapshot.signature), signatureInput(hash, manifest.version))) {
-      throw new Error("Migration snapshot source signature is invalid");
-    }
+    await verifySnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did,snapshot.sourceMessagingPublicKey);
     const consent = await verifyPortableMigrationConsent(userConsent, resolved.identityDidKey, Math.floor(Date.now() / 1000));
     const custody = manifest.tables.portable_custody_evidence[0]!;
     if (destinationBinding.length < 1 || destinationBinding.length > 16_384) {
@@ -649,7 +644,7 @@ export class MigrationTransferService {
         UNION SELECT evidence_digest FROM public_signing_authority_evidence WHERE local_account_id = ${accountId}
       ) ORDER BY evidence_digest`);
     return {
-      ...await collectAttachmentHistory(tx as SQL,accountId,did),
+      ...await collectAttachmentHistory(tx as SQL,accountId,did),...await collectDraftHistory(tx as SQL,accountId),...await collectSentHistory(tx as SQL,accountId),
       provider_accounts: account, account_keys: keys, portable_custody_evidence: custody,
       plc_operation_evidence: plc,
       address_bindings: bindings, sender_profiles: profiles,

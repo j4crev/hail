@@ -1,3 +1,4 @@
+import {BodyRequestSigner,BodyRequestVerifier} from "../../src/bodies/request-proof.js";
 /** Private evaluation fixture: real HTTPS/API/Postgres, isolated in-memory PLC.
  * DATABASE_URL must name a disposable database. The runner supplies cert.pem and
  * key.pem, trusts that certificate in CLI children, and maps source.example.com
@@ -140,14 +141,14 @@ try {
   const messaging = new AccountMessaging(db.sql, bodies, envelopes,
     new EnvelopeService(repository, grants, envelopes, encryptor, resolver, base,undefined,authority),
     (sender,id) => submitEnvelope(sender,id,envelopes,resolver,statusReceiver,{fetch:localFetch,validateTarget},authority));
-  const delivery = new DeliveryWorker(new DeliveryRepository(db.sql,authority),new BodyRetriever(resolver,localFetch,validateTarget));
+  const delivery = new DeliveryWorker(new DeliveryRepository(db.sql,authority),new BodyRetriever(resolver,localFetch,validateTarget,new BodyRequestSigner(db.sql,repository,encryptor,resolver,base).sign));
   const statuses = new TerminalStatusPublisher(db.sql,statusSigner,resolver,localFetch,validateTarget);
   const config: AppConfig = { nodeEnv: "test", port: server.port!, providerId: "agent-eval", publicOrigin: provider,
     hailServiceBase: base, plcDirectoryUrl: "http://plc.fixture:2582", databaseUrl: process.env.DATABASE_URL,
     keyEncryptionKey: encodeBase64Url(randomBytes(32)), pocManagedTransfer: false };
   app = createApp(config, {
     accountApi: { accounts, grants, service, messaging, connections }, discoveryStore: repository,
-    bodyStore: bodies, envelopeReceiver:new EnvelopeReceiver(repository,envelopes,resolver,base),
+    bodyStore: bodies, bodyProof:new BodyRequestVerifier(db.sql,resolver,provider), envelopeReceiver:new EnvelopeReceiver(repository,envelopes,resolver,base),
     deliveryStatusSigner:statusSigner,deliveryStatusReceiver:statusReceiver,
     selfServiceOnboarding: { sql: db.sql,
       onboarding: new PrivatePocOnboarding(db.sql, plc, encryptor, config.plcDirectoryUrl, base),

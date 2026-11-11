@@ -1,3 +1,4 @@
+import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 const sharedMode=process.argv.includes('--shared');
@@ -17,6 +18,15 @@ const cdp=(method:string,params:unknown={})=>new Promise<any>((resolve,reject)=>
 const evaluate=async(expression:string)=>{const r=await cdp('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
 await cdp('Page.enable');await cdp('Runtime.enable');
 const origin=`http://localhost:${fixturePort}`;
+const accountOperation=async(name:string,args:Record<string,unknown>={})=>{
+ const capability='https://haili.app/ns/jmap/account';
+ const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
+ const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];assert.equal(accountId,'fixture_account');
+ const response=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{accountId,...args},'scenario']]})});
+ assert(response.ok);const result=(await response.json()).methodResponses[0];assert.equal(result[0],name,JSON.stringify(result));
+ assert.equal(result[2],'scenario');return result[1];
+};
 // The fixture API starts before the GUI; wait for rendered HTML before navigating.
 await wait(async()=>{try{return (await fetch(origin+'/?view=connections')).ok;}catch{return false;}});
 
@@ -28,8 +38,8 @@ async function navigate(path:string,title:string){
 
 const click=async(label:string)=>evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.getClientRects().length&&(b.getAttribute('aria-label')??b.textContent.trim())===${JSON.stringify(label)}).click()`);
 
-const incoming=(await(await fetch(origin+'/api/v1/account/inbox')).json()).messages;
-const connection=(await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json()).messages[0];
+const incoming=(await accountOperation('HailMailbox/view',{view:'inboxFeed',channel:'subscriptions'})).messages;
+const connection=(await accountOperation('HailMailbox/view',{view:'inboxFeed',channel:'connections'})).messages[0];
 // Test replies while the fixture still has messages.
 await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
 await cdp('Page.navigate',{url:origin+'/conversation/'+encodeURIComponent(connection.sender)+'/'+connection.messageId});
@@ -46,17 +56,17 @@ if(sharedMode){
   await click('Close');
 }
 // Move all received messages to Trash so both mailbox views are empty.
-for(const m of [...incoming,connection])await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(m.sender)+'/'+m.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+for(const m of [...incoming,connection])await fixtureMessageMutation(origin,m,{isInTrash:true});
 // Remove any additional connection messages too.
-for(const m of (await(await fetch(origin+'/api/v1/account/inbox?kind=connections')).json()).messages)await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(m.sender)+'/'+m.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+for(const m of (await accountOperation('HailMailbox/view',{view:'inboxFeed',channel:'connections'})).messages)await fixtureMessageMutation(origin,m,{isInTrash:true});
 await cdp('Page.navigate',{url:origin+'/message/'+encodeURIComponent(incoming[0].sender)+'/'+incoming[0].messageId});
 await wait(async()=>evaluate(`!!document.querySelector('.restore-button')`));
 await cdp('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:'light'}]});
 assert(await evaluate(`(()=>{const button=document.querySelector('.restore-button'),r=button.getBoundingClientRect(),s=getComputedStyle(button);return r.width===56&&r.height===56&&s.borderRadius==='18px'&&s.color!==s.backgroundColor&&Math.abs((r.left+r.right)/2-innerWidth/2)<1;})()`),'Restore matches the shared floating button size, shape and contrast');
-await fetch(origin+'/api/v1/account/trash/empty',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+await accountOperation('HailMailbox/emptyTrash');
 for(const width of [1440,390,320]){
   await cdp('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:width<500});
-  const heights=[];
+  const heights:number[]=[];
   for(const [path,title] of [['/?view=subscriptions','Feed'],['/?view=connections','Inbox'],['/drafts','Drafts'],['/trash','Trash'],['/permissions','Subscriptions'],['/connections','Connections']]){
     await navigate(path!,title!);
     await wait(async()=>evaluate(`!!document.querySelector('.empty-symbol')`));
@@ -76,7 +86,7 @@ for(const width of [1440,390,320]){
 }
 await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
 await navigate('/permissions','Subscriptions');await click('Add a subscription');
-await evaluate(`window.permissionCalls=[];const original=window.fetch;window.fetch=(...args)=>{if(String(args[0]).includes('/permissions'))window.permissionCalls.push(args[0]);return original(...args);};const input=document.querySelector('input[placeholder="sender@example.com"]');input.value='j4crev.com';input.dispatchEvent(new Event('input',{bubbles:true}));`);
+await evaluate(`window.permissionCalls=[];window.fixtureInvocation=(args)=>{if(!String(args[0]).endsWith('/api/jmap'))return null;try{return JSON.parse(args[1]?.body??'{}').methodCalls?.[0]??null;}catch{return null;}};window.fixtureResult=(call,value)=>Response.json({methodResponses:[[call[0],{accountId:call[1].accountId,...value},call[2]]],sessionState:'fixture'});const original=window.fetch;window.fetch=(...args)=>{const call=window.fixtureInvocation(args);if(call?.[0].startsWith('HailGrant/'))window.permissionCalls.push(call[0]);return original(...args);};const input=document.querySelector('input[placeholder="sender@example.com"]');input.value='j4crev.com';input.dispatchEvent(new Event('input',{bubbles:true}));`);
 await click('Continue');
 await wait(async()=>evaluate(`document.querySelector('.toast-stack')?.textContent.includes('Enter a valid Hail address')`));
 assert.deepEqual(await evaluate('window.permissionCalls'),[],'Invalid address never reaches the provider');
@@ -85,7 +95,7 @@ assert(await evaluate(`(()=>{const b=document.querySelector('.toast button'),r=b
 // Simulate a reviewed sender and a cancelled passkey, without performing any real authorization.
 await evaluate(`window.passkeyCalls=0;Object.defineProperty(navigator.credentials,'get',{configurable:true,writable:true,value:async()=>{window.passkeyCalls++;throw new DOMException('Cancelled','NotAllowedError');}});
 const prepared={requestId:'00000000-0000-4000-8000-000000000001',action:'allow',expiresAt:new Date(Date.now()+300000).toISOString(),approved:false,result:null,options:{challenge:'AQID',rpId:'localhost',userVerification:'preferred'},permission:{grant_id:'00000000-0000-4000-8000-000000000002',revision:1,grantor:'did:plc:'+'a'.repeat(24),grantee:'did:plc:'+'b'.repeat(24),expires_at:null,scope:[{type:'categories',values:['general']}],consent_context:{grantee_address:'sender@example.com'}}};
-window.permissionPrepared=prepared;const reviewFetch=window.fetch;window.fetch=(...args)=>{const path=String(args[0]);if(path.includes('/permissions/'))return Promise.resolve(Response.json(path.endsWith('/review')?{address:'sender@example.com',did:'did:plc:'+'b'.repeat(24),displayName:'Sender',addressDigest:'address',profileDigest:'profile',categories:[{id:'general',label:'General'}]}:prepared));return reviewFetch(...args);};
+window.permissionPrepared=prepared;const reviewFetch=window.fetch;window.fetch=(...args)=>{const call=window.fixtureInvocation(args);if(call&&['HailGrant/reviewApproval','HailGrant/prepareApproval','HailGrant/approvalStatus'].includes(call[0]))return Promise.resolve(window.fixtureResult(call,call[0]==='HailGrant/reviewApproval'?{address:'sender@example.com',did:'did:plc:'+'b'.repeat(24),displayName:'Sender',addressDigest:'address',profileDigest:'profile',categories:[{id:'general',label:'General'}]}:window.permissionPrepared));return reviewFetch(...args);};
 const reviewedInput=document.querySelector('input[placeholder="sender@example.com"]');reviewedInput.value='sender@example.com';reviewedInput.dispatchEvent(new Event('input',{bubbles:true}));`);
 await click('Continue');await wait(async()=>evaluate(`!!document.querySelector('input[type="checkbox"][value="general"]')`));
 await evaluate(`document.querySelector('input[type="checkbox"][value="general"]').click()`);await click('Subscribe');
@@ -103,7 +113,7 @@ await evaluate(`Array.from(document.querySelectorAll('dialog input[type="checkbo
 await click('Subscribe');await wait(async()=>evaluate('window.passkeyCalls===3'));
 // Finish a mocked passkey ceremony and verify the sheet closes with a success toast.
 await evaluate(`navigator.credentials.get=async()=>({id:'AQID',rawId:new Uint8Array([1,2,3]).buffer,type:'public-key',authenticatorAttachment:'platform',response:{authenticatorData:new Uint8Array([1]).buffer,clientDataJSON:new Uint8Array([1]).buffer,signature:new Uint8Array([1]).buffer,userHandle:null},getClientExtensionResults:()=>({})});
-const commitFetch=window.fetch;window.fetch=(...args)=>String(args[0]).endsWith('/permissions/commit')?Promise.resolve(Response.json({...window.permissionPrepared,approved:true,result:{grantId:window.permissionPrepared.permission.grant_id,revision:1,status:'active',publication:'durable'}})):commitFetch(...args);`);
+const commitFetch=window.fetch;window.fetch=(...args)=>{const call=window.fixtureInvocation(args);return call?.[0]==='HailGrant/commitApproval'?Promise.resolve(window.fixtureResult(call,{...window.permissionPrepared,approved:true,result:{grantId:window.permissionPrepared.permission.grant_id,revision:1,status:'active',publication:'durable'}})):commitFetch(...args);};`);
 await click('Subscribe');
 await wait(async()=>evaluate(`!document.querySelector('dialog[open]')&&document.querySelector('.toast-stack').textContent.includes('Subscribed.')`));
 console.log('PASS: matched empty states at desktop/mobile widths, mobile forms/replies, Restore styling, validation toast, direct passkey and cancellation retry');

@@ -1,3 +1,5 @@
+import {draftTransferFixture} from './support/draft-transfer.js';
+import {verifySnapshotSignature} from '../src/migration/snapshot-signature.js';
 import { handoffAccountMonitor } from "../src/accounts/monitor-handoff.js";
 import {encodePayload,decodePayload} from '@racrproto/codec';
 import {storeAttachment} from '../src/bodies/attachments.js';
@@ -35,7 +37,7 @@ import {ManagedTransferDelivery} from "../src/migration/managed-delivery.js";
 import {ManagedTransferAddressReservation} from "../src/migration/managed-address-selection.js";
 import {ManagedMigrationFenceService} from "../src/migration/managed-fence.js";
 import {ManagedTransferFencePublisher} from "../src/migration/managed-fence-publisher.js";
-import {ManagedMigrationExportService,managedSnapshotSignatureInput,
+import {ManagedMigrationExportService,
   validateManagedTransferManifest} from "../src/migration/managed-snapshot.js";
 import {ManagedMigrationStageService} from "../src/migration/managed-stage.js";
 import {ManagedMigrationPlcSubmission} from "../src/migration/managed-plc-submission.js";
@@ -228,6 +230,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
       address:"alice@b.example.com",selection_nonce:randomUUID(),issued_at:now,expires_at:now+1800};
     const selectionBytes=encodeManagedHandshake(selectionValue),selectionSigned={payloadBytes:selectionBytes,
       signature:await owner.sign(managedHandshakeSignatureInput(selectionValue.type,selectionBytes))};
+    const draftFixture=await draftTransferFixture(source.sql,accountId);
     const activeLease=randomUUID();
     await source.sql`INSERT INTO serving_worker_leases(lease_token,account_id,generation)
       VALUES (${activeLease},${accountId},1)`;
@@ -269,9 +272,9 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
     await assertExportConformance(exported,"managed");
     const manifest=validateManagedTransferManifest(exported.bytes);
     const apiExport=await call("/api/v1/account/transfers/managed/export","POST",JSON.stringify({transferId:offer.transfer_id}));
-    expect(apiExport.status).toBe(200);expect(await apiExport.json()).toMatchObject({type:"hail.managed-migration-transfer",version:8,
+    expect(apiExport.status).toBe(200);expect(await apiExport.json()).toMatchObject({type:"hail.managed-migration-transfer",version:12,
       manifest:encodeBase64Url(exported.bytes),digest:encodeBase64Url(exported.digest),signature:encodeBase64Url(exported.signature)});
-    expect(manifest).toMatchObject({version:8,custodyProfile:"managed",did,sourceGeneration:1,
+    expect(manifest).toMatchObject({version:12,custodyProfile:"managed",did,sourceGeneration:1,
       ownerRecoveryPublicKey:owner.did(),sourceIdentityPublicKey:keys.identityDidKey,
       destinationIdentityPublicKey:offer.destination_identity_key});
     expect(manifest.tables.managed_custody_evidence[0]?.managed_profile_version).toBe("hail-managed-custody-v1");
@@ -307,8 +310,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
     tampered.historyCheckpointDigest=encodeBase64Url(randomBytes(32));
     expect(()=>validateManagedTransferManifest(new TextEncoder().encode(JSON.stringify(tampered))))
       .toThrow(/history checkpoint/);
-    expect(await crypto.subtle.verify("Ed25519",await ed25519PublicKeyFromDidKey(exported.sourceMessagingPublicKey),
-      Uint8Array.from(exported.signature),managedSnapshotSignatureInput(exported.digest,manifest.version))).toBe(true);
+    await verifySnapshotSignature(exported.signature,exported.bytes,manifest.version,did,exported.sourceMessagingPublicKey);
     const exportRetry=await exporter.exportFenced({did,accountId,transferId:offer.transfer_id,destinationServiceBase:targetBase,
       ownerRecoveryPublicKey:owner.did(),sourceIdentityPublicKey:keys.identityDidKey,
       destinationIdentityPublicKey:offer.destination_identity_key,
@@ -557,6 +559,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
     expect(changedRetirement.status).toBe(400);
     await withFreshServingGenerations(target.sql,()=>target.sql`UPDATE grant_publications SET state='acknowledged',
       acknowledged_etag='"grant-v2"',acknowledged_at=clock_timestamp() WHERE grant_id=${grantId} AND revision=2`);
+    await withFreshServingGenerations(target.sql,()=>draftFixture.editAtDestination(target.sql));
     phase="return preparation";
     const returnNow=Math.floor(Date.now()/1000),returnGrantValue:ManagedTransferGrant={type:"hail.managed-transfer-grant",version:1,did,
       nonce:randomUUID(),source_service_base:targetBase,destination_service_base:sourceBase,destination_domain:"a.example.com",
@@ -650,6 +653,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
     phase="return activation";
     expect(await withFreshServingGenerations(source.sql,()=>returnActivation.activate(returnTransfer,returnMonitor))).toEqual({did,accountId,generation:3});
     expect(await withFreshServingGenerations(source.sql,()=>returnActivation.activate(returnTransfer))).toEqual({did,accountId,generation:3});
+    await draftFixture.assert(source.sql);
     if(publicRuntime){
       expect(await handoffAccountMonitor(source.sql,{publicKey:monitor.monitorPublicKey,async handoff(identity,cid,transferId){
         expect([identity,cid,transferId]).toEqual([did,returnCid,returnTransfer]);return true;
@@ -689,7 +693,7 @@ integration.each(["poc-local","strict-public-v1"] as const)("materializes an exa
       await expect(rollback49.unsafe(await Bun.file(new URL("../migrations/rollback/0049_managed_migration_materialization.sql",import.meta.url)).text()))
         .rejects.toThrow("active imports exist");
     } finally {await rollback49.unsafe("ROLLBACK");rollback49.release();}
-  } catch(error) {throw new Error(`${profile}: ${phase}`,{cause:error});}
+  } catch(error) {throw new Error(`${profile}: ${phase}: ${error instanceof Error?error.message:String(error)}`,{cause:error});}
   finally {await source.close();await target.close();await admin.unsafe(`DROP SCHEMA "${sourceSchema}" CASCADE`);
     await admin.unsafe(`DROP SCHEMA "${targetSchema}" CASCADE`);await admin.close();}
 },45_000);

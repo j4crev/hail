@@ -1,3 +1,8 @@
+import {JmapCollections} from './jmap/collections.js';
+import {JmapBlobs} from './jmap/blobs.js';
+import {JmapDrafts} from './jmap/drafts.js';
+import {JmapMessages} from "./jmap/messages.js";
+import {BodyRequestSigner, BodyRequestVerifier} from "./bodies/request-proof.js";
 import { handoffAccountMonitor } from "./accounts/monitor-handoff.js";
 import { cleanAccountMonitor } from "./accounts/monitor-cleanup.js";
 import {pruneConversationState} from './accounts/conversation-memberships.js';
@@ -115,7 +120,8 @@ const grantPublisher = new GrantPublisher(
 );
 const deliveryWorker = new DeliveryWorker(
   new DeliveryRepository(database.sql,connectionAuthority),
-  new BodyRetriever(resolver, transport.fetchBody, transport.validateTarget),
+  new BodyRetriever(resolver, transport.fetchBody, transport.validateTarget,
+    new BodyRequestSigner(database.sql,onboardingRepository,encryptor,resolver,config.hailServiceBase).sign),
 );
 const statusSigner = new DeliveryStatusSigner(database.sql, onboardingRepository,
   new KeyEncryptor(config.keyEncryptionKey), resolver, config.hailServiceBase);
@@ -378,6 +384,11 @@ const app = createApp(config, schemaRehearsal ? {
     config.hailServiceBase,
   ),
   bodyStore: new BodyRepository(database.sql),
+  bodyProof: new BodyRequestVerifier(database.sql,resolver,config.publicOrigin),
+  jmap: new JmapMessages(database.sql,config.publicOrigin),
+  jmapCollections: new JmapCollections(database.sql,config.publicOrigin),
+  jmapDrafts: new JmapDrafts(database.sql,config.publicOrigin),
+  jmapBlobs: new JmapBlobs(database.sql,config.publicOrigin,new JmapMessages(database.sql,config.publicOrigin),new JmapCollections(database.sql,config.publicOrigin)),
   envelopeReceiver: new EnvelopeReceiver(
     onboardingRepository, new EnvelopeRepository(database.sql), resolver, config.hailServiceBase,undefined,connectionAuthority,
   ),

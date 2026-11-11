@@ -123,6 +123,16 @@ destination after transfer.
 
 ### HTTP contract
 
+Mailbox, submission, Grant and connection operations now use the
+[Hail JMAP transport](../../spec/jmap.md), [collections](../../spec/jmap-collections.md)
+and [typed application methods](../../spec/jmap-operations.md). The reference GUI
+and native CLI have migrated; replaced account HTTP endpoints are removed.
+Account inspection, identity/profile, credentials, auth/recovery, transfer,
+administration, federation and protected media remain separate resources.
+Apply migrations 114–117 with this provider/client revision. User accounts and
+credentials are retained; obsolete delivery-only cursors are not.
+
+
 The frozen [PLC read-evidence policy](https://github.com/j4crev/hail/blob/main/spec/plc-read-evidence.md)
 strengthens the public cutover library with complete canonical/audit agreement,
 explicit reader/operator configuration, reviewed monitor bootstrap
@@ -221,8 +231,6 @@ federation operations:
 | `GET /api/v1/account/profile` | `account:read` | Current signed Sender Profile revision, digest and exact COSE bytes |
 | `POST /api/v1/account/profile` | `account:write` | Idempotently create or optimistic-revision update an explicit Sender Profile definition |
 | `GET /api/v1/account/senders/{did}/profile` | `messages:read` | Freshly verified current sender profile, digest and exact COSE bytes for inbox presentation |
-| `GET /api/v1/account/grants/{grant_id}` | `grants:read` | Own authoritative or received Grant, local role, exact base64url COSE bytes, digest and ETag; the CLI renders diagnostic JSON locally |
-| `PUT /api/v1/account/grants/{grant_id}` | `grants:write` | Verify/store an initial or terminal user-signed Grant; JSON acknowledgement of revision/status/digest and durable publication responsibility |
 
 Haili's Sent history uses `GET /api/v1/account/sent?include=sends` (`messages:read`).
 It returns five sends per page with an opaque `next` cursor for `after`. Each item
@@ -582,21 +590,7 @@ Additional account endpoints:
 
 | Path | Method/scope | Purpose |
 | --- | --- | --- |
-| `/grants/proposals` | POST, `grants:write` | Verified unsigned owner proposal |
-| `/grants` | GET, `grants:read` | Scoped list, 50 items, `after` Grant-ID cursor |
-| `/grants/managed` | POST, `grants:write` | Explicit managed evidence; sign/create at provider |
-| `/grants/{id}/revoke` | POST, `grants:write` | Managed account's signed terminal revision |
 | `/credentials` | POST, `credentials:write` | Issue caller-generated token with inherited scopes or revoke own credential ID |
-| `/messages` | POST, `messages:write` | Text (`spt-1`), rich `spt-2`, or bundled-header `spt-3` body, Grant or invited reply, with client-stable UUIDv7 |
-| `/messages/{id}/submit` | POST, `messages:write` | Resubmit exact own envelope |
-| `/messages/{id}` | GET, `messages:read` | Retained authenticated status, otherwise indeterminate |
-| `/publications/audiences` | GET, `grants:read` | Active category subscriber counts; General is category `general` |
-| `/publications` | POST, `messages:write` | Durable category-wide publication with a stable publication ID and immutable audience snapshot |
-| `/publications` | GET, `messages:read` | Account-private unfinished/recent publication links for recovering queued work |
-| `/publications/{id}` | GET, `messages:read` | Account-private fan-out outcomes and separate delivery counts |
-| `/publications/{id}/cancel` | POST, `messages:write` | Stop targets that have no created envelope; existing submission attempts are retained |
-| `/inbox` | GET, `messages:read` | Delivered recipient list, 50 items, opaque `after` cursor |
-| `/inbox/{sender_did}/{id}` | GET, `messages:read` | Own delivered body/safe metadata, no bearer token |
 
 Paths are relative to `/api/v1/account`. JSON writes require uncoded
 `application/json`. Message inputs contain `messageId`, exactly one of `text`
@@ -821,17 +815,21 @@ and delivery replay history, and respects account transfer fences. Failures are
 logged as `Trash cleanup failed`. No external cron is needed.
 
 Passkey sessions with `messages:read` can `GET /api/v1/account/trash` (optional
-`after` cursor) and `GET /api/v1/account/message-preferences`. Same-origin
-`messages:write` sessions can POST `{}` to `/api/v1/account/inbox/:sender/:messageId/delete`,
-POST `{ "messages": [{ "sender": "did:plc:…", "messageId": "…" }] }` to
-`/api/v1/account/trash/restore` (1–100 selections), or POST
-`{ "trashEnabled": false }` to `/api/v1/account/message-preferences`. Disabling
-Trash atomically purges it. See [client behavior and rollback](../client/README.md#trash-and-deletion).
+`after` cursor) and `GET /api/v1/account/message-preferences`. Received-message
+read/Trash edits and restoration now use `HailMessage/set` with state and Trash
+preconditions; the old per-message delete and bulk restore endpoints are removed.
+Same-origin `messages:write` sessions can POST `{ "trashEnabled": false }` to
+`/api/v1/account/message-preferences`. Disabling Trash atomically purges it.
+See [client behavior and rollback](../client/README.md#trash-and-deletion).
 
-CLI/API credentials with `messages:write` may POST `{}` to
-`/api/v1/account/inbox/:sender/:messageId/permanent-delete`. This endpoint bypasses
-Trash and accepts bearer credentials, not browser passkey sessions. It deletes
-only the authenticated recipient's copy and is safe to retry after a lost response.
+CLI/API credentials with both `messages:read` and `messages:write` use JMAP
+Session discovery, `HailMessage/query` by sender/message ID, then destroy with
+`HailMessage/set` and `ifInState`. Bearer deletion remains permanent and bypasses
+Trash; browser passkey destruction still requires a trashed copy when Trash is
+enabled. Only the authenticated recipient's copy is deleted. A stale state or
+lost response requires an explicit retry and fresh lookup; an absent copy is
+already deleted. The old permanent-delete endpoint is removed. See the
+[JMAP profile](../../spec/jmap.md).
 
 ## Connection address-change notices
 

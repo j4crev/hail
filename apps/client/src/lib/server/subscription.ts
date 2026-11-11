@@ -1,11 +1,11 @@
 import type {AccountApiClient} from "@racrproto/client-support/account-api";
 
 // Resolve by verified DID, not the message's display address or historic Grant.
-export async function senderSubscription(client: Pick<AccountApiClient, "request" | "grant">, owner: string, sender: string) {
+export async function senderSubscription(client: Pick<AccountApiClient, "jmap" | "grant">, owner: string, sender: string) {
   let after: string | null = null;
   const seen = new Set<string>();
   for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
-    const page = await client.request(`/grants?sender=${encodeURIComponent(sender)}${after ? `&after=${encodeURIComponent(after)}` : ""}`);
+    const page = await client.jmap("HailGrant/list",{sender,...(after?{after}:{})});
     if (!Array.isArray(page.grants) || page.next !== null && typeof page.next !== "string") throw new Error("Invalid subscriptions response");
     for (const row of page.grants) {
       if (row.localRole !== "grantor" || row.grantee !== sender || row.status !== "active") continue;

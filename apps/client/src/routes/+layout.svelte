@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {MailboxSync} from '$lib/jmap-sync.js';
   import {mailboxCounts} from "$lib/mailbox-counts.js";
   const counts = $derived($mailboxCounts?.scope === page.data.mailboxScope ? $mailboxCounts?.counts : page.data.unreadCounts);
   import ToastHost from "$lib/ToastHost.svelte";
@@ -22,15 +23,17 @@
   let {children} = $props();
   const unseenConnections = $derived(page.data.unseenConnections ?? 0);
   onMount(() => {
-    let pending = false, lastRefresh = Date.now();
+    const sync=new MailboxSync();
+    let pending = false, lastRefresh = 0;
     const refresh = async () => {
       if (pending || !page.data.hasAccountSession || document.visibilityState !== 'visible' || Date.now()-lastRefresh < 10_000) return;
       pending = true; lastRefresh = Date.now();
-      try {await invalidate('hail:counts');} finally {pending = false;}
+      try {if(await sync.poll())window.dispatchEvent(new Event('hail:mailbox-changed'));await invalidate('hail:counts');} finally {pending = false;}
     };
     const update = () => {void refresh().catch(() => {});};
     window.addEventListener('focus', update);
     document.addEventListener('visibilitychange', update);
+    update();
     const timer = setInterval(update, 30_000 + Math.random()*5000);
     return () => {clearInterval(timer);window.removeEventListener('focus', update);document.removeEventListener('visibilitychange', update);};
   });

@@ -1,11 +1,11 @@
+import {verifySnapshotSignature} from '../../src/migration/snapshot-signature.js';
 import Ajv from 'ajv';
 import {base58btc} from 'multiformats/bases/base58';
 import {createHash} from 'node:crypto';
 import {readFile,writeFile} from 'node:fs/promises';
-import {ed25519PublicKeyFromDidKey} from '../../src/identity/did-key.js';
-import {validateTransferManifest,transferSnapshotSignatureInput} from '../../src/migration/transfer.js';
+import {validateTransferManifest} from '../../src/migration/transfer.js';
 import {validateManagedTransferManifest} from '../../src/migration/managed-snapshot.js';
-const schema=JSON.parse(await readFile(new URL('../../../../spec/schemas/account-history-v7-v8.json',import.meta.url),'utf8'));
+const schema=JSON.parse(await readFile(new URL('../../../../spec/schemas/account-history-v11-v12.json',import.meta.url),'utf8'));
 const validate=new Ajv({allErrors:true}).compile(schema);
 export function validateHistorySchema(value:unknown):void{
   if(!validate(value))throw Error('History schema: '+JSON.stringify(validate.errors));
@@ -16,8 +16,7 @@ export async function assertExportConformance(snapshot:{bytes:Uint8Array;digest:
   const manifest=JSON.parse(new TextDecoder().decode(snapshot.bytes));
   validateHistorySchema(manifest);
   (kind==='portable'?validateTransferManifest:validateManagedTransferManifest)(snapshot.bytes);
-  const key=await ed25519PublicKeyFromDidKey(snapshot.sourceMessagingPublicKey);
-  if(!await crypto.subtle.verify('Ed25519',key,Uint8Array.from(snapshot.signature),transferSnapshotSignatureInput(snapshot.digest,manifest.version)))throw Error('Snapshot signature mismatch');
+  await verifySnapshotSignature(snapshot.signature,snapshot.bytes,manifest.version,manifest.did,snapshot.sourceMessagingPublicKey);
   if(process.env.HAIL_WRITE_HISTORY_VECTORS==='1'){
     const fixture={id:kind+'-history',source:'Synthetic '+kind+' migration integration test; PUBLIC TEST MATERIAL ONLY',
       publicKeyHex:Buffer.from(base58btc.decode(snapshot.sourceMessagingPublicKey.slice(8)).slice(2)).toString('hex'),

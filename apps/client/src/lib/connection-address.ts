@@ -1,3 +1,4 @@
+import {accountOperation} from './jmap.js';
 import {validIdentity} from "./identity-history.js";
 export interface ConnectionAddress {did:string;address:string;previousAddress:string|null;changedAt:string|null;}
 const pending=new Map<string,{at:number;value:Promise<ConnectionAddress|null|undefined>}>();
@@ -9,16 +10,14 @@ export async function connectionAddress(owner:string,did:string):Promise<Connect
   if(pending.size>=500)pending.clear();
   const value=(async()=>{
     try{
-      const response=await fetch('/api/v1/account/connection-addresses/'+encodeURIComponent(did),{
-        credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10_000)});
-      if(!response.ok)return undefined;
-      const result=await response.json(),contact=result.contact;
+      const result=await accountOperation('HailMailbox/view',{view:'connectionAddress',peer:did});
+      const contact=result.contact as Record<string,unknown>|null;
       if(result.owner!==owner)return undefined;
       if(contact===null)return null;
       if(!contact||contact.did!==did||typeof contact.address!=="string"||!validIdentity(did,contact.address)||
         contact.previousAddress!==null&&(typeof contact.previousAddress!=="string"||!validIdentity(did,contact.previousAddress))||
         contact.changedAt!==null&&(typeof contact.changedAt!=="string"||!Number.isFinite(Date.parse(contact.changedAt))))return undefined;
-      return contact as ConnectionAddress;
+      return {did,address:contact.address,previousAddress:contact.previousAddress as string|null,changedAt:contact.changedAt as string|null};
     }catch{return undefined;}
   })();
   pending.set(key,{at:now,value});return value;

@@ -1,7 +1,7 @@
 # Account transfer formats
 
 Status: Current alpha transfer profile. The handshake and handover rules define
-peer exchanges. Snapshot v7/v8 has a complete logical record schema in
+peer exchanges. Snapshot v11/v12 has a complete logical record schema in
 [account-history.md](account-history.md), with an explicit reference-storage mapping. Earlier snapshot formats are not part
 of the current contract and no historical-reader support is required.
 
@@ -164,7 +164,7 @@ interface ManagedTransferApproval {
   owner_recovery_key: string; source_identity_key: string; destination_rotation_key: string;
   destination_identity_key: string; destination_messaging_key: string;
   grant_digest: Uint8Array; offer_digest: Uint8Array; selection_digest: Uint8Array;
-  snapshot_version: 8; snapshot_digest: Uint8Array; history_checkpoint_digest: Uint8Array;
+  snapshot_version: 12; snapshot_digest: Uint8Array; history_checkpoint_digest: Uint8Array;
   source_generation: number; previous_operation_cid: string; operation_cid: string;
   issued_at: number; expires_at: number;
 }
@@ -212,7 +212,7 @@ interface MigrationActivationReceipt {
 `TransferRequest` includes every `TransferOffer` field except its `type`, which
 is replaced by `hail.transfer-request`. Its additional digest fields bind the
 specific Offer, user selection and destination reservation. Managed Approval fixes
-`snapshot_version` to 8 in the current profile. Portable final consent binds the
+`snapshot_version` to 12 in the current profile. Portable final consent binds the
 exact signed PLC operation bytes via `plc_operation_sha256`; it is separate from
 the owner's top-priority PLC signature. Activation binds the destination address
 binding's complete COSE digest, snapshot and transfer ID.
@@ -259,9 +259,9 @@ portable `binding` is canonical base64url of the signed destination Address Bind
 The portable binding limit is 16384 bytes and operation limit is 16000 bytes.
 The snapshot container has exactly `type`, `version`, `manifest`, `digest`,
 `signature`, `sourceMessagingPublicKey`. Type is `hail.portable-migration-transfer`
-with version 7 or `hail.managed-migration-transfer` with version 8. Manifest, digest
+with version 11 or `hail.managed-migration-transfer` with version 12. Manifest, digest
 and signature are canonical base64url strings; decoded manifest size is at most
-67108864 bytes, digest is 32 bytes and signature is 64 bytes. Container and manifest
+67108864 bytes, digest is 32 bytes and signature is a complete RFC 9995 COSE_Sign1 of at most 1024 bytes. Container and manifest
 versions MUST match. Preserve exact artifacts across retries; fresh monitor evidence
 may be supplied without changing the snapshot, consent/approval or PLC operation.
 
@@ -358,31 +358,52 @@ source/destination orchestration exchanges remain in
 
 ## Snapshot profile and standardization boundary
 
-The current reference provider exports portable snapshot **7** and managed
-snapshot **8**, each embedding connection checkpoint **3** and conversation
+The current reference provider exports portable snapshot **11** and managed
+snapshot **12**, each embedding connection checkpoint **3** and conversation
 checkpoint **1**. All four components are required even when their history is
 empty. No old snapshot version is required by the current alpha specification.
 
 The snapshot manifest is UTF-8 JSON, with duplicate keys rejected. Unlike ordinary
 Hail signed objects, its identity is the **exact saved JSON byte sequence**; there
 is no JSON canonicalization or permission to parse/re-serialize before verification.
-The source signs:
+The source produces one RFC 9995 tagged COSE_Sign1:
 
 ```text
-UTF8("hail-migration-snapshot-v7") || 0x00 || SHA256(manifest_bytes)  # portable
-UTF8("hail-migration-snapshot-v8") || 0x00 || SHA256(manifest_bytes)  # managed
+protected = deterministicCBOR({1: -19, 4: UTF8(manifest.did + "#hail-messaging"),
+                              258: -16, 259: preimage_type})
+digest = SHA256(manifest_bytes)
+input = deterministicCBOR(["Signature1", protected, h'', digest])
+signature_field = deterministicCBOR(18([protected, {}, digest, Ed25519(input)]))
 ```
 
-Both use the source's authenticated Ed25519 messaging key and a 64-byte signature.
-The snapshot carrier retains the manifest bytes, their 32-byte digest, signature
-and source messaging public key. Verify the key against the source authority;
-never trust a key simply because the carrier includes it. This is an explicit
-reference-profile exception to the CBOR payload rule, not an alternate encoding
+`preimage_type` is exactly `application/hail-portable-snapshot+json;version=11`
+or `application/hail-managed-snapshot+json;version=12`. The protected map is closed;
+labels 3 and 260 are forbidden. The unprotected map and external AAD are empty.
+The COSE payload is an embedded 32-byte hash, never null. The Ed25519 signature
+inside COSE is 64 bytes; the complete `signature` field is at most 1024 bytes.
+Manifest bytes remain limited to 67108864 bytes. COSE and protected bytes use
+the deterministic encoding and bounded decoding rules in [encoding](encoding.md).
+
+The existing JSON artifact retains exactly `type`, `version`, `manifest`, `digest`,
+`signature`, and `sourceMessagingPublicKey`. Its base64url `signature` now carries
+that complete COSE item; `manifest` carries the external preimage exactly once.
+The separately carried digest MUST match both the manifest hash and COSE payload.
+There is no domain-prefix signature or silent old-signature fallback on current
+export, stage or completion paths. Current artifact/manifest versions are 11/12;
+the protected profile distinguishes them from superseded signatures of those
+same manifest versions.
+
+Verify the source messaging key against authenticated transfer authority; never
+trust it merely because the artifact includes it. Verify the hash and signature,
+manifest DID, destination, transfer ID, generations and all owner/monitor/live
+cutover requirements. The RFC container does not grant authorization. Stored snapshot evidence uses this same current profile; there is no raw-signature
+compatibility path.
+This remains a reference JSON-manifest profile, not an alternate payload encoding
 for envelopes, Grants or connection controls.
 
 ```typescript
 interface TransferManifest {
-  version: 7;
+  version: 11;
   sourceGeneration:number;
   conversations:ConversationHistory;conversationCheckpointDigest:string;
   connections:ConnectionHistory;
@@ -402,7 +423,7 @@ interface TransferManifest {
 
 ```typescript
 interface ManagedTransferManifest {
-  version: 8; transferId: string; did: string; accountId: string;
+  version: 12; transferId: string; did: string; accountId: string;
   conversations:ConversationHistory;conversationCheckpointDigest:string;
   connections:ConnectionHistory;connectionCheckpointDigest:string;
   sourceServiceBase: string; destinationServiceBase: string;
@@ -438,7 +459,7 @@ authority bundles and authority links. The exact projection is specified in
 logical record contract, not a required physical database schema.
 
 The complete current logical account-history shape is published as
-[JSON Schema](schemas/account-history-v7-v8.json), with selection, ownership,
+[JSON Schema](schemas/account-history-v11-v12.json), with selection, ownership,
 ordering, import invariants and reference-storage mapping in
 [account-history.md](account-history.md). Existing `tables` and hex-text wire
 spellings remain intact; another implementation can map those logical collections

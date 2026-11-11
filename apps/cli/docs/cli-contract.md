@@ -131,8 +131,7 @@ offline vault/cutover/completion commands do not accept bearer selection options
 accounts (`account:read` and `account:write`). The provider verifies the exact
 locally signed invitation/confirmation before committing. Browser approval
 continues to require its original passkey session/assertion; a bearer cannot
-authorize managed identity signing. Providers must run schema migration 83 and
-the updated Connection routes; existing list/removal remain compatible.
+authorize managed identity signing. Providers implement the current typed JMAP relationship methods; no replaced HTTP routes are required.
 
 Invitations are private version-1 `racr.connection-invitation` files containing
 `id`, `did`, and `token`. The token is an admission capability and never appears
@@ -154,20 +153,17 @@ describes a clean workspace build and offline source/binary smoke checks.
 
 ## Ongoing-use additions
 
-The provider's additive `/api/v1/capabilities` GET advertises inbox waits,
-conversations, Connection invitation management, signup availability/policy and
-passkey-only actions. These CLI additions require a provider with migration 84.
-Apply the migration before rolling out the new server. Existing inbox readers
-and delivery writers continue working: a database trigger assigns commit-ordered
-per-recipient delivery sequence numbers, including for older writers. Rolling
-back requires stopping new wait consumers first; the rollback removes only the
-added cursor column, trigger and sequence, preserving messages. Saved wait
-cursors are invalid after rollback/reapply.
+The provider's `/api/v1/capabilities` advertises offered CLI workflows. Mailbox,
+submission, Grant and relationship operations use authenticated JMAP Session
+and the [current Hail extensions](../../../spec/jmap-operations.md). Inbox waits
+start from the current received-message state, resume an explicit `--after` state,
+and filter senders locally. Expired/provider-reset states require a fresh snapshot.
+Migration 117 removes the old delivery-only cursor without deleting mail.
 
 Errors retain `httpStatus` and `retryable`, while `error.code` can now be
 `CREDENTIAL_EXPIRED`, `CREDENTIAL_REVOKED`, `MISSING_SCOPE`, `PASSKEY_REQUIRED`,
-`INTERACTION_REQUIRED`, or `APPROVAL_EXPIRED`. The provider sends these codes in `Hail-Error-Code` and
-its JSON problem response. The CLI accepts only known codes matched to their
+`INTERACTION_REQUIRED`, or `APPROVAL_EXPIRED`. HTTP resources carry these codes in `Hail-Error-Code`; JMAP application methods
+carry public status/code fields in in-band errors. The CLI accepts only known codes matched to their
 HTTP status, ignores untrusted error text, and falls back to `HTTP_<status>`
 for older providers or unspecified conditions. Do not infer expiry from every
 401 or missing scope from every 403. These terminal conditions do not authorize
@@ -195,18 +191,12 @@ Batch responses retain `publicationId`, `kind`, `total`, `counts`, `delivery`,
 recipient delivery. `conversation status` is a read of retained per-recipient
 results. `conversation cancel` stops pending work only.
 
-New credential-only `/connections/cli-conversation-*` routes reject browser
-cookies and Origin headers. They share the existing account transaction and
-recheck credential scopes, expiry, revocation, account ownership, generation,
-and migration fences. They support managed and owner-controlled accounts without
-changing identity-signing consent rules:
-
-| Route (under `/api/v1/account`) | Method / input | Scope |
-| --- | --- | --- |
-| `/connections/cli-conversation-preferences` | GET | `account:read` |
-| `/connections/cli-conversation-preferences` | POST `{allowIntroductions: boolean}` or `{connectionId, epoch, override: boolean/null}` | `account:write` |
-| `/connections/cli-conversation-membership` | POST `{creator, conversationId, action: "inspect"}` | `messages:read` |
-| `/connections/cli-conversation-membership` | POST with action `leave` or `rejoin` | `messages:write` |
+`HailRelationship/conversationPreferences` uses `account:read` without `input`
+and `account:write` for `{input:{allowIntroductions}}` or
+`{input:{connectionId,epoch,override}}`. `conversationMembership` takes
+`{input:{creator,conversationId,action}}`; inspect requires `messages:read`,
+leave/rejoin require `messages:write`. Existing account/session generation,
+revocation, ownership, migration fences and signing consent are rechecked.
 
 Read commands never renew the 90-day participation timeout. Only a new reply-all
 batch renews the sender's active participation. Rejoin preserves the existing

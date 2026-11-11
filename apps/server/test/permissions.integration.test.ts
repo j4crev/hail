@@ -8,8 +8,11 @@ import {createWebCryptoSigner,signPayload,encodeBase64Url,fromDiagnosticJson,typ
 import {ProviderDatabase} from "../src/db/database.js";
 import {AccountApiRepository} from "../src/accounts/repository.js";
 import {PasskeyAuth} from "../src/accounts/passkeys.js";
-import {GrantPermissions,registerPermissionRoutes} from "../src/accounts/permissions.js";
-import {registerAccountApiRoutes} from "../src/accounts/routes.js";
+import {GrantPermissions} from "../src/accounts/permissions.js";
+import {registerJmapRoutes} from "../src/jmap/routes.js";
+import {JmapMessages,JMAP_CORE} from "../src/jmap/messages.js";
+import {JmapOperations} from "../src/jmap/operations.js";
+import {HAIL_ACCOUNT} from "../src/jmap/collections.js";
 import {GrantRepository} from "../src/grants/repository.js";
 import {GrantService} from "../src/grants/service.js";
 import {OnboardingRepository} from "../src/onboarding/repository.js";
@@ -78,20 +81,27 @@ it.skipIf(!process.env.DATABASE_URL)("approves only exact managed permissions wi
     const service=new GrantService(new OnboardingRepository(db.sql),grants,encryptor,resolver,{async verify(){if(peerDown)throw new Error("Peer offline");return address;}},
       {async verify(){if(peerDown)throw new Error("Peer offline");return profileChanged?{...senderProfile,digest:randomBytes(32)}:senderProfile;}},base);
     let permissions=new GrantPermissions(db.sql,accounts,grants,service,passkeys,origin);
-    const app=new Hono();registerPermissionRoutes(app,permissions,accounts,origin);registerAccountApiRoutes(app,accounts,grants,service,origin,undefined,undefined,undefined,undefined,undefined,undefined,undefined,origin);
-    const call=(path:string,body?:unknown,headers:Record<string,string>={})=>app.request(origin+"/api/v1/account/"+path,{method:body===undefined?"GET":"POST",
-      headers:{Origin:origin,"Content-Type":"application/json",Cookie:`hail_session=${signedIn.token}`,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
-    expect((await call("grants/managed",{sender:binding.address,category:"updates",expiresAt:now+86400})).status).toBe(403);
-    expect((await call("permissions/review",{sender:binding.address},{Origin:"https://evil.example"})).status).toBe(403);
-    expect((await call("permissions/review",{sender:binding.address,senderDid:otherDid})).status).toBe(409);
+    const app=new Hono(),messages=new JmapMessages(db.sql,origin);
+    registerJmapRoutes(app,accounts,messages,origin,origin,undefined,undefined,undefined,new JmapOperations({accounts,grants,service,permissions}));
+    const call=async(method:string,args:Record<string,unknown>,headers:Record<string,string>={})=>{
+      const response=await app.request(origin+"/jmap",{method:"POST",headers:{Origin:origin,"Content-Type":"application/json",Cookie:`hail_session=${signedIn.token}`,...headers},
+        body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[[method,{accountId:messages.accountId(session),...args},"test"]]})});
+      if(!response.ok)return response;
+      const result=(await response.json() as {methodResponses:[string,Record<string,unknown>,string][]}).methodResponses[0]!;
+      const {accountId:_,...value}=result[1];
+      return Response.json(value,{status:result[0]==="error"?Number(result[1].httpStatus??({forbidden:403,invalidArguments:400,notFound:404} as Record<string,number>)[String(result[1].type)]??500):200});
+    };
+    expect((await call("HailGrant/managedCreate",{input:{sender:binding.address,category:"updates",expiresAt:now+86400}})).status).toBe(403);
+    expect((await call("HailGrant/reviewApproval",{input:{sender:binding.address}},{Origin:"https://evil.example"})).status).toBe(403);
+    expect((await call("HailGrant/reviewApproval",{input:{sender:binding.address,senderDid:otherDid}})).status).toBe(409);
     const review=await permissions.review(session,{sender:binding.address,senderDid:peerDid});expect(review.categories).toHaveLength(2);
     const input={requestId:randomUUID(),action:"allow",sender:binding.address,senderDid:peerDid,addressDigest:review.addressDigest,profileDigest:review.profileDigest,
       scope:{type:"categories",values:["updates"]},expiresAt:null};
     for(const expiresAt of [0,now-1,now+367*86400,"ongoing",undefined]){
-      expect((await call("permissions/prepare",{...input,requestId:randomUUID(),expiresAt})).status).toBe(400);
+      expect((await call("HailGrant/prepareApproval",{input:{...input,requestId:randomUUID(),expiresAt}})).status).toBe(400);
     }
     profileChanged=true;await expect(permissions.prepare(session,input)).rejects.toMatchObject({status:409});profileChanged=false;
-    const started=await call("permissions/prepare",input);expect(started.status).toBe(200);
+    const started=await call("HailGrant/prepareApproval",{input});expect(started.status).toBe(200);
     const prepared=await started.json() as Awaited<ReturnType<GrantPermissions["prepare"]>>;
     expect(prepared.permission).toMatchObject({expires_at:null});
     expect(await permissions.prepare(session,input)).toEqual(prepared);
@@ -105,10 +115,10 @@ it.skipIf(!process.env.DATABASE_URL)("approves only exact managed permissions wi
     await expect(permissions.commit(session,prepared.requestId,assertion(prepared.options!.challenge,{id:otherCredential}))).rejects.toMatchObject({status:403});
     await expect(permissions.commit(session,prepared.requestId,assertion(login.options.challenge))).rejects.toMatchObject({status:401});
     expect(await db.sql`SELECT grant_id FROM grant_lineages`).toHaveLength(0);
-    const proof=assertion(prepared.options!.challenge),attempts=await Promise.all([call("permissions/commit",{requestId:prepared.requestId,response:proof}),call("permissions/commit",{requestId:prepared.requestId,response:proof})]);
+    const proof=assertion(prepared.options!.challenge),attempts=await Promise.all([call("HailGrant/commitApproval",{input:{requestId:prepared.requestId,response:proof}}),call("HailGrant/commitApproval",{input:{requestId:prepared.requestId,response:proof}})]);
     expect(attempts.every(r=>[200,409].includes(r.status))).toBe(true);const committed=attempts.find(r=>r.status===200)!;expect(committed).toBeDefined();
     const accepted=await committed.json() as Awaited<ReturnType<GrantPermissions["commit"]>>;expect(accepted.result).toMatchObject({status:"active",revision:1});
-    expect((await app.request(origin+"/api/v1/account/permissions/"+prepared.requestId,{headers:{Cookie:`hail_session=${signedIn.token}`}})).status).toBe(200);
+    expect((await call("HailGrant/approvalStatus",{requestId:prepared.requestId})).status).toBe(200);
     permissions=new GrantPermissions(db.sql,accounts,grants,service,passkeys,origin);
     expect((await permissions.commit(session,prepared.requestId)).result).toEqual(accepted.result);
     expect(await db.sql`SELECT grant_id FROM grant_lineages`).toHaveLength(1);expect(await db.sql`SELECT grant_id FROM grant_publications`).toHaveLength(1);

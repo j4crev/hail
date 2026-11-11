@@ -166,3 +166,35 @@ fn deterministic_signatures_match_shared_vectors_and_reject_tampering() {
         }
     }
 }
+
+#[test]
+fn snapshot_hash_profiles_verify_exact_export_bytes() {
+    for (kind, version, text) in [
+        (
+            "portable",
+            11,
+            include_str!("../../../../spec/vectors/portable-history.json"),
+        ),
+        (
+            "managed",
+            12,
+            include_str!("../../../../spec/vectors/managed-history.json"),
+        ),
+    ] {
+        let v: Json = serde_json::from_str(text).unwrap();
+        let preimage = decode_base64(v["manifestBase64"].as_str().unwrap()).unwrap();
+        let m: Json = serde_json::from_slice(&preimage).unwrap();
+        let wire = hex(&v["signatureHex"]);
+        let content_type = format!("application/hail-{kind}-snapshot+json;version={version}");
+        let kid = format!("{}#hail-messaging", m["did"].as_str().unwrap());
+        let public = v["sourceMessagingPublicKey"].as_str().unwrap();
+        verify_hash_envelope(&wire, &preimage, &content_type, &kid, public).unwrap();
+        let mut changed = preimage.clone();
+        changed.push(b'\n');
+        assert!(verify_hash_envelope(&wire, &changed, &content_type, &kid, public).is_err());
+        assert!(verify_hash_envelope(&wire, &preimage, "application/json", &kid, public).is_err());
+        let mut bad = wire.clone();
+        *bad.last_mut().unwrap() ^= 1;
+        assert!(verify_hash_envelope(&bad, &preimage, &content_type, &kid, public).is_err());
+    }
+}

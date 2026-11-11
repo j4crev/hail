@@ -1,3 +1,4 @@
+import {isJmapReadBatch} from '$lib/jmap-read-batch.js';
 import {mailboxCounts} from '$lib/mailbox-counts.js';
 import {mailboxCache} from '$lib/mailbox-cache.js';
 import * as Sentry from '@sentry/sveltekit';
@@ -25,7 +26,8 @@ export function init() {
     const request = input instanceof Request ? input : null;
     const url = new URL(request?.url ?? String(input), location.href);
     const method = (options?.method ?? request?.method ?? 'GET').toUpperCase();
-    const mutation = url.origin === location.origin && !['GET','HEAD','OPTIONS'].includes(method);
+    const mutation = url.origin === location.origin && !['GET','HEAD','OPTIONS'].includes(method)&&
+      !(url.pathname==='/api/jmap'&&method==='POST'&&isJmapReadBatch(options?.body));
     if (mutation) {mailboxCache.beginMutation(); mailboxCounts.set(null);}
     try {
       const response = await original(input, options);

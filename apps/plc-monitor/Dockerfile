@@ -10,6 +10,7 @@ RUN pnpm --filter @did-plc/lib exec tsc --build tsconfig.build.json --force
 FROM oven/bun:1.4.0 AS build
 WORKDIR /workspace/hail
 COPY package.json bun.lock tsconfig.json ./
+COPY patches ./patches
 COPY apps/server/package.json ./apps/server/package.json
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/content-builder/package.json ./apps/content-builder/package.json
@@ -27,6 +28,7 @@ RUN bun run --cwd apps/plc-monitor build:browser
 FROM oven/bun:1.4.0 AS dependencies
 WORKDIR /workspace/hail
 COPY package.json bun.lock tsconfig.json ./
+COPY patches ./patches
 COPY apps/server/package.json ./apps/server/package.json
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/content-builder/package.json ./apps/content-builder/package.json

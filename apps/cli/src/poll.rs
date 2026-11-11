@@ -1,7 +1,7 @@
 use crate::{
     api::Client,
     contract::{DID, Error, ID},
-    reads::cursor,
+    jmap,
 };
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -47,9 +47,9 @@ pub async fn status(
     if !ID.is_match(id) {
         return Err(Error::usage("Invalid message ID or wait bounds"));
     }
-    let path = format!("/messages/{id}");
+    let args = json!({"kind":"message","id":id});
     let Some(seconds) = seconds else {
-        let result = client.get(&path).await?;
+        let result = client.jmap("HailSubmission/status", &args).await?;
         validate_status(&result, id)?;
         return Ok(result);
     };
@@ -58,7 +58,7 @@ pub async fn status(
     let mut failure = None;
     while Instant::now() < deadline {
         let mut delay = Duration::from_secs(interval);
-        match timeout_at(deadline, client.get(&path)).await {
+        match timeout_at(deadline, client.jmap("HailSubmission/status", &args)).await {
             Err(_) => {
                 failure = Some(Error::transport());
                 break;
@@ -108,7 +108,7 @@ pub async fn inbox(
     interval: u64,
 ) -> Result<Value, Error> {
     use tokio::signal::unix::{SignalKind, signal};
-    if from.is_some_and(|s| !DID.is_match(s)) || after.is_some_and(|s| !cursor("inbox", s)) {
+    if from.is_some_and(|s| !DID.is_match(s)) || after.is_some_and(|s| !jmap::valid_state(s)) {
         return Err(Error::usage("Invalid inbox wait selection or bounds"));
     }
     let mut sigint = signal(SignalKind::interrupt())
@@ -119,41 +119,32 @@ pub async fn inbox(
     let mut continuation = after.map(str::to_owned);
     let mut interrupted = false;
     let polling = async {
+        let mut account = None;
         loop {
-            let mut query = Vec::new();
-            if let Some(from) = from {
-                query.push(("from", from));
-            }
-            if let Some(ref value) = continuation {
-                query.push(("after", value.as_str()));
-            }
-            let path = format!("/inbox/updates?{}", crate::reads::query(&query));
             let mut delay = Duration::from_secs(interval);
-            match client.get(&path).await {
+            let next = async {
+                if account.is_none() {
+                    account = Some(jmap::message_account(client).await?);
+                }
+                let account = account.as_deref().unwrap();
+                if continuation.is_none() {
+                    continuation = Some(jmap::inbox_baseline(client, account).await?);
+                }
+                jmap::inbox_changes(client, account, continuation.as_deref().unwrap(), from).await
+            }
+            .await;
+            match next {
                 Ok(mut result) => {
-                    let valid = result["messages"].as_array().is_some_and(|rows| {
-                        rows.len() <= 50
-                            && rows.iter().all(|r| {
-                                r["messageId"].as_str().is_some_and(|s| ID.is_match(s))
-                                    && r["sender"].as_str().is_some_and(|s| {
-                                        DID.is_match(s) && from.is_none_or(|f| f == s)
-                                    })
-                            })
-                    });
-                    if !valid
-                        || !result["cursor"]
-                            .as_str()
-                            .is_some_and(|s| cursor("inbox", s))
-                        || !result["hasMore"].is_boolean()
-                    {
-                        return Err(Error::response("Invalid inbox update page"));
-                    }
                     continuation = result["cursor"].as_str().map(str::to_owned);
                     if !result["messages"].as_array().unwrap().is_empty() {
-                        result["contentTrust"] = "untrusted".into();
                         result["wait"] =
                             json!({"completed":true,"timedOut":false,"interrupted":false});
                         return Ok(result);
+                    }
+                    // A page can contain only updates, deletions or other senders.
+                    // Drain it immediately; delaying here can starve later creations.
+                    if result["hasMore"] == true {
+                        continue;
                     }
                 }
                 Err(error) => {
@@ -174,8 +165,10 @@ pub async fn inbox(
         _ = tokio::time::sleep_until(deadline) => {}
         result = polling => return result,
     }
-    Ok(json!({"messages":[],"cursor":continuation,"hasMore":false,
-        "wait":{"completed":false,"timedOut":Instant::now() >= deadline,"interrupted":interrupted}}))
+    Ok(
+        json!({"messages":[],"cursor":continuation,"hasMore":false,"contentTrust":"untrusted",
+        "wait":{"completed":false,"timedOut":Instant::now() >= deadline,"interrupted":interrupted}}),
+    )
 }
 
 #[cfg(not(unix))]

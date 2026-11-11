@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {setMessageRead,removeReceivedMessage} from "$lib/jmap.js";
   import Toast from "$lib/Toast.svelte";
   import {onMount} from 'svelte';
   import {goto, invalidateAll} from '$app/navigation';
@@ -25,7 +26,7 @@
   async function markUnread() {
     busy = true; error = '';
     try {
-      for (const message of messages) await mailboxRequest(`inbox/${encodeURIComponent(message.sender)}/${encodeURIComponent(message.messageId)}/mark-unread`, {});
+      for (const message of messages) await setMessageRead(message.sender,message.messageId,false);
       if (onmarkedunread) await onmarkedunread();
       else if (returnTo) await goto(returnTo, {invalidateAll: true});
       else await invalidateAll();
@@ -36,7 +37,7 @@
     if (busy) return;
     busy = true; error = '';
     try {
-      const settings = await mailboxRequest('message-preferences');
+      const settings = await mailboxRequest('HailMailbox/view',{view:'settings'});
       trashEnabled = settings.trashEnabled !== false;
       if (trashEnabled) await remove();
       else confirming = true;
@@ -49,7 +50,7 @@
     // Keep requests bounded, and retain failed messages for retry.
     for (const message of [...messages]) {
       try {
-        await mailboxRequest(`inbox/${encodeURIComponent(message.sender)}/${encodeURIComponent(message.messageId)}/delete`, {});
+        await removeReceivedMessage(message.sender,message.messageId,trashEnabled);
         removed.push(message);
       } catch { /* Report all failures together after processing the selection. */ }
     }

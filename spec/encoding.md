@@ -53,11 +53,11 @@ Examples in object specifications are diagnostic JSON unless explicitly identifi
 
 ## COSE_Sign1 Profile
 
-Every object in the COSE registry below is one tagged COSE_Sign1 structure under RFC 9052. The separately domain-separated transfer records in [transfer-formats.md](transfer-formats.md) use their explicitly defined detached signatures instead:
+Every object in the COSE registry below is one tagged COSE_Sign1 structure under RFC 9052. Envelopes and snapshots use the RFC 9995 hash profile below. The following direct-payload profile applies to the other registered objects. Transfer handshake records retain their separately defined signatures in [transfer-formats.md](transfer-formats.md):
 
 ```cbor-diag
 18([
-  << { 1: -19, 3: "application/hail-envelope+cbor", 4: h'...' } >>,
+  << { 1: -19, 3: "application/hail-grant+cbor", 4: h'...' } >>,
   {},
   h'...',
   h'...'
@@ -84,6 +84,46 @@ Rules:
 The object-specific protected content type, signed payload `type`, fixed algorithm, exact key role, and closed schema jointly provide domain separation. A verifier validates every one of those properties rather than only the cryptographic signature.
 
 The term **complete signed representation bytes** means the exact complete tagged deterministic COSE_Sign1 bytes.
+
+## RFC 9995 hash profile
+
+Ordinary envelopes use [RFC 9995](https://www.rfc-editor.org/rfc/rfc9995.html)
+with exactly these protected labels: `1: -19` (Ed25519), `4: kid`,
+`258: -16` (SHA-256), `259: "application/hail-envelope+cbor"`.
+The embedded COSE payload is the 32-byte SHA-256 of the exact deterministic
+closed envelope descriptor. The unprotected map contains exactly
+`"https://haili.app/ns/racr/preimage": descriptor_bytes`. This domain-controlled
+text label is a RACR extension, not a registered numeric COSE label.
+
+Tag 18, deterministic encoding, empty external AAD, 64-byte Ed25519 signature,
+and the sender's exact `#hail-messaging` key role remain required. Labels 3 and
+260, unknown headers, detached/null digests, and alternate preimage locations
+are prohibited. Verify the preimage hash before exposing descriptor fields;
+verify the signature and current authority before admission or body retrieval.
+The descriptor is not another signed envelope. Its application schema versions
+1–4 and all authorization rules remain unchanged.
+
+```text
+protected = deterministicCBOR({1: -19, 4: UTF8(kid), 258: -16,
+                              259: "application/hail-envelope+cbor"})
+digest = SHA256(descriptor_bytes)
+input = deterministicCBOR(["Signature1", protected, h'', digest])
+wire = deterministicCBOR(18([protected,
+       {"https://haili.app/ns/racr/preimage": descriptor_bytes}, digest,
+       Ed25519(input)]))
+```
+
+Limits: descriptor 16384 bytes, complete envelope 17408 bytes, protected header
+1024 bytes. The descriptor hash remains `envelope_digest`; it is not the hash of
+the complete signed representation. Other objects keep their documented digest
+domains. Current admission MUST reject the superseded direct-payload envelope.
+Reading saved envelopes uses this same current profile; no superseded format
+is supported. See [account history](account-history.md).
+
+Snapshots use the same signature structure but an empty unprotected map and the
+exact manifest carried separately. Their purpose/version-specific label 259 and
+limits are defined in [transfer formats](transfer-formats.md#snapshot-profile-and-standardization-boundary).
+The registry's envelope content type denotes label 259; other rows use label 3.
 
 ## Signed Object Types
 
@@ -200,8 +240,8 @@ The common signed-object validation sequence is:
 
 1. Enforce HTTP method, media type, content coding, framing, and representation-size requirements.
 2. Perform bounded structural CBOR and COSE decoding.
-3. Require tag 18, the exact four-element COSE_Sign1 shape, deterministic protected headers, an empty unprotected map, bounded embedded payload, and a 64-byte signature.
-4. Require the embedded payload's exact deterministic encoding and validate its closed schema and inexpensive field relationships.
+3. Require tag 18, the exact four-element COSE_Sign1 shape, deterministic protected headers, the profile-specific closed unprotected map, bounded embedded payload, and a 64-byte signature.
+4. For hash envelopes, validate the digest/preimage binding first. Require the application descriptor's (or direct payload's) exact deterministic encoding and validate its closed schema and inexpensive field relationships.
 5. Apply any object-specific privacy-safe preliminary lookup.
 6. Resolve and validate the protected `kid`, its controller, algorithm, and required Hail key role.
 7. Verify the COSE signature and require the authenticated signer to equal the applicable signed party.
@@ -215,7 +255,7 @@ Hail defines one deterministic CBOR encoding and the COSE profile above, plus th
 
 ## Structural Schemas
 
-The draft CDDL structures for protocol objects are maintained in [hail.cddl](hail.cddl). The current transfer manifest and logical history record shapes are defined by [JSON Schema](schemas/account-history-v7-v8.json) and [account-history.md](account-history.md). They define representation-level shapes and sizes. The object specifications remain authoritative for identifier grammar, Unicode normalization, ordering, conditional presence, cross-field relationships, authorization, and state transitions until those constraints are also available in executable validators.
+The draft CDDL structures for protocol objects are maintained in [hail.cddl](hail.cddl). The current transfer manifest and logical history record shapes are defined by [JSON Schema](schemas/account-history-v11-v12.json) and [account-history.md](account-history.md). They define representation-level shapes and sizes. The object specifications remain authoritative for identifier grammar, Unicode normalization, ordering, conditional presence, cross-field relationships, authorization, and state transitions until those constraints are also available in executable validators.
 
 ## Implementation Deliverables
 

@@ -17,7 +17,7 @@ export async function load({cookies, url, depends, untrack = <T>(fn:()=>T)=>fn()
     try {
       const {account, client} = await canaryAccount(cookies, url);
       accountAvatar = {did:account.did,src:`/media/avatars/${encodeURIComponent(account.did)}`};
-      const counts = await client.request("/unread-counts");
+      const counts = await client.jmap("HailMailbox/view",{view:"unreadCounts"});
       if (typeof counts.unseenConnections === "number" && Number.isSafeInteger(counts.unseenConnections) && counts.unseenConnections >= 0) unseenConnections = counts.unseenConnections;
       if (typeof counts.subscriptions === "number" && typeof counts.connections === "number" && Number.isSafeInteger(counts.subscriptions) && counts.subscriptions >= 0 && Number.isSafeInteger(counts.connections) && counts.connections >= 0) unreadCounts = {subscriptions:counts.subscriptions,connections:counts.connections};
     } catch {

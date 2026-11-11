@@ -159,7 +159,7 @@ func TestPositiveVectors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			structure, err := SigStructure(parsed.protected, parsed.data.payloadBytes)
+			structure, err := SigStructure(parsed.protected, parsed.signaturePayload)
 			if err != nil {
 				t.Fatal(err)
 			}

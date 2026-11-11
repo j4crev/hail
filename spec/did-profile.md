@@ -477,3 +477,11 @@ The remaining production requirements are:
 
 Production onboarding custody, backup, monitoring and public write-registry
 selection remain governed by [account-onboarding.md](account-onboarding.md).
+
+## Retrieval request authority
+
+The required [RFC 9421 retrieval profile](retrieval-signatures.md) uses the
+recipient's current `#hail-messaging` Ed25519 key. It uses HTTP algorithm name
+`ed25519`, not a COSE algorithm number. Resolve the recipient from the locally
+authorized token record and enforce the same current-key and PLC freshness
+rules; removed keys do not authorize new requests.

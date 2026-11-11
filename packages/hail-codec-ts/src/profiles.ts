@@ -53,7 +53,7 @@ export const SIGNED_PROFILES: Readonly<
     contentType: "application/hail-envelope+cbor",
     signerField: "from",
     keyRole: "hail-messaging",
-    maximumRepresentationBytes: 16_384,
+    maximumRepresentationBytes: 17_408,
   },
   "hail.connection-grant": {
     type: "hail.connection-grant", contentType: "application/hail-connection-grant+cbor",

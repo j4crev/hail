@@ -29,5 +29,8 @@
   },
   "overrides": {
     "cookie": "0.7.2"
+  },
+  "patchedDependencies": {
+    "structured-headers@2.1.1": "patches/structured-headers@2.1.1.patch"
   }
 }

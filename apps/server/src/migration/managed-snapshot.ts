@@ -1,3 +1,6 @@
+import {SENT_TABLES,collectSentHistory,validateSentHistory} from './sent-history.js';
+import {DRAFT_TABLES,collectDraftHistory,validateDraftHistory} from './draft-history.js';
+import {signSnapshot,inspectSnapshotSignature} from './snapshot-signature.js';
 import {ATTACHMENT_TABLES,collectAttachmentHistory,validateAttachmentHistory} from './attachment-history.js';
 import {collectConversationHistory,conversationHistoryDigest,type ConversationHistory} from './conversation-history.js';
 import { createHash } from "node:crypto";
@@ -21,7 +24,7 @@ const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const DID = /^did:plc:[a-z2-7]{24}$/;
 
 export const MANAGED_TRANSFER_TABLES = [
-  ...ATTACHMENT_TABLES,
+  ...ATTACHMENT_TABLES,...DRAFT_TABLES,...SENT_TABLES,
   "provider_accounts", "account_keys", "managed_custody_evidence", "plc_operation_evidence", "address_bindings",
   "sender_profiles", "grant_lineages", "grant_revisions", "grant_consent_evidence", "grant_publications",
   "detached_bodies", "body_authorizations", "sent_envelopes", "received_envelopes", "reply_capabilities",
@@ -35,7 +38,7 @@ type ManagedTransferTable = (typeof MANAGED_TRANSFER_TABLES)[number];
 export type ManagedTransferTables = Record<ManagedTransferTable, Record<string, unknown>[]>;
 
 export interface ManagedTransferManifest {
-  version: 4 | 6 | 8; transferId: string; did: string; accountId: string;
+  version: 12; transferId: string; did: string; accountId: string;
   conversations?:ConversationHistory;conversationCheckpointDigest?:string;
   connections?:ConnectionHistory;connectionCheckpointDigest?:string;
   sourceServiceBase: string; destinationServiceBase: string;
@@ -79,19 +82,13 @@ function hexKey(value: unknown, label: string): string {
   return Buffer.from(bytea(value, label)).toString("hex");
 }
 
-export function managedSnapshotSignatureInput(hash: Uint8Array,version:4|6|8=4): Uint8Array<ArrayBuffer> {
-  const MANAGED_CONTEXT=new TextEncoder().encode(`hail-migration-snapshot-v${version}\0`);
-  const value = new Uint8Array(MANAGED_CONTEXT.length + hash.length);
-  value.set(MANAGED_CONTEXT); value.set(hash, MANAGED_CONTEXT.length); return value;
-}
-
 export function managedHistoryCheckpoint(manifest: Omit<ManagedTransferManifest, "historyCheckpointDigest">): Uint8Array {
   const tables = manifest.tables;
   const checkpoint = {
     type: "hail.managed-migration-history-checkpoint", version: 1, did: manifest.did,
     source_generation: manifest.sourceGeneration,
-    ...((manifest.version===6||manifest.version===8)?{connection_checkpoint_digest:manifest.connectionCheckpointDigest}:{}),
-    ...(manifest.version===8?{conversation_checkpoint_digest:manifest.conversationCheckpointDigest}:{}),
+    connection_checkpoint_digest:manifest.connectionCheckpointDigest,
+    conversation_checkpoint_digest:manifest.conversationCheckpointDigest,
     plc: tables.plc_operation_evidence.map((row) => ({ id: row.id, operation_cid: row.operation_cid,
       previous_cid: row.previous_cid ?? "", state: row.submission_state,
       dag_cbor_sha256: encodeBase64Url(sha256(bytea(row.dag_cbor, "PLC operation"))) })),
@@ -128,10 +125,10 @@ export function validateManagedTransferManifest(bytes: Uint8Array): ManagedTrans
     "destinationServiceBase", "ownerRecoveryPublicKey", "sourceIdentityPublicKey",
     "destinationRotationPublicKey", "destinationIdentityPublicKey", "destinationMessagingPublicKey",
      "sourceGeneration", "historyCheckpointDigest", "custodyProfile", "capturedAt", "tables"];
-  if((manifest.version===6||manifest.version===8))expectedFields.push("connections","connectionCheckpointDigest");
-  if(manifest.version===8)expectedFields.push("conversations","conversationCheckpointDigest");
+  expectedFields.push("connections","connectionCheckpointDigest");
+  expectedFields.push("conversations","conversationCheckpointDigest");
   if (Object.keys(manifest).length !== expectedFields.length || expectedFields.some((field) => !Object.hasOwn(manifest, field)) ||
-    ![4,6,8].includes(manifest.version) || manifest.custodyProfile !== "managed" || !UUID.test(manifest.transferId) ||
+    manifest.version!==12 || manifest.custodyProfile !== "managed" || !UUID.test(manifest.transferId) ||
     !DID.test(manifest.did) || !UUID.test(manifest.accountId) || !Number.isSafeInteger(manifest.sourceGeneration) ||
     manifest.sourceGeneration < 1 || typeof manifest.capturedAt !== "string" || !Number.isFinite(Date.parse(manifest.capturedAt)) ||
     typeof manifest.historyCheckpointDigest !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(manifest.historyCheckpointDigest) ||
@@ -362,6 +359,8 @@ export function validateManagedTransferManifest(bytes: Uint8Array): ManagedTrans
     throw new Error("Managed history checkpoint does not match the transported history");
   }
   validateAttachmentHistory(manifest);
+  validateDraftHistory(manifest);
+  validateSentHistory(manifest);
   return manifest;
 }
 
@@ -405,7 +404,8 @@ export class ManagedMigrationExportService {
           source_messaging_public_key,custody_profile FROM provider_migration_exports
           WHERE transfer_id=${fence.transferId}`)[0];
         if (!existing || existing.custody_profile !== "managed") throw new Error("Managed export is missing");
-        validateManagedTransferManifest(new Uint8Array(existing.manifest_bytes));
+        const retainedManifest=validateManagedTransferManifest(new Uint8Array(existing.manifest_bytes));
+        inspectSnapshotSignature(existing.signature,existing.manifest_bytes,retainedManifest.version,retainedManifest.did);
         return { bytes: new Uint8Array(existing.manifest_bytes), digest: new Uint8Array(existing.manifest_digest),
           signature: new Uint8Array(existing.signature), sourceMessagingPublicKey: existing.source_messaging_public_key };
       }
@@ -427,7 +427,7 @@ export class ManagedMigrationExportService {
       const capturedAt=this.now().toISOString();
       const connections=await collectConnectionHistory(tx as SQL,{accountId:fence.accountId,did:fence.did,sourceGeneration:generation,sourceServiceBase:this.serviceBase},capturedAt);
       const conversations=await collectConversationHistory(tx as SQL,{accountId:fence.accountId,did:fence.did,sourceGeneration:generation,sourceServiceBase:this.serviceBase},capturedAt);
-      const base = { version: 8 as const, transferId: fence.transferId, did: fence.did, accountId: fence.accountId,
+      const base = { version: 12 as const, transferId: fence.transferId, did: fence.did, accountId: fence.accountId,
         sourceServiceBase: this.serviceBase, destinationServiceBase: fence.destinationServiceBase,
         ownerRecoveryPublicKey: fence.ownerRecoveryPublicKey, sourceIdentityPublicKey: fence.sourceIdentityPublicKey,
         destinationRotationPublicKey: fence.destinationRotationPublicKey,
@@ -443,8 +443,7 @@ export class ManagedMigrationExportService {
       const secret = await this.encryptor.decrypt(fence.accountId, messaging.role, messaging.algorithm,
         messaging.publicKey, messaging);
       let signature: Uint8Array;
-      try { signature = new Uint8Array(await crypto.subtle.sign("Ed25519",
-        await importEd25519PrivateKey(secret), managedSnapshotSignatureInput(hash,manifest.version))); }
+      try { signature = await signSnapshot(bytes,manifest.version,manifest.did,await importEd25519PrivateKey(secret)); }
       finally { secret.fill(0); }
       await tx`INSERT INTO provider_migration_exports(transfer_id,did,manifest_bytes,manifest_digest,
         source_messaging_public_key,signature,signing_plc_document,signing_plc_data,signing_plc_operation_log,custody_profile)
@@ -510,7 +509,7 @@ async function collectManagedTables(tx: SQL, did: string, accountId: string): Pr
     SELECT evidence_digest FROM public_envelope_authority_evidence WHERE local_account_id=${accountId}
     UNION SELECT evidence_digest FROM public_grant_authority_evidence WHERE local_account_id=${accountId}
     UNION SELECT evidence_digest FROM public_signing_authority_evidence WHERE local_account_id=${accountId}) ORDER BY evidence_digest`);
-  return { ...await collectAttachmentHistory(tx as SQL,accountId,did), provider_accounts, account_keys, managed_custody_evidence, plc_operation_evidence, address_bindings,
+  return { ...await collectAttachmentHistory(tx as SQL,accountId,did),...await collectDraftHistory(tx as SQL,accountId),...await collectSentHistory(tx as SQL,accountId), provider_accounts, account_keys, managed_custody_evidence, plc_operation_evidence, address_bindings,
     sender_profiles, grant_lineages: [...ownedGrants, ...collocatedGrants],
     grant_revisions: [...ownedRevisions, ...collocatedRevisions],
     grant_consent_evidence: [...ownedConsent, ...collocatedConsent], grant_publications, detached_bodies,

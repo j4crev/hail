@@ -1,3 +1,4 @@
+import {signTestRetrieval} from "./support/retrieval-signing.js";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
@@ -159,7 +160,9 @@ describe("SafeHttpsTransport", () => {
     const transport = new SafeHttpsTransport({ async lookup() { return [{ address: "1.1.1.1", family: 4 }]; } });
     const path = `https://example.com/hail/bodies/${"A".repeat(43)}`;
     const headers = { Authorization: `Bearer ${"B".repeat(43)}` };
-    expect((await transport.fetchBody(new Request(path, { headers }))).status).toBe(404);
+    await expect(transport.fetchBody(new Request(path,{headers}))).rejects.toThrow("requires a recipient HTTP signature");
+    const signed=await signTestRetrieval(new Request(path,{headers}),`did:plc:${"a".repeat(24)}`);
+    expect((await transport.fetchBody(signed)).status).toBe(404);
     expect(options).toMatchObject({ hostname: "example.com", path: `/hail/bodies/${"A".repeat(43)}`,
       method: "GET", headers: expect.objectContaining({ authorization: headers.Authorization }) });
     await expect(transport.fetchBody(new Request(`${path}?token=secret`, { headers }))).rejects.toThrow();

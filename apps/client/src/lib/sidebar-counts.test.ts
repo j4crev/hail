@@ -1,7 +1,7 @@
 import {beforeEach,expect,it,vi} from 'vitest';
 const fixture=vi.hoisted(()=>({request:vi.fn(),configured:true}));
 vi.mock('$env/dynamic/private',()=>({env:{}}));
-vi.mock('$lib/server/canary.js',()=>({isConfigured:()=>fixture.configured,canaryAccount:async()=>({account:{did:'did:plc:test'},client:{request:fixture.request}})}));
+vi.mock('$lib/server/canary.js',()=>({isConfigured:()=>fixture.configured,canaryAccount:async()=>({account:{did:'did:plc:test'},client:{jmap:fixture.request}})}));
 import {load} from '../routes/+layout.server.js';
 const event=()=>({cookies:{get:()=>"test-session"},url:new URL('https://example.com/sent'),depends:vi.fn()});
 beforeEach(()=>{fixture.configured=true;fixture.request.mockReset();});
@@ -10,7 +10,7 @@ it('loads both totals on non-inbox pages and subscribes to read/cleanup invalida
   const input=event();
   expect(await load(input as never)).toMatchObject({unreadCounts:{subscriptions:72,connections:9}});
   expect(input.depends).toHaveBeenCalledWith('hail:mailbox');
-  expect(fixture.request).toHaveBeenCalledWith('/unread-counts');
+  expect(fixture.request).toHaveBeenCalledWith('HailMailbox/view',{view:'unreadCounts'});
 });
 it('omits unavailable or malformed counts without blocking the layout',async()=>{
   for(const counts of [{subscriptions:-1,connections:0},{subscriptions:0.5,connections:0},{}]){

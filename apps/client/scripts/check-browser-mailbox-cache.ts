@@ -1,5 +1,18 @@
+import {fixtureMessageMutation} from './jmap-read-fixture.js';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
+async function fixtureOperation(origin:string,name:string,args:Record<string,unknown>={}){
+ const capability='https://haili.app/ns/jmap/account';
+ const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
+ const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];
+ assert.equal(typeof accountId,'string');assert(session.accounts[accountId].accountCapabilities[capability]);
+ const response=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{...args,accountId},'fixture']]})});
+ assert(response.ok);
+ const envelope=await response.json();assert.equal(envelope.methodResponses.length,1);
+ const [method,result,tag]=envelope.methodResponses[0];
+ assert.equal(method,name,JSON.stringify(result));assert.equal(tag,'fixture');assert.equal(result.accountId,accountId);
+ return result;
+}
 const sharedMode=process.argv.includes('--shared');
 const work=await mkdtemp('/tmp/haili-layout-');
 const reserve=Bun.serve({hostname:'127.0.0.1',port:0,fetch:()=>new Response()});
@@ -44,8 +57,8 @@ await wait(async()=>evaluate(`Array.from(document.querySelectorAll('button')).so
 await evaluate('window.fetch=window.realFetch');
 // An external mutation is detected without disturbing active selection.
 await evaluate(`document.querySelector('.selection-avatar').click()`);
-const first=(await(await fetch(origin+'/api/v1/account/inbox?kind=subscriptions')).json()).messages[0];
-await fetch(origin+'/api/v1/account/inbox/'+encodeURIComponent(first.sender)+'/'+first.messageId+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+const first=(await fixtureOperation(origin,'HailMailbox/view',{view:'inboxFeed',channel:'subscriptions',after:null})).messages[0];
+await fixtureMessageMutation(origin,first,{isInTrash:true});
 await evaluate(`window.dispatchEvent(new Event('hail:mailbox-changed'))`);
 await wait(async()=>evaluate(`document.querySelector('main').textContent.includes('Updates available')`));
 assert.equal(await rows(),2);
@@ -56,7 +69,7 @@ assert(!(await evaluate(`Array.from(document.querySelectorAll('.message-row a'))
 // A same-tab mutation invalidates a warmed folder before navigation returns to it.
 await evaluate(`document.querySelector('nav[aria-label="Main navigation"] a[href="/sent"]').click()`);
 await wait(async()=>evaluate(`document.querySelector('main h1')?.textContent==='Sent'`));
-await evaluate(`fetch('/api/v1/account/trash/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[${JSON.stringify({sender:first.sender,messageId:first.messageId})}]})})`);
+await evaluate(`(${fixtureMessageMutation.toString()})(location.origin,${JSON.stringify(first)},{isInTrash:false})`);
 await evaluate(`document.querySelector('nav[aria-label="Main navigation"] a[href="/?view=subscriptions"]').click()`);
 await wait(async()=>evaluate(`document.querySelector('main h1')?.textContent==='Feed'`));
 assert((await evaluate(`Array.from(document.querySelectorAll('.message-row a')).map(a=>a.href).join(' ')`)).includes(first.messageId));

@@ -1,3 +1,4 @@
+import {readDraft,saveDraft} from '$lib/server/jmap-drafts.js';
 import {parseBuilderDraft,validateBody,plainText} from '@racrproto/content-builder/core';
 import {formAttachments} from '$lib/server/attachments.js';
 import {parseDraft,draftIdPattern} from "@racrproto/client-support/drafts";
@@ -23,25 +24,24 @@ export async function load({url,cookies}) {
   const draftId=url.searchParams.get("draft");
   if(draftId&&!draftIdPattern.test(draftId))error(400,"Invalid draft ID");
   let draft=null;
-  if(draftId){try{draft=parseDraft(await client.request(`/drafts/${draftId}`));}catch{error(404,"Draft unavailable. It may have been sent, deleted, or changed on another device.");}}
+  if(draftId){try{draft=await readDraft(client,draftId);}catch{error(404,"Draft unavailable. It may have been sent, deleted, or changed on another device.");}}
   const forwardSender=draft?.content.forward?.sender??url.searchParams.get("forwardSender"),forwardMessage=draft?.content.forward?.messageId??url.searchParams.get("forwardMessage");
   if((forwardSender||forwardMessage)&&(!forwardSender||!forwardMessage||!UUID7.test(forwardMessage)||(draft?.content.audience??url.searchParams.get("audience"))!=="connections"))error(400,"Invalid forward source");
   const kind=(draft?.content.audience??url.searchParams.get("audience"))==="connections"?"connections":"category";
   const [audiences,targets]=await Promise.all([
-    client.request("/publications/audiences").then(publicationAudiences),
-    kind==="connections"?client.request("/connection-messages/targets").then(connectionMessageTargets):{maxRecipients:100,connections:[]},
+    client.jmap("HailSubmission/audiences").then(publicationAudiences),
+    kind==="connections"?client.jmap("HailSubmission/targets").then(connectionMessageTargets):{maxRecipients:100,connections:[]},
   ]);
-  const endpoint=kind==="connections"?"/connection-messages":"/publications";
   const id=url.searchParams.get("publication");if(id&&!UUID7.test(id))error(400,"Invalid publication ID");
   // A validated provider record confirms durable acceptance, independently of recipient delivery.
   let status:ReturnType<typeof publicationStatus>|null=null;
-  if(id){try{status=publicationStatus(await client.request(`${endpoint}/${id}`),kind);}
+  if(id){try{status=publicationStatus(await client.jmap("HailSubmission/status",{kind,id}),kind);}
     catch(cause){if(cause instanceof AccountApiError&&cause.status===404)error(404,"Publication unavailable for this account");throw cause;}
     if(status.publicationId!==id)error(502,"Provider returned another publication");}
   const preferred=url.searchParams.get("connection");
   let forward:ReturnType<typeof forwardSource>|null=null;
   if(forwardSender&&forwardMessage){
-    try {forward=forwardSource(await client.request(`/inbox/${encodeURIComponent(forwardSender)}/${encodeURIComponent(forwardMessage)}`),{sender:forwardSender,messageId:forwardMessage});}
+    try {forward=forwardSource(await client.jmap("HailMailbox/view",{view:"read",sender:forwardSender,messageId:forwardMessage}),{sender:forwardSender,messageId:forwardMessage});}
     catch {error(404,"Original message unavailable for forwarding");}
   }
   let builderInitial:Awaited<ReturnType<typeof builderDraft>>|null=null;
@@ -61,7 +61,7 @@ export const actions={save:async({request,cookies,url})=>{
   try{
     const content=await draftForm(form);
     const attachments=await formAttachments(form,client);if(attachments.length)content.attachments=attachments;
-    const savedDraft=parseDraft(await client.request(`/drafts/${id}/save`,{revision,content}));
+    const savedDraft=await saveDraft(client,id,revision,content);
     return {savedDraft};
   }catch(cause){return fail(cause instanceof AccountApiError&&cause.status===409?409:400,{error:cause instanceof AccountApiError?"Draft could not be saved. It may have changed on another device; reopen it from Drafts before trying again.":cause instanceof Error?cause.message:"Unable to save draft."});}
 },publish:async({request,cookies,url})=>{
@@ -102,7 +102,7 @@ export const actions={save:async({request,cookies,url})=>{
     }
     if(forwarding){
       try {
-        const source=forwardSource(await client.request(`/inbox/${encodeURIComponent(forwardSender)}/${encodeURIComponent(forwardMessage)}`),{sender:forwardSender,messageId:forwardMessage});
+        const source=forwardSource(await client.jmap("HailMailbox/view",{view:"read",sender:forwardSender,messageId:forwardMessage}),{sender:forwardSender,messageId:forwardMessage});
         body=forwardBody(source,text.trim());
       } catch {return fail(400,{error:"The original message is unavailable for forwarding. Return to your inbox and try again."});}
       try {
@@ -115,12 +115,12 @@ export const actions={save:async({request,cookies,url})=>{
     if(attachments.length+forwardedFiles.length>20||[...attachments,...forwardedFiles].reduce((n,f)=>n+f.size,0)>25*1024*1024)return fail(400,{error:'Attachments must total at most 25 MiB across 20 files.'});
     for(const file of forwardedFiles){
       const response=await client.attachment(`/attachments/${encodeURIComponent(forwardSender)}/${encodeURIComponent(forwardMessage)}/${file.digest.value}`);
-      attachments.push(await client.request('/attachments',{filename:file.filename,data:Buffer.from(await response.arrayBuffer()).toString('base64url')}) as typeof attachments[number]);
+      attachments.push(await client.uploadAttachment(file.filename,new Uint8Array(await response.arrayBuffer())) as typeof attachments[number]);
     }
     if(attachments.length)body.attachments=attachments;
     try{
-      const result=publicationStatus(await client.request(kind==="connections"?"/connection-messages":"/publications",{publicationId:id,...(Number(field("draftRevision"))>0?{draftRevision:Number(field("draftRevision"))}:{}),
-        ...(kind==="connections"?{connections,delivery:connections.length>1?"shared":"private"}:{category,allowReplies:allowReply}),body}),kind);
+      const result=publicationStatus(await client.jmap("HailSubmission/submit",{kind,input:{publicationId:id,...(Number(field("draftRevision"))>0?{draftRevision:Number(field("draftRevision"))}:{}),
+        ...(kind==="connections"?{connections,delivery:connections.length>1?"shared":"private"}:{category,allowReplies:allowReply}),body}}),kind);
       if(result.publicationId!==id)throw new Error("Provider acknowledged another publication");
     }catch{
       // A lost acceptance response must not cause another publication or another audience snapshot.
@@ -135,7 +135,7 @@ export const actions={save:async({request,cookies,url})=>{
   const {client}=await canaryAccount(cookies,url),form=await request.formData(),id=form.get("publicationId");
   if(typeof id!=="string"||!UUID7.test(id))return fail(400,{error:"Invalid publication ID"});
   const kind=url.searchParams.get("audience")==="connections"?"connections":"category";
-  try{const stopped=publicationStatus(await client.request(`${kind==="connections"?"/connection-messages":"/publications"}/${id}/cancel`,{}),kind);if(stopped.publicationId!==id)throw new Error("Another publication was returned");}
+  try{const stopped=publicationStatus(await client.jmap("HailSubmission/cancel",{kind,id}),kind);if(stopped.publicationId!==id)throw new Error("Another publication was returned");}
   catch{return fail(409,{error:"Publication work may be in progress. Refresh its status and retry cancellation.",publicationId:id});}
   redirect(303,`/compose?${kind==="connections"?"audience=connections&":""}publication=${id}`);
 }};

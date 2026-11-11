@@ -80,3 +80,5 @@ export {
   createWebCryptoVerifier,
   type HailPublicKeyResolver,
 } from "./webcrypto.js";
+
+export {inspectHashEnvelope,verifyHashEnvelope,signHashEnvelope,encodeHashEnvelope,hashEnvelopeSignatureInput,hashEnvelopeProtected,HASH_ENVELOPE_PREIMAGE,ENVELOPE_DESCRIPTOR_MAX_BYTES,ENVELOPE_REPRESENTATION_MAX_BYTES} from './hash-envelope.js';

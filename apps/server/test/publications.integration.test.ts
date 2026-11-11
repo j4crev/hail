@@ -10,7 +10,10 @@ import {ProviderDatabase} from "../src/db/database.js";
 import {AccountApiRepository} from "../src/accounts/repository.js";
 import {AccountMessaging} from "../src/accounts/messaging.js";
 import {AccountPublications} from "../src/accounts/publications.js";
-import {registerAccountApiRoutes} from "../src/accounts/routes.js";
+import {registerJmapRoutes} from "../src/jmap/routes.js";
+import {JmapMessages,JMAP_CORE} from "../src/jmap/messages.js";
+import {JmapOperations} from "../src/jmap/operations.js";
+import {HAIL_ACCOUNT} from "../src/jmap/collections.js";
 import {BodyRepository} from "../src/bodies/repository.js";
 import {EnvelopeRepository} from "../src/envelopes/repository.js";
 import {EnvelopeService} from "../src/envelopes/service.js";
@@ -69,20 +72,28 @@ it.skipIf(!process.env.DATABASE_URL)("snapshots category audiences, resumes exac
     const credential=await accounts.issue(sender.address,false,undefined,["account:read","grants:read","messages:read","messages:write"]);
     const session=(await accounts.authenticate("Bearer "+credential.token))!;
     const reader=await accounts.issue(sender.address),other=await accounts.issue(users[1]!.address,false,undefined,["messages:read"]);
-    const app=new Hono();registerAccountApiRoutes(app,accounts,grants,service,origin,messaging,undefined,undefined,undefined,undefined,undefined,undefined,origin,publications);
-    const call=(path:string,input?:unknown,token=credential.token)=>app.request(origin+"/api/v1/account/publications"+path,{method:input===undefined?"GET":"POST",
-      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},...(input===undefined?{}:{body:JSON.stringify(input)})});
-    expect((await call("/audiences")).status).toBe(200);
+    const app=new Hono(),jmap=new JmapMessages(db.sql,origin);
+    registerJmapRoutes(app,accounts,jmap,origin,origin,undefined,undefined,undefined,new JmapOperations({accounts,grants,service,messaging,publications}));
+    const call=async(method:string,args:Record<string,unknown>={},token=credential.token)=>{
+      const caller=(await accounts.authenticate("Bearer "+token))!;
+      const response=await app.request(origin+"/jmap",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
+        body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[[method,{accountId:jmap.accountId(caller),...args},"test"]]})});
+      if(!response.ok)return response;
+      const [name,value]=(await response.json() as {methodResponses:[string,Record<string,unknown>,string][]}).methodResponses[0]!;
+      const {accountId:_,...result}=value;
+      return Response.json(result,{status:name==="error"?Number(value.httpStatus??({forbidden:403,invalidArguments:400,notFound:404,requestTooLarge:413} as Record<string,number>)[String(value.type)]??500):200});
+    };
+    expect((await call("HailSubmission/audiences")).status).toBe(200);
     expect(await publications.audiences(session)).toEqual({maxRecipients:100,categories:[{category:"general",subscribers:2},{category:"sales",subscribers:1}]});
     const input={publicationId:uuidV7(),category:"general",text:"Same body for the whole category",allowReplies:true};
-    expect((await call("",input,reader.token)).status).toBe(403);
-    expect((await call("",{...input,recipients:[users[1]!.did]})).status).toBe(400);
-    expect((await call("",{...input,category:"unknown"})).status).toBe(409);
-    const responses=await Promise.all([call("",input),call("",input)]);expect(responses.map(r=>r.status)).toEqual([202,202]);
-    expect((await call("/"+input.publicationId,undefined,other.token)).status).toBe(404);
-    expect((await (await call("",undefined,other.token)).json()).publications).toEqual([]);
+    expect((await call("HailSubmission/submit",{kind:"category",input},reader.token)).status).toBe(403);
+    expect((await call("HailSubmission/submit",{kind:"category",input:{...input,recipients:[users[1]!.did]}})).status).toBe(400);
+    expect((await call("HailSubmission/submit",{kind:"category",input:{...input,category:"unknown"}})).status).toBe(409);
+    const responses=await Promise.all([call("HailSubmission/submit",{kind:"category",input}),call("HailSubmission/submit",{kind:"category",input})]);expect(responses.map(r=>r.status)).toEqual([200,200]);
+    expect((await call("HailSubmission/status",{kind:"category",id:input.publicationId},other.token)).status).toBe(404);
+    expect((await (await call("HailSubmission/recent",{kind:"category"},other.token)).json()).publications).toEqual([]);
     expect((await publications.recent(session)).publications).toMatchObject([{publicationId:input.publicationId,pending:true}]);
-    expect((await call("",{...input,text:"Changed intent"})).status).toBe(409);
+    expect((await call("HailSubmission/submit",{kind:"category",input:{...input,text:"Changed intent"}})).status).toBe(409);
     await subscribe(4);
     expect((await publications.create(session,input)).total).toBe(2);
     await expect(db.sql`UPDATE account_publications SET category='sales' WHERE id=${input.publicationId}`).rejects.toThrow("intent cannot be replaced");
@@ -118,9 +129,9 @@ it.skipIf(!process.env.DATABASE_URL)("snapshots category audiences, resumes exac
     expect(feed.messages.every(message=>message.kind==="category")).toBe(true);
     expect((await messaging.sentSends(session,null,{id:complete.publicationId,kind:"category"})).messages).toHaveLength(1);
     expect((await messaging.sentSends({...session,account_id:users[1]!.id,did:users[1]!.did},null)).messages).toEqual([]);
-    const grouped=await app.request(origin+"/api/v1/account/sent?include=sends",{headers:{Authorization:`Bearer ${credential.token}`}});
+    const grouped=await call("HailMailbox/view",{view:"sentSends"});
     expect(grouped.status).toBe(200);expect((await grouped.json()).messages).toHaveLength(2);
-    const detail=await app.request(origin+`/api/v1/account/sent/${complete.publicationId}?kind=category`,{headers:{Authorization:`Bearer ${credential.token}`}});
+    const detail=await call("HailMailbox/view",{view:"sentSend",messageId:complete.publicationId,kind:"category"});
     expect(detail.status).toBe(200);expect((await detail.json()).messageId).toBe(complete.publicationId);
     const cancel={...input,publicationId:uuidV7()};await publications.create(session,cancel);
     const fence=()=>db.sql`INSERT INTO provider_migration_fences(did,account_id,transfer_id,destination_service_base,state)
@@ -128,7 +139,7 @@ it.skipIf(!process.env.DATABASE_URL)("snapshots category audiences, resumes exac
     await expect(fence()).rejects.toThrow("Finish or cancel");
     await expect(db.sql.begin(async tx=>{await tx`SELECT set_config('hail.returning_account',${sender.id},true)`;
       await tx`UPDATE account_serving_generations SET generation=generation+1 WHERE account_id=${sender.id}`;})).rejects.toThrow("Finish or cancel");
-    expect((await call('/'+cancel.publicationId+'/cancel',{})).status).toBe(200);
+    expect((await call("HailSubmission/cancel",{kind:"category",id:cancel.publicationId})).status).toBe(200);
     expect((await publications.status(session,cancel.publicationId))?.counts.cancelled).toBe(2);
     expect(await publications.workOne()).toBe(false);
     // Cancellation after an ambiguous submission retains the exact already-created envelope's retry.
@@ -188,7 +199,21 @@ it.skipIf(!process.env.DATABASE_URL)("snapshots category audiences, resumes exac
     expect(await publications.status(session,overLimit)).toBeNull();
     const retained=await db.sql.reserve();try{await expect(retained.unsafe(await Bun.file(new URL("../migrations/rollback/0061_publications.sql",import.meta.url)).text())).rejects.toThrow("prevents rollback");}
       finally{await retained.unsafe("ROLLBACK");retained.release();}
-    await fence();expect((await call("",{...input,publicationId:uuidV7()})).status).toBe(409);
+    // Returning activation may replace Grant projections atomically, but a
+    // missing target Grant still fails at commit. Rollback preserves live rows.
+    await expect(db.sql.begin(async tx=>{
+      const orphan=uuidV7();
+      await tx`INSERT INTO account_publications(account_id,id,sender_did,serving_generation,category,body_bytes,request_digest)
+        SELECT account_id,${orphan},sender_did,serving_generation,category,body_bytes,request_digest FROM account_publications WHERE id=${input.publicationId}`;
+      await tx`INSERT INTO publication_targets(account_id,publication_id,grant_id,recipient_did,message_id,state)
+        VALUES(${sender.id},${orphan},${uuidV7()},${users[1]!.did},${uuidV7()},'cancelled')`;
+      await tx`UPDATE account_publications SET sealed=true WHERE id=${orphan}`;
+    })).rejects.toThrow('publication_targets_grant_id_fkey');
+    const rollback=await db.sql.reserve();try{await rollback.unsafe(await Bun.file(new URL('../migrations/rollback/0114_sent_history.sql',import.meta.url)).text());}finally{rollback.release();}
+    expect((await db.sql`SELECT condeferrable FROM pg_constraint WHERE conrelid='publication_targets'::regclass AND conname='publication_targets_grant_id_fkey'`)[0]!.condeferrable).toBe(false);
+    await db.migrate();
+    expect((await db.sql`SELECT condeferrable FROM pg_constraint WHERE conrelid='publication_targets'::regclass AND conname='publication_targets_grant_id_fkey'`)[0]!.condeferrable).toBe(true);
+    await fence();expect((await call("HailSubmission/submit",{kind:"category",input:{...input,publicationId:uuidV7()}})).status).toBe(409);
     expect(await withFreshServingGenerations(db.sql,()=>publications.workOne())).toBe(false);
   }finally{await db.close();await admin.unsafe(`DROP SCHEMA "${schema}" CASCADE`);await admin.close();}
 },60_000);

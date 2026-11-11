@@ -155,7 +155,7 @@ func interopPG(t *testing.T, v any) []byte {
 func historyShape(root, s map[string]any, v any) error {
 	for key := range s {
 		switch key {
-		case "$schema", "$id", "$ref", "title", "description", "definitions", "oneOf", "anyOf", "type", "const", "required", "properties", "additionalProperties", "items", "minimum", "maximum", "pattern", "format", "x-reference-storage", "x-record-key", "enum", "minLength", "maxLength", "minItems", "maxItems":
+		case "$schema", "$id", "$ref", "title", "description", "definitions", "oneOf", "anyOf", "type", "const", "required", "properties", "additionalProperties", "items", "minimum", "maximum", "pattern", "format", "x-reference-storage", "x-record-key", "enum", "minLength", "maxLength", "minItems", "maxItems", "allOf", "if", "then", "else", "not", "dependencies", "uniqueItems":
 		default:
 			return fmt.Errorf("unsupported schema keyword %s", key)
 		}
@@ -176,6 +176,44 @@ func historyShape(root, s map[string]any, v any) error {
 			}
 		}
 	}
+	if all, ok := s["allOf"].([]any); ok {
+		for _, branch := range all {
+			if err := historyShape(root, branch.(map[string]any), v); err != nil {
+				return err
+			}
+		}
+	}
+	if condition, ok := s["if"].(map[string]any); ok {
+		branch := "else"
+		if historyShape(root, condition, v) == nil {
+			branch = "then"
+		}
+		if selected, ok := s[branch].(map[string]any); ok {
+			if err := historyShape(root, selected, v); err != nil {
+				return err
+			}
+		}
+	}
+	if excluded, ok := s["not"].(map[string]any); ok && historyShape(root, excluded, v) == nil {
+		return fmt.Errorf("excluded value")
+	}
+	if m, ok := v.(map[string]any); ok {
+		if dependencies, ok := s["dependencies"].(map[string]any); ok {
+			for name, rule := range dependencies {
+				if _, exists := m[name]; exists {
+					if required, ok := rule.([]any); ok {
+						for _, key := range required {
+							if _, present := m[key.(string)]; !present {
+								return fmt.Errorf("missing dependency %s", key)
+							}
+						}
+					} else if err := historyShape(root, rule.(map[string]any), v); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
 	if choices, ok := s["enum"].([]any); ok {
 		found := false
 		for _, choice := range choices {
@@ -190,7 +228,24 @@ func historyShape(root, s map[string]any, v any) error {
 	if c, ok := s["const"]; ok && !reflect.DeepEqual(c, v) {
 		return fmt.Errorf("constant mismatch")
 	}
-	if kind, ok := s["type"].(string); ok {
+	kind, explicit := s["type"].(string)
+	if !explicit {
+		switch v.(type) {
+		case nil:
+			kind = "null"
+		case bool:
+			kind = "boolean"
+		case float64:
+			kind = "number"
+		case string:
+			kind = "string"
+		case []any:
+			kind = "array"
+		case map[string]any:
+			kind = "object"
+		}
+	}
+	if kind != "" {
 		switch kind {
 		case "null":
 			if v != nil {
@@ -200,9 +255,9 @@ func historyShape(root, s map[string]any, v any) error {
 			if _, ok := v.(bool); !ok {
 				return fmt.Errorf("not boolean")
 			}
-		case "integer":
+		case "integer", "number":
 			n, ok := v.(float64)
-			if !ok || math.Trunc(n) != n {
+			if !ok || kind == "integer" && math.Trunc(n) != n {
 				return fmt.Errorf("not integer")
 			}
 			if lo, ok := s["minimum"].(float64); ok && n < lo {
@@ -241,39 +296,53 @@ func historyShape(root, s map[string]any, v any) error {
 			if !ok {
 				return fmt.Errorf("not array")
 			}
+			if s["uniqueItems"] == true {
+				for i, item := range a {
+					for _, other := range a[:i] {
+						if reflect.DeepEqual(item, other) {
+							return fmt.Errorf("duplicate item")
+						}
+					}
+				}
+			}
 			for _, x := range a {
-				if e := historyShape(root, s["items"].(map[string]any), x); e != nil {
-					return e
-				}
-			}
-		case "object":
-			m, ok := v.(map[string]any)
-			if !ok {
-				return fmt.Errorf("not object")
-			}
-			if req, ok := s["required"].([]any); ok {
-				for _, k := range req {
-					if _, ok := m[k.(string)]; !ok {
-						return fmt.Errorf("missing %s", k)
-					}
-				}
-			}
-			props, _ := s["properties"].(map[string]any)
-			for k, x := range m {
-				if p, ok := props[k]; ok {
-					if e := historyShape(root, p.(map[string]any), x); e != nil {
-						return fmt.Errorf("%s: %w", k, e)
-					}
-				} else if s["additionalProperties"] == false {
-					return fmt.Errorf("extra %s", k)
-				} else if p, ok := s["additionalProperties"].(map[string]any); ok {
-					if e := historyShape(root, p, x); e != nil {
+				if item, exists := s["items"].(map[string]any); exists {
+					if e := historyShape(root, item, x); e != nil {
 						return e
 					}
 				}
 			}
+		case "object":
+			_, ok := v.(map[string]any)
+			if !ok {
+				return fmt.Errorf("not object")
+			}
+
 		default:
 			return fmt.Errorf("unsupported type %s", kind)
+		}
+	}
+	if m, ok := v.(map[string]any); ok {
+		if req, ok := s["required"].([]any); ok {
+			for _, k := range req {
+				if _, ok := m[k.(string)]; !ok {
+					return fmt.Errorf("missing %s", k)
+				}
+			}
+		}
+		props, _ := s["properties"].(map[string]any)
+		for k, x := range m {
+			if p, ok := props[k]; ok {
+				if e := historyShape(root, p.(map[string]any), x); e != nil {
+					return fmt.Errorf("%s: %w", k, e)
+				}
+			} else if s["additionalProperties"] == false {
+				return fmt.Errorf("extra %s", k)
+			} else if p, ok := s["additionalProperties"].(map[string]any); ok {
+				if e := historyShape(root, p, x); e != nil {
+					return e
+				}
+			}
 		}
 	}
 	return nil
@@ -366,7 +435,7 @@ func managedHistoryDigest(t *testing.T, m map[string]any) string {
 	return b64Hash(t, h)
 }
 func TestAccountHistoryInteroperability(t *testing.T) {
-	schema := interopFile(t, "schemas/account-history-v7-v8.json")
+	schema := interopFile(t, "schemas/account-history-v11-v12.json")
 	for _, kind := range []string{"portable", "managed"} {
 		t.Run(kind, func(t *testing.T) {
 			v := interopFile(t, "vectors/"+kind+"-history.json")
@@ -385,18 +454,16 @@ func TestAccountHistoryInteroperability(t *testing.T) {
 			if interopHash(raw) != v["digestHex"] {
 				t.Fatal("manifest digest")
 			}
-			prefix := fmt.Sprintf("hail-migration-snapshot-v%.0f\x00", m["version"])
-			input := append([]byte(prefix), interopHex(t, v["digestHex"].(string))...)
 			key := interopHex(t, v["publicKeyHex"].(string))
 			sig := interopHex(t, v["signatureHex"].(string))
-			if !ed25519.Verify(key, input, sig) {
+			if !verifySnapshotHash(sig, raw, key, kind, m["did"].(string)+"#hail-messaging") {
 				t.Fatal("snapshot signature")
 			}
 			mutated := append(append([]byte{}, raw...), 10)
 			if interopHash(mutated) != v["jsonWhitespaceMutationDigestHex"] {
 				t.Fatal("mutation digest")
 			}
-			if ed25519.Verify(key, append([]byte(prefix), interopHex(t, interopHash(mutated))...), sig) {
+			if verifySnapshotHash(sig, mutated, key, kind, m["did"].(string)+"#hail-messaging") {
 				t.Fatal("reserialized manifest accepted")
 			}
 			for _, domain := range []string{"connection", "conversation"} {
@@ -571,7 +638,7 @@ func TestConnectionWireInteroperability(t *testing.T) {
 }
 
 func TestPublishedHistoryRejections(t *testing.T) {
-	schema := interopFile(t, "schemas/account-history-v7-v8.json")
+	schema := interopFile(t, "schemas/account-history-v11-v12.json")
 	vectors := interopFile(t, "vectors/history-negative.json")
 	for _, item := range vectors["cases"].([]any) {
 		c := item.(map[string]any)

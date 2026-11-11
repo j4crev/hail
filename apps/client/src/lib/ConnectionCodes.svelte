@@ -78,8 +78,8 @@
     };
     const update=()=>{void refresh();};
     const refreshTimer=setInterval(update,30_000);
-    window.addEventListener('focus',update);document.addEventListener('visibilitychange',update);
-    return()=>{mounted=false;clearInterval(timer);clearInterval(refreshTimer);window.removeEventListener('focus',update);document.removeEventListener('visibilitychange',update);};
+    window.addEventListener('focus',update);window.addEventListener('hail:mailbox-changed',update);document.addEventListener('visibilitychange',update);
+    return()=>{mounted=false;clearInterval(timer);clearInterval(refreshTimer);window.removeEventListener('focus',update);window.removeEventListener('hail:mailbox-changed',update);document.removeEventListener('visibilitychange',update);};
   });
   async function run(action:()=>Promise<void>){if(busy)return;busy=true;message="";success="";try{await action();}catch(error){message=error instanceof Error?error.message:"Connection request failed.";}finally{busy=false;}}
   async function prepare(input:Record<string,unknown>,immediate=false){

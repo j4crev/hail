@@ -4,46 +4,46 @@
   "history": {
     "type": "hail.conversation-history",
     "version": 1,
-    "accountId": "ffef90d5-e621-4977-8de1-dd52da7ccda2",
+    "accountId": "03306ab4-6e40-4a16-ab72-f9625d8bcc79",
     "did": "did:plc:cccccccccccccccccccccccc",
     "sourceGeneration": 1,
     "sourceServiceBase": "https://provider.example.com/hail",
-    "capturedAt": "2026-11-09T20:17:46.314Z",
+    "capturedAt": "2026-11-10T21:22:16.935Z",
     "tables": {
       "account_conversation_preferences": [
         {
-          "account_id": "ffef90d5-e621-4977-8de1-dd52da7ccda2",
-          "updated_at": "2026-11-09T20:17:46.164111+00:00",
+          "account_id": "03306ab4-6e40-4a16-ab72-f9625d8bcc79",
+          "updated_at": "2026-11-10T21:22:16.840446+00:00",
           "allow_introductions": false
         }
       ],
       "connection_conversation_preferences": [],
       "conversation_descriptors": [
         {
-          "created_at": "2026-11-09T20:17:44+00:00",
+          "created_at": "2026-11-10T21:22:15+00:00",
           "creator_did": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-          "signing_key": "did:key:z6MktTq9pRipTsPxeACK1md6MfyejQuGQoC3ep9ym4CNPF8E",
+          "signing_key": "did:key:z6MkhC6DAs89Suhj37MMZLsHkQdMrUGeMhVWgfqYFuVDNN9r",
           "participants": [
             "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
             "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb",
             "did:plc:cccccccccccccccccccccccc"
           ],
-          "admission_until": "2026-11-16T20:17:44+00:00",
-          "conversation_id": "01a1c1f5-a640-7a5b-86cb-9718b1af6cfa",
-          "descriptor_cose": "\\xd284585aa301320378226170706c69636174696f6e2f6861696c2d636f6e766572736174696f6e2b63626f7204582f6469643a706c633a616161616161616161616161616161616161616161616161236861696c2d6d6573736167696e67a059012ca86466726f6d78206469643a706c633a6161616161616161616161616161616161616161616161616474797065716861696c2e636f6e766572736174696f6e6776657273696f6e016a637265617465645f61741a6af22a686c7061727469636970616e74738378206469643a706c633a61616161616161616161616161616161616161616161616178206469643a706c633a62626262626262626262626262626262626262626262626278206469643a706c633a6363636363636363636363636363636363636363636363636f61646d697373696f6e5f756e74696c1a6afb64e86f636f6e766572736174696f6e5f6964782430316131633166352d613634302d376135622d383663622d393731386231616636636661736d656d626572736869705f7265766973696f6e015840d097c827cdd7da479334c8f6bc51ff9b5600010986724de0f78df9f96fb7cad3e6cfebf5870642faff11233de24a3fc9ec42e8713ac1c882c10597bdf5dc7f09",
-          "descriptor_hash": "\\x69d5f8b5bf12eae41bd96a8d800b6acada91be3e6cc622422e5a1ba8ecdefa0f",
+          "admission_until": "2026-11-17T21:22:15+00:00",
+          "conversation_id": "01a1c757-14f6-751b-aa22-9a02442921f6",
+          "descriptor_cose": "\\xd284585aa301320378226170706c69636174696f6e2f6861696c2d636f6e766572736174696f6e2b63626f7204582f6469643a706c633a616161616161616161616161616161616161616161616161236861696c2d6d6573736167696e67a059012ca86466726f6d78206469643a706c633a6161616161616161616161616161616161616161616161616474797065716861696c2e636f6e766572736174696f6e6776657273696f6e016a637265617465645f61741a6af38b076c7061727469636970616e74738378206469643a706c633a61616161616161616161616161616161616161616161616178206469643a706c633a62626262626262626262626262626262626262626262626278206469643a706c633a6363636363636363636363636363636363636363636363636f61646d697373696f6e5f756e74696c1a6afcc5876f636f6e766572736174696f6e5f6964782430316131633735372d313466362d373531622d616132322d396130323434323932316636736d656d626572736869705f7265766973696f6e0158408ea24c3fe4aa526bc681c025ebe7e97069ddf5559cf4a503f80783fc5897cb19fbfce7e3a821dca4293d4a830ee91bc22b9d9b48d4ca16161ad7621eb404510b",
+          "descriptor_hash": "\\x6abca658852c0985f3ce31e6fa2e7c27667c622857ff8ae014aef19dd3a99fbc",
           "signing_evidence": "{\"document\":{},\"data\":{},\"log\":[]}"
         }
       ],
       "conversation_memberships": [
         {
           "state": "left",
-          "left_at": "2026-11-09T20:17:46.122258+00:00",
-          "account_id": "ffef90d5-e621-4977-8de1-dd52da7ccda2",
-          "expires_at": "2026-11-09T20:17:45.009474+00:00",
-          "admitted_at": "2026-11-09T20:17:44.470618+00:00",
+          "left_at": "2026-11-10T21:22:16.817859+00:00",
+          "account_id": "03306ab4-6e40-4a16-ab72-f9625d8bcc79",
+          "expires_at": "2026-11-10T21:22:15.756233+00:00",
+          "admitted_at": "2026-11-10T21:22:15.824347+00:00",
           "creator_did": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
-          "conversation_id": "01a1c1f5-a640-7a5b-86cb-9718b1af6cfa",
+          "conversation_id": "01a1c757-14f6-751b-aa22-9a02442921f6",
           "last_activity_at": null
         }
       ],
@@ -52,5 +52,5 @@
       "public_plc_resolution_evidence": []
     }
   },
-  "digestHex": "a66fe57c5fc67f4def2630f60223c2aa66337e2ba620f4b9b1d8d8e3ad1a0534"
+  "digestHex": "16b79899bdee9b6f2a780506da2b28b2f28d78f0c5c0b1ad66b0570a1b56c4d3"
 }

@@ -12,6 +12,7 @@ FROM node:24.18-bookworm-slim AS build
 COPY --from=oven/bun:1.4.0 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /workspace/hail
 COPY package.json bun.lock tsconfig.json ./
+COPY patches ./patches
 COPY apps/server/package.json ./apps/server/package.json
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/content-builder/package.json ./apps/content-builder/package.json
@@ -35,6 +36,7 @@ RUN --mount=type=secret,id=sentry_auth_token \
 FROM oven/bun:1.4.0 AS dependencies
 WORKDIR /workspace/hail
 COPY package.json bun.lock tsconfig.json ./
+COPY patches ./patches
 COPY apps/server/package.json ./apps/server/package.json
 COPY apps/cli/package.json ./apps/cli/package.json
 COPY apps/content-builder/package.json ./apps/content-builder/package.json

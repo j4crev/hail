@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {restoreReceivedMessage} from "$lib/jmap.js";
   import {mailboxView} from "$lib/mailbox-view.svelte.js";
   import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import Toast from "$lib/Toast.svelte";
@@ -37,14 +38,15 @@
     let restored=0;
     try{
       const received=selectedMessages.filter(item=>item.type==='received');
-      if(received.length){
-        const result=await mailboxRequest('trash/restore',{messages:received.map(({message})=>({sender:message.sender,messageId:message.messageId}))});
-        restored+=result.restored;
-        selected=selected.filter(id=>!received.some(item=>item.key===id));
+      for(const item of received){
+        await restoreReceivedMessage(item.message.sender,item.message.messageId);
+        restored++;
+        selected=selected.filter(id=>id!==item.key);
       }
       for(const item of selectedMessages){
         if(item.type!=='sent')continue;
-        const result=await mailboxRequest('sent/restore',{kind:item.message.kind,messageId:item.message.messageId});
+        const result=await mailboxRequest('HailMailbox/restoreSent',{input:{kind:item.message.kind,messageId:item.message.messageId}});
+        if(typeof result.restored!=='number'||!Number.isSafeInteger(result.restored))throw new Error('Invalid restore result');
         restored+=result.restored;
         selected=selected.filter(id=>id!==item.key);
       }

@@ -6,6 +6,12 @@ import {P256Keypair} from "@atproto/crypto";
 import {createWebCryptoSigner,encodeBase64Url,fromDiagnosticJson,inspectSignedPayload,signPayload,createWebCryptoVerifier,verifySignedPayload} from "@racrproto/codec";
 import {ProviderDatabase} from "../src/db/database.js";
 import {AccountConnections} from "../src/accounts/connections.js";
+import {JmapMessages,JMAP_CORE} from "../src/jmap/messages.js";
+import {HAIL_ACCOUNT} from "../src/jmap/collections.js";
+import {JmapOperations} from "../src/jmap/operations.js";
+import {registerJmapRoutes} from "../src/jmap/routes.js";
+import {GrantRepository} from "../src/grants/repository.js";
+import type {GrantService} from "../src/grants/service.js";
 import {registerConnectionRoutes} from "../src/accounts/connection-routes.js";
 import {AccountApiRepository} from "../src/accounts/repository.js";
 import {PasskeyAuth} from "../src/accounts/passkeys.js";
@@ -25,9 +31,9 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
   // Exercise historical rollback at its original schema boundary. Later
   // migrations (including 77, which has no rollback) must not be discarded to
   // run the preview/unified-connection downgrade checks.
-  const historical=async()=>{
+  const historical=async(maximum=76)=>{
     await db.sql`CREATE TABLE IF NOT EXISTS schema_migrations(version integer PRIMARY KEY,name text NOT NULL,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())`;
-    for(const file of (await readdir(new URL('../migrations/',import.meta.url))).filter(name=>/^\d{4}_.*\.sql$/.test(name)&&Number(name.slice(0,4))<=76).sort()){
+    for(const file of (await readdir(new URL('../migrations/',import.meta.url))).filter(name=>/^\d{4}_.*\.sql$/.test(name)&&Number(name.slice(0,4))<=maximum).sort()){
       const version=Number(file.slice(0,4));if((await db.sql`SELECT version FROM schema_migrations WHERE version=${version}`).length)continue;
       const source=await Bun.file(new URL('../migrations/'+file,import.meta.url)).text();
       await db.sql.begin(async tx=>{await tx.unsafe(source);await tx`INSERT INTO schema_migrations(version,name,checksum) VALUES(${version},${file.slice(5,-4)},${createHash('sha256').update(source).digest('hex')})`;});
@@ -74,6 +80,14 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
     await db.sql`INSERT INTO account_connections(id,account_a,account_b,did_a,did_b,generation_a,generation_b,grant_id_a,grant_id_b,consent_format)
       VALUES(${obsoleteId},${historicalE.id},${historicalP.id},${historicalE.did},${historicalP.did},1,1,${randomUUID()},${randomUUID()},'joint-v1')`;
     const obsolete=await db.sql`SELECT * FROM account_connections WHERE id=${obsoleteId}`;
+    // Prove empty preference rollback at schema 92, before later JMAP views
+    // depend on these tables. Rolling it back beneath the current schema is invalid.
+    await historical(92);
+    await expect(db.sql.begin(async tx=>{
+      await tx.unsafe(await Bun.file(new URL('../migrations/rollback/0092_conversation_introduction_preferences.sql',import.meta.url)).text());
+      expect(await tx`SELECT * FROM account_connections WHERE id=${obsoleteId}`).toEqual(obsolete);
+      throw Error('empty preference rollback verified');
+    })).rejects.toThrow('empty preference rollback verified');
     await db.migrate();
     // Current login queries require the current schema, after historical rollback checks.
     const users=await Promise.all(fixtures.map(async user=>{
@@ -95,12 +109,26 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
       if(type!=="hail.connection-invitation"&&type!=="hail.connection-confirmation")throw new Error("Unexpected owner proposal");
       return signPayload(type,fromDiagnosticJson(type,wire.payload),createWebCryptoSigner(user.did+"#hail-identity",user.keys.identityPrivateKey));
     };
-    const app=new Hono();registerConnectionRoutes(app,service,accounts,origin);
-    const call=(step:string,body?:unknown,user=a,headers:Record<string,string>={})=>app.request(origin+"/api/v1/account/connections"+(step?"/"+step:""),{
-      method:body===undefined?"GET":"POST",headers:{Origin:origin,"Content-Type":"application/json",Cookie:"hail_session="+user.token,...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
-    expect((await app.request(origin+"/api/v1/account/connections")).status).toBe(401);
+    const app=new Hono(),messages=new JmapMessages(db.sql,origin);
+    registerConnectionRoutes(app,service,accounts,origin); // Federation invitation resource.
+    registerJmapRoutes(app,accounts,messages,origin,origin,undefined,undefined,undefined,
+      new JmapOperations({accounts,grants:new GrantRepository(db.sql),service:{} as GrantService,connections:service}));
+    const invoke=async(method:string,args:Record<string,unknown>,session:typeof a.session,headers:Record<string,string>,path=origin+"/jmap")=>{
+      const response=await app.request(path,{method:"POST",headers,body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],
+        methodCalls:[[method,{accountId:messages.accountId(session),...args},"test"]]})});
+      if(!response.ok)return response;
+      const result=(await response.json()).methodResponses;
+      expect(result).toHaveLength(1);expect(result[0][2]).toBe("test");
+      const [name,value]=result[0];
+      if(name!=="error"){expect(name).toBe(method);expect(value.accountId).toBe(messages.accountId(session));}
+      const status=name==="error"?value.httpStatus??({invalidArguments:400,forbidden:403,notFound:404} as Record<string,number>)[value.type]??500:200;
+      return Response.json(value,{status});
+    };
+    const call=(step:string,body?:unknown,user=a,headers:Record<string,string>={})=>invoke("HailRelationship/"+(step||"list"),
+      body===undefined?{}:{input:body},user.session,{Origin:origin,"Content-Type":"application/json",Cookie:"hail_session="+user.token,...headers});
+    expect((await app.request(origin+"/.well-known/jmap")).status).toBe(401);
     expect((await call("prepare",{},a,{Origin:"https://evil.example.com"})).status).toBe(403);
-    expect((await call("",undefined,a,{Authorization:"Bearer bogus"})).status).toBe(403);
+    expect((await call("",undefined,a,{Authorization:"Bearer bogus"})).status).toBe(401);
     const create=async(user:typeof a,personal:boolean,expiresAt:number|null=personal?null:Math.floor(Date.now()/1000)+3600)=>{
       const input={requestId:randomUUID(),action:"create",personal,label:personal?"Personal code":"Event",expiresAt};
       const review=await service.prepare(user.session,input);
@@ -145,36 +173,27 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
     expect((await service.list(a.session)).connections).toHaveLength(1);expect((await service.list(e.session)).connections).toHaveLength(0);
     // Introduction consent is a separate local policy: existing connections
     // default on without overwriting explicit choices; browser/API checks apply.
-    const preferencesApp=new Hono();registerConnectionRoutes(preferencesApp,service,accounts,origin);
-    const seenPath=origin+'/api/v1/account/connections/seen';
+    const seenPath=origin+'/jmap';
     const seenHeaders={Origin:origin,'Content-Type':'application/json',Cookie:'hail_session='+a.token};
-    const seenCall=(body:unknown,headers=seenHeaders,path=seenPath)=>preferencesApp.request(path,{method:'POST',headers,body:JSON.stringify(body)});
+    const seenCall=(body:unknown,headers=seenHeaders,extra:Record<string,unknown>={})=>invoke('HailRelationship/seen',{input:body,...extra},a.session,headers);
     const seenVectors=await Bun.file(new URL('../../../spec/vectors/provider-connections.json',import.meta.url)).json();
     for(const body of seenVectors.valid)expect((await seenCall(body)).status).toBe(200);
     for(const body of seenVectors.invalid)expect((await seenCall(body)).status).toBe(400);
     expect((await seenCall(seenVectors.valid[0],{...seenHeaders,Origin:'https://evil.example.com'})).status).toBe(403);
     expect((await seenCall(seenVectors.valid[0],{...seenHeaders,Cookie:''})).status).toBe(401);
     expect((await seenCall(seenVectors.valid[0],{...seenHeaders,'Content-Type':'text/plain'})).status).toBe(415);
-    expect((await seenCall(seenVectors.valid[0],seenHeaders,seenPath+'?all=true')).status).toBe(400);
-    expect((await preferencesApp.request(seenPath,{headers:seenHeaders})).status).toBe(405);
-    const preferencePath=origin+'/api/v1/account/connections/conversation-preferences';
-    const preferenceCall=(body?:unknown,user=a,headers:Record<string,string>={})=>preferencesApp.request(preferencePath,{
-      method:body===undefined?'GET':'POST',headers:{Origin:origin,'Content-Type':'application/json',Cookie:'hail_session='+user.token,...headers},
-      ...(body===undefined?{}:{body:JSON.stringify(body)})});
+    expect((await seenCall(seenVectors.valid[0],seenHeaders,{all:true})).status).toBe(400);
+    expect((await app.request(seenPath,{headers:seenHeaders})).status).toBe(405);
+    const preferenceCall=(body?:unknown,user=a,headers:Record<string,string>={})=>invoke('HailRelationship/conversationPreferences',
+      body===undefined?{}:{input:body},user.session,{Origin:origin,'Content-Type':'application/json',Cookie:'hail_session='+user.token,...headers});
     const readPreferences=async(user=a)=>(await preferenceCall(undefined,user)).json();
     const savePreference=async(body:unknown)=>expect((await preferenceCall(body)).status).toBe(200);
     const preferenceConnection={connectionId:connections[0]!.id,epoch:1};
     expect(await readPreferences()).toMatchObject({allowIntroductions:true,configured:false,connections:[{...preferenceConnection,override:null,effectiveAllowIntroductions:true}]});
-    expect((await preferencesApp.request(preferencePath)).status).toBe(401);
+    expect((await app.request(origin+"/.well-known/jmap")).status).toBe(401);
     expect((await preferenceCall({allowIntroductions:true},a,{Origin:'https://evil.example.com'})).status).toBe(403);
-    expect((await preferenceCall(undefined,a,{Authorization:'Bearer bogus'})).status).toBe(403);
+    expect((await preferenceCall(undefined,a,{Authorization:'Bearer bogus'})).status).toBe(401);
     await expect(service.conversationPreferences({...a.session,passkey_credential_id:null})).rejects.toMatchObject({status:403});
-    // Empty rollback is supported and preserves existing connection state.
-    await expect(db.sql.begin(async tx=>{
-      await tx.unsafe(await Bun.file(new URL('../migrations/rollback/0092_conversation_introduction_preferences.sql',import.meta.url)).text());
-      expect((await tx`SELECT id FROM federated_connection_pairs WHERE state='active'`).length).toBe(2);
-      throw Error('empty preference rollback verified');
-    })).rejects.toThrow('empty preference rollback verified');
     for(const input of [{},{allowIntroductions:'true'},{allowIntroductions:true,extra:true},{...preferenceConnection,override:'allow'},
       {...preferenceConnection,override:null,epoch:0},{...preferenceConnection,override:true,epoch:1.5}])
       expect((await preferenceCall(input)).status).toBe(400);
@@ -252,9 +271,15 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
     const credential=await accounts.issue(p.address,false,undefined,["account:read","account:write"]);
     const readonly=await accounts.issue(p.address,false,undefined,["account:read"]);
     const stranger=await accounts.issue(e.address,false,undefined,["account:write"]);
-    const cli=(token:string,step="cli-remove",body:unknown={connectionId})=>app.request(origin+"/api/v1/account/connections/"+step,{
-      method:["cli-list","cli-invitations"].includes(step)?"GET":"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},
-      ...(["cli-list","cli-invitations"].includes(step)?{}:{body:JSON.stringify(body)})});
+    const cli=async(token:string,step="cli-remove",body:unknown={connectionId})=>{
+      const methods:Record<string,string>={"cli-list":"credentialList","cli-invitations":"credentialInvitations","cli-remove":"credentialRemove",
+        "cli-revoke-invitation":"credentialRevokeInvitation","cli-prepare":"prepare","cli-commit":"commit","cli-status":"status",list:"list"};
+      const method=methods[step];expect(method).toBeDefined();
+      const session=await accounts.authenticate("Bearer "+token);
+      const args=["credentialList","credentialInvitations","list"].includes(method!)?{}:
+        method!.startsWith("credential")?body as Record<string,unknown>:method==="status"?body as Record<string,unknown>:{input:body};
+      return invoke("HailRelationship/"+method,args,session??p.session,{Authorization:"Bearer "+token,"Content-Type":"application/json"});
+    };
     const listing=await (await cli(credential.token,"cli-list")).json();
     expect(listing.connections.map((c:any)=>c.id)).toContain(connectionId);expect(listing.codes).toBeUndefined();
     const withdrawnInvitation=await create(p,false);
@@ -354,7 +379,7 @@ it.skipIf(!process.env.DATABASE_URL)("manages personal and expiring QR invitatio
     const ownerInput={requestId:randomUUID(),action:"create",personal:false,label:"CLI consent",expiresAt:Math.floor(Date.now()/1000)+3600};
     expect((await cli(readAccess.token,"cli-prepare",ownerInput)).status).toBe(403);
     expect((await cli(managedAccess.token,"cli-prepare",ownerInput)).status).toBe(403);
-    expect((await cli(ownerAccess.token,"prepare",ownerInput)).status).toBe(403);
+    expect((await cli(ownerAccess.token,"list")).status).toBe(403);
     expect((await cli(ownerAccess.token,"cli-prepare",{requestId:randomUUID(),action:"revoke",id:currentOwner.id})).status).toBe(403);
     const ownerPrepared=await service.prepare(ownerSession,ownerInput);
     expect(ownerPrepared.options).toBeNull();

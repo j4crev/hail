@@ -1,3 +1,4 @@
+import {accountOperation,JmapRequestError} from './jmap.js';
 import qrcode from "qrcode-generator";
 import type {HailGrant,HailGrantScope} from "@racrproto/codec";
 import type {startAuthentication} from "@simplewebauthn/browser";
@@ -98,26 +99,11 @@ export async function recoverPermission(requestId:string,grantor:string):Promise
   return next;
 }
 
-export async function permissionRequest(step:string,body?:unknown){
-  if(!["review","prepare","commit"].includes(step)&&!UUID.test(step))throw new Error("Invalid permission operation");
-  const response=await fetch(`/api/v1/account/permissions/${step}`,{method:body===undefined?"GET":"POST",credentials:"same-origin",redirect:"error",cache:"no-store",
-    signal:AbortSignal.timeout(45_000),headers:body===undefined?{}:{"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  const reader=response.body?.getReader();if(!reader)throw new Error("Permission response unavailable");
-  const chunks:Uint8Array[]=[];let size=0;
-  while(true){const next=await reader.read();if(next.done)break;size+=next.value.length;if(size>65_536){await reader.cancel();throw new Error("Permission response too large");}chunks.push(next.value);}
-  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-  const value=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));
-  if(!response.ok){
-    const detail=response.status<500&&typeof value?.error==="string"&&value.error.length<=300?value.error:null;
-    throw new PermissionRequestError(response.status,detail??(response.status===401?"Sign in with your passkey before managing permissions.":
-    response.status===410?"This review expired. Check your subscriptions and start again.":
-    response.status===413?"This permission review is too large. For bulk unsubscribe, select fewer subscriptions.":
-    response.status===429?"Too many requests. Wait a minute and try again.":
-    response.status===409?"The subscription may have changed, or your request is still being processed. Please try again.":
-    response.status>=500?"Permission service unavailable. Try again shortly.":
-    "Permission request failed. Please check your details and try again."));
-  }
-  return value;
+export async function permissionRequest(step:string,body?:unknown):Promise<any>{
+  const methods:Record<string,string>={review:'reviewApproval',prepare:'prepareApproval',commit:'commitApproval'};
+  const method=methods[step]??(UUID.test(step)?'approvalStatus':null);if(!method)throw new Error('Invalid permission operation');
+  try{return await accountOperation('HailGrant/'+method,method==='approvalStatus'?{requestId:step}:{input:body});}
+  catch(error){if(error instanceof JmapRequestError)throw new PermissionRequestError(error.status,error.message);throw error;}
 }
 
 /** Match the canonical ASCII Hail address rules before sender discovery. */

@@ -1,4 +1,5 @@
-import {parseDraftContent,type Draft} from "@racrproto/client-support/drafts";
+import {jmapReadFixture} from './jmap-read-fixture.js';
+import {type Draft} from "@racrproto/client-support/drafts";
 import {groupConnectionMessages,connectionKey} from '../../server/src/accounts/connection-threads.js';
 import {threadBodyPreview} from '../../server/src/accounts/message-threads.js';
 // Local-only visual fixture provider. Never imports production configuration or credentials.
@@ -86,6 +87,92 @@ const deleted = new Set<string>();
 let allowIntroductions=true,conversationsConfigured=false;
 const preferences = {theme:'system',showHeaderImages:true,trashEnabled:true,startScreen:'feed'};
 const json = (data: unknown, status = 200) => Response.json(data,{status,headers:{'Cache-Control':'no-store','Content-Type':'application/json'}});
+const fixtureFailure=(status:number,description='This fictional preview does not support this action.'):never=>{
+  throw Object.assign(new Error(description),{httpStatus:status,type:status===404?'notFound':status===409?'stateMismatch':status===400?'invalidArguments':'forbidden'});
+};
+const result=(data:Record<string,unknown>,status=200)=>status>=400?fixtureFailure(status):data;
+const accountOperation=(name:string,args:Record<string,any>):Record<string,unknown>=>{
+  const input=args.input??{};
+  if(name==='HailMailbox/preferences'||name==='HailMailbox/view'&&args.view==='settings') {
+    if(name==='HailMailbox/preferences') {
+      if(['feed','inbox'].includes(input.startScreen)&&!input.initialize)preferences.startScreen=input.startScreen;
+      if(['system','light','dark'].includes(input.theme))preferences.theme=input.theme;
+      if(typeof input.showHeaderImages==='boolean')preferences.showHeaderImages=input.showHeaderImages;
+      if(typeof input.trashEnabled==='boolean'){preferences.trashEnabled=input.trashEnabled;if(!input.trashEnabled){for(const id of trash.keys())deleted.add(id);trash.clear();for(const [id,draft] of drafts)if(draft.trashedAt)drafts.delete(id);}}
+    }
+    return result(preferences);
+  }
+  if(sharedMode&&name==='HailRelationship/conversationMembership'){
+    if(input.action==='leave')sharedConversation.state='left';
+    if(input.action==='rejoin'){if(sharedConversation.state!=='left'||Date.parse(sharedConversation.expiresAt)<=Date.now())return result({},409);sharedConversation.state='active';}
+    return result(sharedConversation);
+  }
+  if(name==='HailMailbox/emptyTrash'){
+    const count=trash.size+[...drafts.values()].filter(d=>d.trashedAt).length;for(const [id,draft] of drafts)if(draft.trashedAt)drafts.delete(id);for(const id of trash.keys())deleted.add(id);trash.clear();return result({deleted:count});
+  }
+  if(name==='HailMailbox/clearSent'){
+    if(input.trashEnabled!==preferences.trashEnabled)return result({},409);
+    let affected=0;for(const m of sent){if(input.messages&&!input.messages.some((item:{kind:string;messageId:string})=>item.kind===m.kind&&item.messageId===m.messageId))continue;if(trash.has(m.messageId)||deleted.has(m.messageId)||!['delivered','failed','cancelled'].includes(m.state))continue;
+      if(preferences.trashEnabled)trash.set(m.messageId,new Date().toISOString());else deleted.add(m.messageId);affected++;}
+    return result({affected,state:preferences.trashEnabled?'trashed':'deleted'});
+  }
+  if(name==='HailMailbox/restoreSent')return result({restored:sent.some(m=>m.kind===input.kind&&m.messageId===input.messageId)&&trash.delete(input.messageId)?1:0});
+  // Sending, passkey ceremonies, profile edits and destructive account actions are not simulated.
+  if(name==='HailRelationship/seen'){
+    for(const item of input.connections??[])if(item.epoch===1)seenConnections.add(item.id);
+    return result({ok:true});
+  }
+  if(name==='HailMailbox/view'&&args.view==='unreadCounts'){
+    const unread=messages.filter(m=>!m.isRead&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
+    return result({subscriptions:unread.filter(m=>m.kind!=='connection').length,connections:unread.filter(m=>m.kind==='connection').length,unseenConnections:emptyRelationships?0:fixtureConnections().filter(c=>c.isNew).length});
+  }
+  if(name==='HailMailbox/view'&&args.view==='connectionInbox')return result({messages:fixtureGroups().filter(g=>g.representative).sort((a,b)=>b.activity.localeCompare(a.activity)).map(g=>({...messages.find(m=>connectionKey(m)===connectionKey(g.representative!)),conversation:{unreadCount:g.unread,lastActivity:g.activity,messages:g.received.map(m=>({sender:m.sender,messageId:m.messageId,isRead:m.isRead}))}})),next:null});
+  if(name==='HailMailbox/view'&&args.view==='connectionThread'){
+    const root=`${args.sender}/${args.messageId}`,g=fixtureGroups().find(g=>g.messages.some(m=>connectionKey(m)===root));if(!g)return result({},404);
+    const selected=g.messages.find(m=>connectionKey(m)===root)!;
+    const start=args.offset!==undefined?Number(args.offset):Math.max(0,g.messages.indexOf(selected)-2);
+    return result({selected:{sender:selected.sender,messageId:selected.messageId,sent:selected.sent},start,total:g.messages.length,newerUnread:g.messages.slice(0,start).filter(m=>!m.sent&&!m.isRead).length,
+      messages:g.messages.slice(start,start+30).map(m=>{const source=(m.sent?sent:messages).find(x=>x.messageId===m.messageId)!;
+        const title=source.body.blocks.find((b:any)=>b.style==='h1') as any;
+        return {sender:m.sender,messageId:m.messageId,sent:m.sent,isRead:m.isRead,createdAt:m.at,senderAddress:m.sender===maya.did?maya.address:senders[3].address,
+          title:title?.children.map((s:any)=>s.text).join('')??'',preview:threadBodyPreview({blocks:source.body.blocks.filter(b=>'children' in b)}),recipients:m.sent?[senders[3],maya]:[]};})});
+  }
+  if(name==='HailMailbox/view'&&['inbox','inboxFeed'].includes(args.view)&&!args.trash) {
+    const rows=messages.filter(m=>(args.channel===undefined||args.channel==='all'||(args.channel==='connections')===(m.kind==='connection'))&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
+    const limit=Number(process.env.HAIL_DESIGN_PAGE_SIZE)||rows.length||1;
+    const after=args.after, start=after?Math.max(0,rows.findIndex(m=>m.messageId===after)+1):0;
+    const page=rows.slice(start,start+limit);
+    return result({messages:page,next:start+limit<rows.length?page.at(-1)!.messageId:null});
+  }
+  if(name==='HailMailbox/view'&&args.view==='inboxFeed'&&args.trash)return result({messages:messages.filter(m=>trash.has(m.messageId)).map(m=>({...m,trashedAt:trash.get(m.messageId)})),next:null});
+  if(name==='HailMailbox/view'&&args.view==='read'){const m=messages.find(m=>args.sender===m.sender&&args.messageId===m.messageId&&!deleted.has(m.messageId));return m?result({...m,trashedAt:trash.get(m.messageId)??null}):result({},404);}
+  if(name==='HailMailbox/view'&&args.view==='threads'){
+    const root=messages.find(m=>args.sender===m.sender&&args.messageId===m.messageId&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
+    if(!root)return result({},404);
+    const related=root.messageId===firstConnection.messageId||root.messageId===secondConnection.messageId;
+    const incoming=(related?[firstConnection,secondConnection]:[root]).filter(m=>!trash.has(m.messageId)&&!deleted.has(m.messageId)).map(m=>({sender:m.sender,messageId:m.messageId,sent:false,isRead:m.isRead,createdAt:m.deliveredAt,
+      preview:'Saturday at the market?',inReplyTo:m.messageId===secondConnection.messageId?{sender:firstConnection.sender,messageId:firstConnection.messageId}:null,parentAvailable:m.messageId===secondConnection.messageId&&!trash.has(firstConnection.messageId)&&!deleted.has(firstConnection.messageId)}));
+    const replies=related?sent.map(m=>({sender:did,messageId:m.messageId,sent:true,isRead:true,createdAt:m.createdAt,preview:'Ten sounds good! Looking forward to catching up.',inReplyTo:{sender:firstConnection.sender,messageId:firstConnection.messageId},parentAvailable:incoming.some(m=>m.messageId===firstConnection.messageId)})):[];
+    return result({messages:[...incoming,...replies],truncated:false});
+  }
+  if(name==='HailMailbox/view'&&args.view==='sentSends'&&process.env.HAIL_DESIGN_SENT_AUDIENCES==='1')return result({messages:[sent[0],
+    {...sent[0],messageId:uuidV7(),kind:'connections',recipientSummary:{count:2,address:null,did:null}},
+    {...sent[0],messageId:uuidV7(),kind:'category',category:'essays',recipientSummary:undefined},
+    {...sent[0],messageId:uuidV7(),kind:'category',category:'general',recipientSummary:undefined}],next:null});
+  if(name==='HailMailbox/view'&&['sent','sentFeed','sentSends'].includes(args.view))return result({messages:sent.filter(m=>!deleted.has(m.messageId)&&(args.trash===true?trash.has(m.messageId):!trash.has(m.messageId))).map(m=>({...m,trashedAt:trash.get(m.messageId)??null})),next:null});
+  if(name==='HailMailbox/view'&&['sentMessage','sentSend'].includes(args.view)){const m=sent.find(m=>m.messageId===args.messageId&&!deleted.has(m.messageId)&&(args.trash===true?trash.has(m.messageId):!trash.has(m.messageId)));return m && (args.kind===undefined||args.kind===m.kind)?result({...m,trashedAt:trash.get(m.messageId)??null,...(args.kind===undefined?{kind:"connection"}:{})}):result({},404);}
+  if(name==='HailGrant/list')return result({grants:(emptyRelationships?[]:grants).filter(g=>args.sender===undefined||g.payload.grantee===args.sender).map(g=>({grantId:g.payload.grant_id,localRole:'grantor',grantee:g.payload.grantee,status:'active'})),next:null});
+  if(name==='HailGrant/read'){const grant=grants.find(g=>g.payload.grant_id===args.grantId);return grant?result(grant.representation):result({},404);}
+  if(name==='HailRelationship/conversationPreferences'){
+    if(args.input!==undefined){allowIntroductions=input.allowIntroductions;conversationsConfigured=true;}
+    return result({allowIntroductions,configured:conversationsConfigured,truncated:false,connections:[]});
+  }
+  if(name==='HailRelationship/list')return result({preview:true,codes:[],connections:emptyRelationships?[]:fixtureConnections(),pendingConnections:[]});
+  if(name==='HailSubmission/audiences')return result({maxRecipients:100,categories:[{category:'general',subscribers:12},{category:'essays',subscribers:8}]});
+  if(name==='HailSubmission/targets')return result({maxRecipients:100,connections:[{connectionId,recipientDid:senders[3].did,epoch:1,address:senders[3].address},...(sharedMode?[{connectionId:sharedConversation.conversationId,recipientDid:maya.did,epoch:1,address:maya.address}]:[])]});
+  return fixtureFailure(501,'This local design preview supports reading, appearance preferences, and mailbox selection/deletion/restoration only.');
+};
+const jmapFixture=jmapReadFixture(()=>messages.filter(m=>!deleted.has(m.messageId)).map(m=>({...m,trashedAt:trash.get(m.messageId)??null})),(id,isRead)=>{messages.find(m=>m.messageId===id)!.isRead=isRead;},()=>preferences.trashEnabled,(id,value)=>{if(value===null){deleted.add(id);trash.delete(id);}else if(value)trash.set(id,new Date().toISOString());else trash.delete(id);},drafts,accountOperation);
 const reserve = Bun.serve({hostname:'127.0.0.1',port:0,fetch:()=>new Response()});
 const guiPort = reserve.port!;reserve.stop(true);
 let gui: ReturnType<typeof Bun.spawn> | undefined;
@@ -94,6 +181,8 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
   // Binding and Host checks keep this unauthenticated fixture off the network.
   if(![`localhost:${port}`,`127.0.0.1:${port}`].includes(url.host))return new Response('Local preview only',{status:403});
   if(request.headers.has('origin') && request.headers.get('origin')!==origin)return new Response('Local preview only',{status:403});
+  if(path==='/.well-known/jmap')return jmapFixture('/api/jmap/session',request.method,{})!;
+  if(path==='/jmap')return jmapFixture('/api/jmap',request.method,await request.json() as Record<string,any>)!;
   if(!path.startsWith('/api/')) {
     const headers = new Headers(request.headers);
     headers.set('cookie',`hail_session=${session}`);
@@ -103,109 +192,14 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
     catch {return new Response('Local preview is starting. Refresh in a moment.',{status:503});}
   }
   const input = request.method==='POST' ? await request.json().catch(()=>({})) as Record<string,any> : {};
-  if(path==='/api/v1/account/drafts')return json({drafts:[...drafts.values()].filter(d=>(d.trashedAt!==null)===(url.searchParams.get('trash')==='true')),next:null});
-  const draftPath=path.match(/^\/api\/v1\/account\/drafts\/([^/]+)(?:\/(save|delete|restore))?$/);
-  if(draftPath){
-    const [,id,operation]=draftPath,previous=drafts.get(id!);
-    if(request.method==='GET')return previous&&!previous.trashedAt?json(previous):json({},404);
-    if(operation==='save'){
-      if(previous?.trashedAt||(previous?.revision??0)!==input.revision)return json({},409);
-      try{const draft={id:id!,revision:(previous?.revision??0)+1,content:parseDraftContent(input.content),updatedAt:new Date().toISOString(),trashedAt:null};drafts.set(id!,draft);return json(draft);}catch{return json({},400);}
-    }
-    if(operation==='delete'){if(previous){if(preferences.trashEnabled)previous.trashedAt=new Date().toISOString();else drafts.delete(id!);previous.revision++;}return json({state:preferences.trashEnabled?'trashed':'deleted'});}
-    if(operation==='restore'){if(previous){previous.trashedAt=null;previous.revision++;}return json({restored:previous?1:0});}
-  }
-  if(path==='/api/v1/account/message-preferences') {
-    if(request.method==='POST') {
-      if(['feed','inbox'].includes(input.startScreen)&&!input.initialize)preferences.startScreen=input.startScreen;
-      if(['system','light','dark'].includes(input.theme))preferences.theme=input.theme;
-      if(typeof input.showHeaderImages==='boolean')preferences.showHeaderImages=input.showHeaderImages;
-      if(typeof input.trashEnabled==='boolean'){preferences.trashEnabled=input.trashEnabled;if(!input.trashEnabled){for(const id of trash.keys())deleted.add(id);trash.clear();for(const [id,draft] of drafts)if(draft.trashedAt)drafts.delete(id);}}
-    }
-    return json(preferences);
-  }
-  if(sharedMode&&path==='/api/v1/account/connections/conversation-membership'){
-    if(input.action==='leave')sharedConversation.state='left';
-    if(input.action==='rejoin'){if(sharedConversation.state!=='left'||Date.parse(sharedConversation.expiresAt)<=Date.now())return json({},409);sharedConversation.state='active';}
-    return json(sharedConversation);
-  }
+  const jmap=jmapFixture(path,request.method,input);if(jmap)return jmap;
   if(sharedMode&&path==='/api/v1/account/fixture-active'){sharedConversation.state='active';sharedConversation.expiresAt=new Date(Date.now()+90*86400000).toISOString();return json({});}
   if(sharedMode&&path==='/api/v1/account/fixture-expire'){sharedConversation.state='expired';sharedConversation.expiresAt=new Date(0).toISOString();return json({});}
-  const action = path.match(/^\/api\/v1\/account\/inbox\/([^/]+)\/([^/]+)\/(mark-read|mark-unread|delete)$/);
-  if(action && request.method==='POST') {
-    const m = messages.find(m=>m.sender===action[1]&&m.messageId===action[2]);if(!m)return json({},404);
-    if(action[3]==='delete'){if(preferences.trashEnabled)trash.set(m.messageId,new Date().toISOString());else deleted.add(m.messageId);return json({state:preferences.trashEnabled?'trashed':'deleted'});}
-    m.isRead=action[3]==='mark-read';return json({messageId:m.messageId,isRead:m.isRead});
-  }
-  if(path==='/api/v1/account/trash/empty'&&request.method==='POST'){
-    const count=trash.size+[...drafts.values()].filter(d=>d.trashedAt).length;for(const [id,draft] of drafts)if(draft.trashedAt)drafts.delete(id);for(const id of trash.keys())deleted.add(id);trash.clear();return json({deleted:count});
-  }
-  if(path==='/api/v1/account/sent/clear'&&request.method==='POST'){
-    if(input.trashEnabled!==preferences.trashEnabled)return json({},409);
-    let affected=0;for(const m of sent){if(input.messages&&!input.messages.some((item:{kind:string;messageId:string})=>item.kind===m.kind&&item.messageId===m.messageId))continue;if(trash.has(m.messageId)||deleted.has(m.messageId)||!['delivered','failed','cancelled'].includes(m.state))continue;
-      if(preferences.trashEnabled)trash.set(m.messageId,new Date().toISOString());else deleted.add(m.messageId);affected++;}
-    return json({affected,state:preferences.trashEnabled?'trashed':'deleted'});
-  }
-  if(path==='/api/v1/account/sent/restore'&&request.method==='POST')return json({restored:sent.some(m=>m.kind===input.kind&&m.messageId===input.messageId)&&trash.delete(input.messageId)?1:0});
-  if(path==='/api/v1/account/trash/restore'&&request.method==='POST')return json({restored:(input.messages??[]).filter((m:{messageId:string})=>trash.delete(m.messageId)).length});
-  // Sending, passkey ceremonies, profile edits and destructive account actions are not simulated.
-  if(path==='/api/v1/account/connections/seen'&&request.method==='POST'){
-    for(const item of input.connections??[])if(item.epoch===1)seenConnections.add(item.id);
-    return json({ok:true});
-  }
-  if(request.method!=='GET')return json({error:'This local design preview supports reading, appearance preferences, and message selection/deletion/restoration only.'},501);
+  if(request.method!=='GET')return json({error:'This local design preview does not support this action.'},501);
   if(path==='/api/v1/account')return json({type:'racr.account',version:1,provider:origin,providerOperator:process.env.HAIL_DESIGN_OPERATOR==='1',accountId:'019a15fd-2bd0-7433-8afa-bd0355e0608d',address,did,migrationState:null,custodyProfile:'managed',
     monitorVerificationMode:'reduced-assurance-alpha-v1',managedProfileVersion:'hail-managed-custody-v1',identityPublicKey:null,ownerRecoveryPublicKey:null,scopes:['account:read','grants:read','messages:read','messages:write']});
-  if(path==='/api/v1/account/unread-counts'){
-    const unread=messages.filter(m=>!m.isRead&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
-    return json({subscriptions:unread.filter(m=>m.kind!=='connection').length,connections:unread.filter(m=>m.kind==='connection').length,unseenConnections:emptyRelationships?0:fixtureConnections().filter(c=>c.isNew).length});
-  }
-  if(path==='/api/v1/account/connection-inbox')return json({messages:fixtureGroups().filter(g=>g.representative).sort((a,b)=>b.activity.localeCompare(a.activity)).map(g=>({...messages.find(m=>connectionKey(m)===connectionKey(g.representative!)),conversation:{unreadCount:g.unread,lastActivity:g.activity,messages:g.received.map(m=>({sender:m.sender,messageId:m.messageId,isRead:m.isRead}))}})),next:null});
-  if(path.startsWith('/api/v1/account/connection-threads/')){
-    const root=path.slice('/api/v1/account/connection-threads/'.length),g=fixtureGroups().find(g=>g.messages.some(m=>connectionKey(m)===root));if(!g)return json({},404);
-    const selected=g.messages.find(m=>connectionKey(m)===root)!;
-    const start=url.searchParams.has('offset')?Number(url.searchParams.get('offset')):Math.max(0,g.messages.indexOf(selected)-2);
-    return json({selected:{sender:selected.sender,messageId:selected.messageId,sent:selected.sent},start,total:g.messages.length,newerUnread:g.messages.slice(0,start).filter(m=>!m.sent&&!m.isRead).length,
-      messages:g.messages.slice(start,start+30).map(m=>{const source=(m.sent?sent:messages).find(x=>x.messageId===m.messageId)!;
-        const title=source.body.blocks.find((b:any)=>b.style==='h1') as any;
-        return {sender:m.sender,messageId:m.messageId,sent:m.sent,isRead:m.isRead,createdAt:m.at,senderAddress:m.sender===maya.did?maya.address:senders[3].address,
-          title:title?.children.map((s:any)=>s.text).join('')??'',preview:threadBodyPreview(source.body),recipients:m.sent?[senders[3],maya]:[]};})});
-  }
-  if(path==='/api/v1/account/inbox') {
-    const rows=messages.filter(m=>(url.searchParams.get('kind')==='connections')===(m.kind==='connection')&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
-    const limit=Number(process.env.HAIL_DESIGN_PAGE_SIZE)||rows.length||1;
-    const after=url.searchParams.get('after'), start=after?Math.max(0,rows.findIndex(m=>m.messageId===after)+1):0;
-    const page=rows.slice(start,start+limit);
-    return json({messages:page,next:start+limit<rows.length?page.at(-1)!.messageId:null});
-  }
-  if(path==='/api/v1/account/trash')return json({messages:messages.filter(m=>trash.has(m.messageId)).map(m=>({...m,trashedAt:trash.get(m.messageId)})),next:null});
-  if(path.startsWith('/api/v1/account/inbox/')){const m=messages.find(m=>path===`/api/v1/account/inbox/${m.sender}/${m.messageId}`&&!deleted.has(m.messageId));return m?json({...m,trashedAt:trash.get(m.messageId)??null}):json({},404);}
-  if(path.startsWith('/api/v1/account/threads/')){
-    const root=messages.find(m=>path===`/api/v1/account/threads/${m.sender}/${m.messageId}`&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
-    if(!root)return json({},404);
-    const related=root.messageId===firstConnection.messageId||root.messageId===secondConnection.messageId;
-    const incoming=(related?[firstConnection,secondConnection]:[root]).filter(m=>!trash.has(m.messageId)&&!deleted.has(m.messageId)).map(m=>({sender:m.sender,messageId:m.messageId,sent:false,isRead:m.isRead,createdAt:m.deliveredAt,
-      preview:'Saturday at the market?',inReplyTo:m.messageId===secondConnection.messageId?{sender:firstConnection.sender,messageId:firstConnection.messageId}:null,parentAvailable:m.messageId===secondConnection.messageId&&!trash.has(firstConnection.messageId)&&!deleted.has(firstConnection.messageId)}));
-    const replies=related?sent.map(m=>({sender:did,messageId:m.messageId,sent:true,isRead:true,createdAt:m.createdAt,preview:'Ten sounds good! Looking forward to catching up.',inReplyTo:{sender:firstConnection.sender,messageId:firstConnection.messageId},parentAvailable:incoming.some(m=>m.messageId===firstConnection.messageId)})):[];
-    return json({messages:[...incoming,...replies],truncated:false});
-  }
-  if(path==='/api/v1/account/sent'&&url.searchParams.get('include')==='sends'&&process.env.HAIL_DESIGN_SENT_AUDIENCES==='1')return json({messages:[sent[0],
-    {...sent[0],messageId:uuidV7(),kind:'connections',recipientSummary:{count:2,address:null,did:null}},
-    {...sent[0],messageId:uuidV7(),kind:'category',category:'essays',recipientSummary:undefined},
-    {...sent[0],messageId:uuidV7(),kind:'category',category:'general',recipientSummary:undefined}],next:null});
-  if(path==='/api/v1/account/sent')return json({messages:sent.filter(m=>!deleted.has(m.messageId)&&(url.searchParams.get('trash')==='true'?trash.has(m.messageId):!trash.has(m.messageId))).map(m=>({...m,trashedAt:trash.get(m.messageId)??null})),next:null});
-  if(path.startsWith('/api/v1/account/sent/')){const m=sent.find(m=>m.messageId===path.split('/').at(-1)&&!deleted.has(m.messageId)&&(url.searchParams.get('trash')==='true'?trash.has(m.messageId):!trash.has(m.messageId)));return m && (!url.searchParams.has('kind')||url.searchParams.get('kind')===m.kind)?json({...m,trashedAt:trash.get(m.messageId)??null,...(!url.searchParams.has('kind')?{kind:"connection"}:{})}):json({},404);}
-  if(path==='/api/v1/account/grants')return json({grants:(emptyRelationships?[]:grants).filter(g=>!url.searchParams.has('sender')||g.payload.grantee===url.searchParams.get('sender')).map(g=>({grantId:g.payload.grant_id,localRole:'grantor',grantee:g.payload.grantee,status:'active'})),next:null});
-  if(path.startsWith('/api/v1/account/grants/')){const grant=grants.find(g=>g.payload.grant_id===path.split('/').at(-1));return grant?json(grant.representation):json({},404);}
   if(path==='/api/v1/account/profile')return json(profileResponse);
   if(path==='/api/v1/account/custom-domains')return json({provider:origin,domains:[]});
-  if(path==='/api/v1/account/connections/conversation-preferences'){
-    if(request.method==='POST'){allowIntroductions=input.allowIntroductions;conversationsConfigured=true;}
-    return json({allowIntroductions,configured:conversationsConfigured,truncated:false,connections:[]});
-  }
-  if(path==='/api/v1/account/connections')return json({preview:true,codes:[],connections:emptyRelationships?[]:fixtureConnections(),pendingConnections:[]});
-  if(path==='/api/v1/account/publications/audiences')return json({maxRecipients:100,categories:[{category:'general',subscribers:12},{category:'essays',subscribers:8}]});
-  if(path==='/api/v1/account/connection-messages/targets')return json({maxRecipients:100,connections:[{connectionId,recipientDid:senders[3].did,epoch:1,address:senders[3].address},...(sharedMode?[{connectionId:sharedConversation.conversationId,recipientDid:maya.did,epoch:1,address:maya.address}]:[])]});
   if(path==='/api/v1/auth/passkeys')return json({recentlyVerified:false,sessions:[],passkeys:[]});
   if(path==='/api/v1/registration')return json({mode:'invite',signupAvailable:false});
   return json({},404);

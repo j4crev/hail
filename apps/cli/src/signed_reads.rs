@@ -54,7 +54,9 @@ pub async fn grant_record(client: &Client, id: &str) -> Result<(Value, Vec<u8>, 
     if !ID.is_match(id) {
         return Err(Error::client("Grant ID must be a canonical UUIDv7"));
     }
-    let result = client.get(&format!("/grants/{id}")).await?;
+    let result = client
+        .jmap("HailGrant/read", &json!({"grantId":id}))
+        .await?;
     let cose = result["cose"].as_str().filter(|s| s.len() <= 349_528);
     if result["type"] != "racr.grant"
         || result["version"].as_f64() != Some(1.0)
