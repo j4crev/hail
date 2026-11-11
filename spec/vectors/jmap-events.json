@@ -1,0 +1,54 @@
+{
+  "cases": [
+    {
+      "name": "received-state-hint",
+      "valid": true,
+      "value": {
+        "@type": "StateChange",
+        "changed": {
+          "account_example": {
+            "HailMessage": "account_example_m_12"
+          }
+        }
+      }
+    },
+    {
+      "name": "multiple-type-hints",
+      "valid": true,
+      "value": {
+        "@type": "StateChange",
+        "changed": {
+          "account_example": {
+            "HailDraft": "draft_2",
+            "HailGrant": "grant_8"
+          }
+        }
+      }
+    },
+    {
+      "name": "reject-message-content",
+      "valid": false,
+      "value": {
+        "@type": "StateChange",
+        "changed": {
+          "account_example": {
+            "HailMessage": "state",
+            "body": "private"
+          }
+        }
+      }
+    },
+    {
+      "name": "reject-unknown-type",
+      "valid": false,
+      "value": {
+        "@type": "StateChange",
+        "changed": {
+          "account_example": {
+            "Email": "state"
+          }
+        }
+      }
+    }
+  ]
+}

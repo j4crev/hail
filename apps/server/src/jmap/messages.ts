@@ -16,6 +16,7 @@ interface MessageRow {id:string;sender_did:string;message_id:string;is_read:bool
 export class JmapMessages {
   private readonly log:JmapChangeLog;
   constructor(private readonly sql:SQL,origin:string){this.log=new JmapChangeLog(sql,origin,'message');}
+  currentState(session:AccountApiSession){return this.log.snapshot(session,async(_tx,state)=>this.log.state(session,state.revision));}
   accountId(session:AccountApiSession){return this.log.accountId(session);}
   private state(session:AccountApiSession,revision:string){return this.log.state(session,revision);}
   async get(session:AccountApiSession,args:Record<string,unknown>){

@@ -36,6 +36,26 @@ integration('JMAP received message synchronization',()=>{
       VALUES(${session.did},${sender},${id},${edigest},${digest},'application/hail-body+cbor','spt-3')`;
     return {id,sender,body,envelope};
   }
+  it('notifies committed state without changing read state and recovers missed deliveries through changes',async()=>{
+    const owner=await account(),other=await account(),app=new Hono();
+    registerJmapRoutes(app,{authenticate:async()=>owner} as unknown as AccountApiRepository,messages,origin);
+    const readEvent=async()=>{
+      const response=await app.request(origin+'/jmap/events?types=HailMessage&closeafter=state&ping=0');
+      expect(response.headers.get('Content-Type')).toBe('text/event-stream');
+      const frame=await response.text();return JSON.parse(frame.split('\n').find(line=>line.startsWith('data: '))!.slice(6));
+    };
+    const before=await readEvent(),state=before.changed[messages.accountId(owner)].HailMessage;
+    await deliver(other);expect(await readEvent()).toEqual(before);
+    const first=await deliver(owner),second=await deliver(owner);
+    const after=await readEvent();expect(Object.keys(after.changed)).toEqual([messages.accountId(owner)]);
+    expect(after.changed[messages.accountId(owner)].HailMessage).toBe(await messages.currentState(owner));
+    // Ignore one notification and receive another twice: /changes is authoritative.
+    expect(await readEvent()).toEqual(after);
+    const changes=await messages.changes(owner,{sinceState:state});expect(changes.created).toHaveLength(2);
+    const current=await messages.get(owner,{ids:changes.created});expect(current.list.map(m=>m.messageId).sort()).toEqual([first.id,second.id].sort());
+    expect(current.list.every(m=>m.isRead===false)).toBe(true);
+    expect((await messages.changes(owner,{sinceState:changes.newState})).created).toEqual([]);
+  });
   it('cleans derived state when transfer activation releases a temporary account reservation',async()=>{
     const id=randomUUID();
     await db.sql`INSERT INTO provider_accounts(id,tenant_id,canonical_address,onboarding_state) VALUES(${id},${randomUUID()},${id+'@jmap.example.com'},'reserved')`;

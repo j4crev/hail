@@ -259,6 +259,7 @@ const migrations: readonly Migration[] = [
   {version:115,name:"jmap-blobs",url:new URL("../../migrations/0115_jmap_blobs.sql",import.meta.url)},
   {version:116,name:"jmap-collections",url:new URL("../../migrations/0116_jmap_collections.sql",import.meta.url)},
   {version:117,name:"remove-inbox-cursor",url:new URL("../../migrations/0117_remove_inbox_cursor.sql",import.meta.url)},
+  {version:118,name:"jmap-push",url:new URL("../../migrations/0118_jmap_push.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

@@ -1,3 +1,4 @@
+import {generateVAPIDKeys} from 'web-push';
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import {base58btc} from "multiformats/bases/base58";
@@ -15,6 +16,13 @@ const validEnvironment = {
 };
 
 describe("loadConfig", () => {
+  it("advertises push only with a complete valid independent VAPID key pair",()=>{
+    expect(loadConfig(validEnvironment).webPush).toBeUndefined();
+    const keys=generateVAPIDKeys(),environment={...validEnvironment,WEB_PUSH_VAPID_SUBJECT:'mailto:ops@example.com',WEB_PUSH_VAPID_PUBLIC_KEY:keys.publicKey,WEB_PUSH_VAPID_PRIVATE_KEY:keys.privateKey};
+    expect(loadConfig(environment).webPush).toEqual({subject:environment.WEB_PUSH_VAPID_SUBJECT,...keys});
+    for(const name of ['WEB_PUSH_VAPID_SUBJECT','WEB_PUSH_VAPID_PUBLIC_KEY','WEB_PUSH_VAPID_PRIVATE_KEY'])expect(()=>loadConfig({...environment,[name]:''})).toThrow();
+    expect(()=>loadConfig({...environment,WEB_PUSH_VAPID_PUBLIC_KEY:generateVAPIDKeys().publicKey})).toThrow('key pair');
+  });
   it("defaults and overrides browser session lifetimes", () => {
     expect(loadConfig(validEnvironment).sessionPolicy).toEqual({idleSeconds:1800,absoluteSeconds:43200});
     expect(loadConfig({...validEnvironment,PASSKEY_SESSION_IDLE_SECONDS:"604800",PASSKEY_SESSION_ABSOLUTE_SECONDS:"2592000"}).sessionPolicy)

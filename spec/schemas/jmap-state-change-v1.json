@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hail connected StateChange v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "@type",
+    "changed"
+  ],
+  "properties": {
+    "@type": {
+      "const": "StateChange"
+    },
+    "changed": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-]{1,255}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "HailMessage": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "HailDraft": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "HailSent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "HailSubmission": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "HailGrant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "HailRelationship": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      }
+    }
+  }
+}

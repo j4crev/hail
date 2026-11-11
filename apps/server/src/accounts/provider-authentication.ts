@@ -101,14 +101,18 @@ export class ProviderAuthentication {
     return {token, sessionId: id, expiresAt};
   }
 
-  async authenticate(token: string): Promise<AccountApiSession | null> {
-    if (!/^hailps_[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  async authenticate(token: string,touch=true): Promise<AccountApiSession | null> {
+    return this.lookupSession(token,touch);
+  }
+  async authenticateReference(id:string):Promise<AccountApiSession|null>{return this.lookupSession(undefined,false,id);}
+  private async lookupSession(token:string|undefined,touch:boolean,id?:string):Promise<AccountApiSession|null>{
+    if (!id&&!/^hailps_[A-Za-z0-9_-]{43}$/.test(token??"")) return null;
     const row = (await this.sql<{
       id: string; integration: string; issuer: string; tenant: string; subject: string;
       upstream_session: string; authenticated_at: Date;
     }[]>`SELECT s.id,b.integration,b.issuer,b.tenant,b.subject,s.upstream_session,s.authenticated_at
       FROM account_provider_sessions s JOIN account_provider_identities b ON b.id=s.identity_id
-      WHERE s.token_hash=${tokenHash(token)} AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp()
+      WHERE (s.token_hash=${tokenHash(token??"")} OR s.id=${id??null}::uuid) AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp()
         AND b.disabled_at IS NULL
         AND s.last_seen_at>clock_timestamp()-(${this.policy.idleSeconds}::double precision * interval '1 second')`)[0];
     if (!row) return null;
@@ -120,7 +124,7 @@ export class ProviderAuthentication {
       identity.subject !== row.subject || identity.sessionId !== row.upstream_session ||
       identity.authenticatedAt.getTime() !== row.authenticated_at.getTime()) return null;
     const sessions = await this.sql<(AccountApiSession & {scopes: AccountApiScope[]})[]>`
-      UPDATE account_provider_sessions s SET last_seen_at=clock_timestamp(),expires_at=LEAST(s.expires_at,${identity.expiresAt})
+      UPDATE account_provider_sessions s SET last_seen_at=CASE WHEN ${touch} THEN clock_timestamp() ELSE s.last_seen_at END,expires_at=LEAST(s.expires_at,${identity.expiresAt})
       FROM account_provider_identities b,provider_accounts a,account_serving_generations g
       WHERE s.id=${row.id} AND b.id=s.identity_id AND b.disabled_at IS NULL
         AND a.id=b.account_id AND a.closed_at IS NULL AND a.onboarding_state='active' AND a.did IS NOT NULL

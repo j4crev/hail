@@ -190,27 +190,29 @@ are removed. Existing domain services enforce consent, scopes and submission
 idempotency. Portable v11/managed v12 include required read/draft/Trash and Sent
 state; signed schema/vector and round-trip tests cover preservation.
 
-Core binary access and request mechanics are implemented. Event streams/Web Push
-remain phase 6. RFC 8621 Mail interoperability is not claimed. Independent HTTPS
+Core binary access and request mechanics are implemented. Event streams and optional encrypted Web Push
+are defined by phase 6. RFC 8621 Mail interoperability is not claimed. Independent HTTPS
 CLI fixtures and Go/Rust history readers provide evidence without claiming a
 complete third-party JMAP certification program.
 
 ### 6. Events and Web Push
 
 **Current behavior and reuse.** Phase 5's durable collection change
-state provide the synchronization seam. No JMAP events/Web Push completion is
-claimed. [Delivery statuses](../apps/server/src/delivery/status.ts) remain separate
+state provides the synchronization seam. [Connected events](../spec/jmap-events.md)
+now provide authorized state hints and browser reconnect/polling recovery.
+Optional encrypted Web Push adds verified, credential-bound subscriptions and explicit browser opt-in. [Delivery statuses](../apps/server/src/delivery/status.ts) remain separate
 protocol evidence. Reuse account authorization and safe destination validation,
 not browser notification delivery as an acknowledgment.
 
-**Spec/schema/vector owners.** The **planned** JMAP profile owns event/subscription
-schemas, lifetime and state-hint vectors; `spec/client-api.md` owns client access,
+**Spec/schema/vector owners.** The JMAP profile owns connected-event schemas and
+vectors, including subscription schemas/lifetimes; `spec/client-api.md` owns client access,
 `spec/delivery-state.md` preserves the hint/evidence distinction. History/transfer
-schema changes require an explicit decision about local subscription state.
+schema excludes provider/device-local subscriptions and registration quotas.
 
-**Proof to add.** Authorized subscription lifecycle, unsafe destinations, payload
+**Proof.** Automated tests cover authorized subscription lifecycle, unsafe destinations, payload
 minimization, expiry/revocation, duplicate/lost events, reconnect and bounded retry.
-Phase 5 synchronization tests must prove convergence without successful push.
+Phase 5 synchronization tests prove convergence without successful push. Real-device
+push-service delivery remains an operator smoke test, not established interoperability evidence.
 
 ### 7. Publication and interoperability
 
