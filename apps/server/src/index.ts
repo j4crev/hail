@@ -1,3 +1,7 @@
+import {JmapPush} from './jmap/push.js';
+import {EVENT_TYPES} from './jmap/events.js';
+import {canReadCollection,type Collection} from './jmap/collections.js';
+import {canReadDrafts} from './jmap/drafts.js';
 import {JmapCollections} from './jmap/collections.js';
 import {JmapBlobs} from './jmap/blobs.js';
 import {JmapDrafts} from './jmap/drafts.js';
@@ -169,7 +173,23 @@ const managedCompletion=publicManaged?.completion??(managedResolver&&managedActi
 const transferWorker = new TransferDeliveryWorker(database.sql, invitationDelivery, finalTransferPublisher,
   managedDelivery,managedFencePublisher);
 
+const jmapMessages=new JmapMessages(database.sql,config.publicOrigin);
+const jmapDrafts=new JmapDrafts(database.sql,config.publicOrigin);
+const jmapCollections=new JmapCollections(database.sql,config.publicOrigin);
+const jmapPush=config.webPush?new JmapPush(database.sql,new AccountApiRepository(database.sql,config.sessionPolicy),config.publicOrigin,config.webPush,
+  session=>EVENT_TYPES.filter(type=>type==='HailMessage'?session.scopes.includes('messages:read'):type==='HailDraft'?canReadDrafts(session):canReadCollection(session,type as Collection)),
+  async(session,types)=>{
+    const states:Record<string,string>={};
+    for(const type of types)states[type]=type==='HailMessage'?await jmapMessages.currentState(session):type==='HailDraft'?await jmapDrafts.currentState(session):await jmapCollections.currentState(session,type as Collection);
+    return states;
+  },transport.fetchPush,transport.validateTarget):undefined;
 if (!schemaRehearsal) {
+  if(jmapPush){
+    let pushing=false;
+    setInterval(()=>{if(pushing)return;pushing=true;void (async()=>{for(let i=0;i<8&&await jmapPush.workOne();i++);})()
+      .catch(()=>console.error('Web Push worker unavailable')).finally(()=>{pushing=false;});},5000).unref();
+  }
+
 if(config.publicPlcAuthority){
   const diagnosticReaders=config.publicPlcAuthority.readers.map(reader=>createIndependentPlcObserver(reader.origin,reader.operator));
   let diagnosticRunning=false,lastDiagnosticHealthy:boolean|undefined;
@@ -385,9 +405,10 @@ const app = createApp(config, schemaRehearsal ? {
   ),
   bodyStore: new BodyRepository(database.sql),
   bodyProof: new BodyRequestVerifier(database.sql,resolver,config.publicOrigin),
-  jmap: new JmapMessages(database.sql,config.publicOrigin),
-  jmapCollections: new JmapCollections(database.sql,config.publicOrigin),
-  jmapDrafts: new JmapDrafts(database.sql,config.publicOrigin),
+  ...(jmapPush?{jmapPush}:{}),
+  jmap: jmapMessages,
+  jmapCollections,
+  jmapDrafts,
   jmapBlobs: new JmapBlobs(database.sql,config.publicOrigin,new JmapMessages(database.sql,config.publicOrigin),new JmapCollections(database.sql,config.publicOrigin)),
   envelopeReceiver: new EnvelopeReceiver(
     onboardingRepository, new EnvelopeRepository(database.sql), resolver, config.hailServiceBase,undefined,connectionAuthority,
@@ -433,5 +454,10 @@ console.info(
 export default {
   maxRequestBodySize: 36*1024*1024,
   port: config.port,
-  fetch: app.fetch,
+  async fetch(request:Request,server:Bun.Server<undefined>){
+    const response=await app.fetch(request);
+    // Only admitted SSE responses have their own bounded lifetime and cleanup.
+    if(response.headers.get('Content-Type')==='text/event-stream')server.timeout(request,0);
+    return response;
+  },
 };

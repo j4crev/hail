@@ -90,3 +90,22 @@ it('does not commit a newly discovered identity when its first synchronization f
   expect(await client.sync.poll()).toBe(true);expect(clear).toHaveBeenCalledTimes(1);
   expect(client.calls.filter(c=>c.method==='HailMessage/get')).toHaveLength(2);
 });
+
+it('converges after lost, duplicate and reordered event hints without trusting their cursors',async()=>{
+  const {MailboxEvents}=await import('./jmap-events.js');
+  const server=provider(),client=server.transport();await client.sync.poll();
+  const listeners=new Map<string,(event:unknown)=>void>();let pending=Promise.resolve(false);
+  const source={close:vi.fn(),onopen:null as null|(()=>void),onerror:null,addEventListener:(name:string,callback:(event:unknown)=>void)=>listeners.set(name,callback)};
+  const events=new MailboxEvents(()=>{pending=pending.then(()=>client.sync.poll());},()=>source as unknown as EventSource);
+  events.start();source.onopen!();expect(await pending).toBe(false);
+  // No event arrives for either write. A reconnect discovers both via /changes.
+  server.events.get('HailMessage')!.push({id:'lost-one',operation:'created'},{id:'lost-two',operation:'updated'});
+  source.onopen!();expect(await pending).toBe(true);
+  for(const hint of ['untrusted-newer-state','stale-state','stale-state']){
+    listeners.get('state')!({data:JSON.stringify({'@type':'StateChange',changed:{account_generation_1:{HailMessage:hint}}})});
+    expect(await pending).toBe(false);
+  }
+  expect(client.calls.filter(c=>c.method==='HailMessage/changes').at(-1)!.args.sinceState).toBe('account_generation_1_HailMessage_2');
+  events.stop();server.events.get('HailMessage')!.push({id:'offline-write',operation:'created'});
+  expect(await client.sync.poll()).toBe(true);expect(await client.sync.poll()).toBe(false);
+});

@@ -935,12 +935,24 @@ replacement policy, portability decisions and verification boundaries.
 
 ### 6. JMAP events and Web Push
 
-- [ ] Implement connected state-change events and encrypted Web Push subscriptions
-  with VAPID; advertise only supported notification capabilities.
-- [ ] Prove reconnect and duplicate/lost notifications converge through JMAP sync;
+Standards addressed: [RFC 8620 §§7.1–7.3](https://www.rfc-editor.org/rfc/rfc8620.html#section-7),
+[RFC 8030](https://www.rfc-editor.org/rfc/rfc8030.html) Web Push,
+[RFC 8291](https://www.rfc-editor.org/rfc/rfc8291.html) payload encryption and
+[RFC 8292](https://www.rfc-editor.org/rfc/rfc8292.html) VAPID.
+See the [notification profile](../spec/jmap-events.md).
+
+- [x] Implement authenticated connected state-change events and web-client hints,
+  retaining polling recovery; advertise only implemented connected notifications.
+- [x] Implement encrypted Web Push subscriptions with VAPID and device permission
+  lifecycle; advertise only supported notification capabilities.
+- [x] Prove reconnect and duplicate/lost notifications converge through JMAP sync;
   enforce subscription authorization, destination validation, expiry and revocation.
-- [ ] Verify payload minimization and bounded retries; prove push delivery neither
+- [x] Verify payload minimization and bounded retries; prove push delivery neither
   changes read state nor substitutes for RACR delivery evidence.
+
+Web Push remains disabled until operator VAPID configuration. Automated proofs
+cover the protocol and lifecycle; real-device push-service delivery is an
+operational smoke test still to run, not established interoperability evidence.
 
 ### 7. Publication and interoperability completion
 

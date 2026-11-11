@@ -1,3 +1,4 @@
+import {EVENT_CAPABILITY} from './jmap-events.js';
 import {readJmapJson} from './jmap.js';
 import {mailboxCache} from './mailbox-cache.js';
 const CORE='urn:ietf:params:jmap:core';
@@ -8,6 +9,7 @@ const object=(v:unknown):v is Record<string,any>=>!!v&&typeof v==='object'&&!Arr
 export class MailboxSync {
   private states=new Map<string,string>();
   private identity='';
+  eventsSupported=false;
   constructor(private transport:typeof fetch=fetch){}
   async poll():Promise<boolean>{
     const read=async(path:string,body?:unknown)=>{
@@ -47,6 +49,7 @@ export class MailboxSync {
       states.set(type,state);
     }
     this.states=states;this.identity=identity;
+    this.eventsSupported=session.capabilities?.[EVENT_CAPABILITY]?.transport==='eventsource';
     if(changed)mailboxCache.clear();return changed;
   }
 }

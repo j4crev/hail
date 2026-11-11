@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {MailboxEvents} from '$lib/jmap-events.js';
   import {MailboxSync} from '$lib/jmap-sync.js';
   import {mailboxCounts} from "$lib/mailbox-counts.js";
   const counts = $derived($mailboxCounts?.scope === page.data.mailboxScope ? $mailboxCounts?.counts : page.data.unreadCounts);
@@ -22,20 +23,28 @@
   import UserMenu from "$lib/UserMenu.svelte";
   let {children} = $props();
   const unseenConnections = $derived(page.data.unseenConnections ?? 0);
+  let eventClient:MailboxEvents|undefined;
+  $effect(()=>{if(!page.data.hasAccountSession)eventClient?.stop();});
   onMount(() => {
     const sync=new MailboxSync();
-    let pending = false, lastRefresh = 0;
-    const refresh = async () => {
-      if (pending || !page.data.hasAccountSession || document.visibilityState !== 'visible' || Date.now()-lastRefresh < 10_000) return;
-      pending = true; lastRefresh = Date.now();
-      try {if(await sync.poll())window.dispatchEvent(new Event('hail:mailbox-changed'));await invalidate('hail:counts');} finally {pending = false;}
+    let pending=false,lastRefresh=0,queued=false,disposed=false,hintTimer:ReturnType<typeof setTimeout>|undefined;
+    const eligible=()=>page.data.hasAccountSession&&document.visibilityState==='visible';
+    const hint=()=>{queued=true;if(hintTimer===undefined)hintTimer=setTimeout(()=>{hintTimer=undefined;void refresh(true).catch(()=>{});},Math.max(1000,10_000-(Date.now()-lastRefresh)));};
+    const events=new MailboxEvents(hint);eventClient=events;
+    const refresh=async(force=false)=>{
+      if(disposed||!eligible()){events.stop();return;}
+      if(pending||!force&&Date.now()-lastRefresh<10_000)return;
+      pending=true;queued=false;lastRefresh=Date.now();
+      try{
+        if(await sync.poll())window.dispatchEvent(new Event('hail:mailbox-changed'));
+        if(!disposed&&eligible()&&sync.eventsSupported)events.start();else events.stop();
+        await invalidate('hail:counts');
+      }finally{pending=false;if(queued&&!disposed)hint();}
     };
-    const update = () => {void refresh().catch(() => {});};
-    window.addEventListener('focus', update);
-    document.addEventListener('visibilitychange', update);
-    update();
-    const timer = setInterval(update, 30_000 + Math.random()*5000);
-    return () => {clearInterval(timer);window.removeEventListener('focus', update);document.removeEventListener('visibilitychange', update);};
+    const update=()=>{if(!eligible())events.stop();void refresh().catch(()=>{});};
+    window.addEventListener('focus',update);document.addEventListener('visibilitychange',update);
+    update();const timer=setInterval(update,30_000+Math.random()*5000);
+    return ()=>{disposed=true;events.stop();eventClient=undefined;clearTimeout(hintTimer);clearInterval(timer);window.removeEventListener('focus',update);document.removeEventListener('visibilitychange',update);};
   });
   let drawer = $state<HTMLDialogElement>();
   let drawerOpen = $state(false);

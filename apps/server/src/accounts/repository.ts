@@ -112,16 +112,24 @@ export class AccountApiRepository {
         WHERE token_hash=${tokenHash(token)}`;
   }
 
-  async authenticate(header: string | undefined, sessionToken?:string): Promise<AccountApiSession | null> {
+  async authenticate(header: string | undefined, sessionToken?:string,touch=true): Promise<AccountApiSession | null> {
+    return this.lookupCredential(header,sessionToken,touch);
+  }
+  // Internal worker use only: revalidate stored identity without retaining tokens.
+  async authenticateReference(kind:'api'|'passkey'|'provider',id:string):Promise<AccountApiSession|null>{
+    return this.lookupCredential(undefined,undefined,false,{kind,id});
+  }
+  private async lookupCredential(header:string|undefined,sessionToken:string|undefined,touch:boolean,reference?:{kind:'api'|'passkey'|'provider';id:string}):Promise<AccountApiSession|null>{
     const token = /^Bearer (racr_[A-Za-z0-9_-]{43})$/i.exec(header ?? "")?.[1];
-    if (!token) {
+    if (!token&&reference?.kind!=="api") {
       if (header !== undefined) return null;
-      if (sessionToken?.startsWith("hailps_")) return this.providerAuthentication?.authenticate(sessionToken) ?? null;
-      if(!/^hails_[A-Za-z0-9_-]{43}$/.test(sessionToken??""))return null;
+      if(reference?.kind==="provider")return this.providerAuthentication?.authenticateReference(reference.id)??null;
+      if (sessionToken?.startsWith("hailps_")) return this.providerAuthentication?.authenticate(sessionToken,touch) ?? null;
+      if(reference?.kind!=="passkey"&&!/^hails_[A-Za-z0-9_-]{43}$/.test(sessionToken??""))return null;
       const rows=await this.sql<(Omit<AccountApiSession,"scopes">&{scopes:unknown})[]>`
-        UPDATE account_passkey_sessions session SET last_seen_at=now()
+        UPDATE account_passkey_sessions session SET last_seen_at=CASE WHEN ${touch} THEN now() ELSE session.last_seen_at END
         FROM provider_accounts account,account_serving_generations generation,account_passkeys passkey
-        WHERE session.token_hash=${tokenHash(sessionToken!)} AND session.revoked_at IS NULL AND session.expires_at>now()
+        WHERE (session.token_hash=${tokenHash(sessionToken??"")} OR session.id=${reference?.kind==="passkey"?reference.id:null}::uuid) AND session.revoked_at IS NULL AND session.expires_at>now()
           AND session.last_seen_at>now()-(${this.sessionPolicy.idleSeconds}::double precision * interval '1 second')
           AND account.id=session.account_id AND account.closed_at IS NULL AND account.onboarding_state='active' AND account.did IS NOT NULL
           AND generation.account_id=account.id AND generation.generation=session.serving_generation
@@ -144,7 +152,7 @@ export class AccountApiRepository {
       JOIN account_credential_generations binding ON binding.credential_id=credential.id
       JOIN account_serving_generations generation ON generation.account_id=account.id AND generation.generation=binding.generation
       LEFT JOIN provider_migration_fences fence ON fence.account_id = account.id
-      WHERE credential.token_hash = ${tokenHash(token)} AND credential.revoked_at IS NULL
+      WHERE (credential.token_hash = ${tokenHash(token??"")} OR credential.id=${reference?.kind==="api"?reference.id:null}::uuid) AND credential.revoked_at IS NULL
         AND credential.expires_at > now() AND account.closed_at IS NULL AND account.onboarding_state = 'active' AND account.did IS NOT NULL`;
     if (!rows[0]) return null;
     const scopes = typeof rows[0].scopes === "string" ? JSON.parse(rows[0].scopes) : rows[0].scopes;

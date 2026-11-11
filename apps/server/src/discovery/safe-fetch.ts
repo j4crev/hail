@@ -42,9 +42,10 @@ export class SafeHttpsTransport {
   }
 
   readonly fetch: DiscoveryFetch = (request) => this.send(request, false);
+  readonly fetchPush: DiscoveryFetch = (request) => this.send(request, false, true);
   readonly fetchBody: DiscoveryFetch = (request) => this.send(request, true);
 
-  private async send(request: Request, bodyRetrieval: boolean): Promise<Response> {
+  private async send(request: Request, bodyRetrieval: boolean, push=false): Promise<Response> {
     if (request.method !== "GET" && request.method !== "PUT" && request.method !== "POST") {
       throw new Error("Safe HTTPS transport only permits GET, PUT and POST");
     }
@@ -54,10 +55,11 @@ export class SafeHttpsTransport {
       !/^\/(?:[A-Za-z0-9._~-]+\/)*bodies\/[A-Za-z0-9_-]{43}(?:\/attachments\/[A-Za-z0-9_-]{43})?$/.test(url.pathname) || url.search)) {
       throw new Error("Body retrieval requires the canonical body GET operation");
     }
-    for (const name of ["cookie", "referer", ...(bodyRetrieval ? [] : ["authorization"])]) {
+    if(push&&((url.port&&url.port!=="443")||request.method!=="POST"||request.headers.get("content-encoding")!=="aes128gcm"||!/^vapid t=[A-Za-z0-9_.-]+, k=[A-Za-z0-9_-]+$/.test(request.headers.get("authorization")??"")))throw new Error("Invalid encrypted push request");
+    for (const name of ["cookie", "referer", ...(bodyRetrieval||push ? [] : ["authorization"])]) {
       if (request.headers.has(name)) throw new Error(`Discovery request must not send ${name}`);
     }
-    const allowedHeaders = bodyRetrieval
+    const allowedHeaders = push?new Set(["authorization","content-encoding","content-type","ttl","urgency"]):bodyRetrieval
       ? new Set(["accept", "accept-encoding", "authorization", "signature-input", "signature"])
       :
       request.method === "GET"
@@ -80,6 +82,7 @@ export class SafeHttpsTransport {
     const requestBody =
       request.method !== "GET" ? new Uint8Array(await request.arrayBuffer()) : undefined;
 
+    if(push&&(!requestBody||!requestBody.length||requestBody.length>4096))throw new Error("Push payload too large");
     const addresses = await this.resolve(url.hostname, request.signal);
     if (
       addresses.length === 0 ||

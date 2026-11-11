@@ -26,6 +26,7 @@ export class JmapCollections {
    if(!row)throw new JmapError('accountNotFound');return work(tx as SQL,this.state(s,c,row.revision));
   });
  }
+ currentState(s:AccountApiSession,c:Collection){return this.snapshot(s,c,async(_tx,state)=>state);}
  async get(s:AccountApiSession,c:Collection,args:Record<string,unknown>){
   argumentsOnly(args,['accountId','ids','properties']);const ids=args.ids??null,properties=args.properties??null;
   if(ids!==null&&(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'||id.length>255))||properties!==null&&(!Array.isArray(properties)||properties.some(p=>typeof p!=='string'||!FIELDS[c].includes(p))))throw new JmapError('invalidArguments');

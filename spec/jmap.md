@@ -3,8 +3,9 @@
 Status: implemented alpha account synchronization and workflows using the
 [RFC 8620](https://www.rfc-editor.org/rfc/rfc8620.html) Session, method envelope,
 result references, binary transfer and object-method conventions. This is a Hail
-extension, not RFC 8621 Email/Mailbox interoperability. Push/events remain phase 6;
-the advertised Core capability does not claim complete Core push support.
+extension, not RFC 8621 Email/Mailbox interoperability. Connected
+[events and encrypted push](jmap-events.md) are implemented. Background push is
+advertised only when VAPID is configured.
 
 The profile includes received messages below, [drafts](jmap-drafts.md),
 [Sent, submission, Grant and relationship collections](jmap-collections.md), and
@@ -62,9 +63,9 @@ The reference provider additionally allows 32 concurrent requests globally and
 120 requests per minute per source address. A request body has a 10-second read
 budget; binary uploads have a 60-second read budget. Responses are private
 (`Cache-Control: no-store`). Uploaded bytes have a 100 MiB account quota and a
-24-hour lifetime. These are reference-provider storage policies. The events URL
-returns 501 `unsupportedCapability`; clients poll changes until phase 6 push is
-implemented and MUST NOT rely on notifications for correctness.
+24-hour lifetime. These are reference-provider storage policies. The [events URL](jmap-events.md) provides authenticated state-change streams.
+Clients MUST NOT rely on notifications for correctness. Background push
+subscriptions follow the configured encrypted notification profile.
 
 POST the Session `apiUrl` (`/jmap`) as UTF-8 application/json with no content
 encoding or URL query. Reject duplicate JSON keys. The request has `using`,
@@ -288,7 +289,7 @@ existing envelope/body ingestion remains responsible for signature verification.
 
 Collection synchronization, typed submission retries, reference client adoption,
 and portable read/Trash/draft/Sent history are part of this phase 5 profile.
-Push notifications and streaming remain phase 6; no generic email-client or
-complete Core push interoperability is claimed. See the
+Connected streaming and encrypted Web Push are defined in [phase 6 events](jmap-events.md);
+no generic email-client or independent push-service certification is claimed. See the
 [phase 5 implementation plan](../agents/standards-phase-5.md) and the collection,
 draft and operation documents for their distinct wire formats and authority.

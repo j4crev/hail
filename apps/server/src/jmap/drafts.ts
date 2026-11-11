@@ -13,6 +13,7 @@ const integer=(v:unknown,min:number,max:number)=>Number.isSafeInteger(v)&&Number
 const fields=['id','draftId','revision','content','updatedAt','isInTrash','trashedAt'];
 interface Row {id:string;draft_id:string;revision:number;content:unknown;updated_at:Date;trashed_at:Date|null}
 export class JmapDrafts {
+  currentState(session:AccountApiSession){this.authorize(session);return this.log.snapshot(session,async(_tx,state)=>this.log.state(session,state.revision));}
   private readonly log:JmapChangeLog;
   constructor(private readonly sql:SQL,origin:string){this.log=new JmapChangeLog(sql,origin,'draft');}
   private authorize(session:AccountApiSession){if(!canReadDrafts(session))throw new JmapError('accountNotSupportedByMethod');}

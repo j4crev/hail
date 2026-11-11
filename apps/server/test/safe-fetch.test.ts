@@ -171,3 +171,52 @@ describe("SafeHttpsTransport", () => {
     await expect(transport.fetch(new Request(path, { headers }))).rejects.toThrow("must not send authorization");
   });
 });
+
+
+describe('SafeHttpsTransport Web Push',()=>{
+  const headers={authorization:'vapid t=header.payload.signature, k=public-key','content-encoding':'aes128gcm','content-type':'application/octet-stream',ttl:'300',urgency:'normal'};
+  const request=(changes:Record<string,string>={},url='https://push.example.com/endpoint',body=new Uint8Array([1,2,3]))=>
+    new Request(url,{method:'POST',headers:{...headers,...changes},body});
+  it('pins public DNS, forwards only encrypted push headers/body and does not follow redirects',async()=>{
+    const before=httpsRequest.mock.calls.length;let options:any,sent:Uint8Array|undefined;
+    httpsRequest.mockImplementationOnce((opts,callback)=>{
+      options=opts;
+      const outgoing=new EventEmitter() as EventEmitter&{end(body?:Uint8Array):void;destroy(error?:Error):void};
+      outgoing.end=body=>{
+        sent=body;outgoing.emit('socket',{once:(_event:string,listener:()=>void)=>listener()});
+        const incoming=Readable.from([]) as Readable&{rawHeaders:string[];statusCode:number};
+        incoming.rawHeaders=['Location','https://internal.example.com/steal'];incoming.statusCode=307;callback(incoming);
+      };
+      outgoing.destroy=error=>{if(error)outgoing.emit('error',error);};return outgoing;
+    });
+    const lookup=vi.fn(async()=>[{address:'1.1.1.1',family:4}]);
+    const transport=new SafeHttpsTransport({lookup});
+    const result=await transport.fetchPush(request());
+    expect(result.status).toBe(307);await result.body?.cancel();
+    expect(httpsRequest.mock.calls.length-before).toBe(1);
+    expect(lookup).toHaveBeenCalledWith('push.example.com');
+    expect(options).toMatchObject({hostname:'push.example.com',servername:'push.example.com',port:443,method:'POST',headers:{...headers,'Content-Length':'3'}});
+    const pinned=vi.fn();options.lookup('ignored.example.com',{},pinned);
+    expect(pinned).toHaveBeenCalledWith(null,'1.1.1.1',4);
+    expect(sent).toEqual(new Uint8Array([1,2,3]));
+    // VAPID exceptions do not relax ordinary discovery's credential prohibition.
+    await expect(transport.fetch(request())).rejects.toThrow('must not send authorization');
+  });
+  it('rejects ambient credentials, plaintext/legacy encodings, arbitrary headers, ports and oversized bodies before DNS',async()=>{
+    const lookup=vi.fn(async()=>[{address:'1.1.1.1',family:4}]);
+    const transport=new SafeHttpsTransport({lookup}),before=httpsRequest.mock.calls.length;
+    for(const bad of [
+      request({authorization:'Bearer racr_secret'}),request({authorization:''}),request({cookie:'hail_session=secret'}),request({referer:'https://client.example.com'}),
+      request({'content-encoding':'aesgcm'}),request({'content-encoding':''}),request({'x-api-key':'secret'}),
+      request({},'https://push.example.com:8443/endpoint'),request({},undefined,new Uint8Array(4097)),request({},undefined,new Uint8Array()),
+      new Request('https://push.example.com/endpoint',{headers}),
+    ])await expect(transport.fetchPush(bad)).rejects.toThrow();
+    expect(lookup).not.toHaveBeenCalled();expect(httpsRequest.mock.calls.length).toBe(before);
+  });
+  it('revalidates every DNS answer and blocks rebinding to private networks',async()=>{
+    const before=httpsRequest.mock.calls.length;
+    const transport=new SafeHttpsTransport({lookup:async()=>[{address:'1.1.1.1',family:4},{address:'10.0.0.5',family:4}]});
+    await expect(transport.fetchPush(request())).rejects.toThrow('exclusively to public addresses');
+    expect(httpsRequest.mock.calls.length).toBe(before);
+  });
+});

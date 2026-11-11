@@ -23,6 +23,11 @@ integration("current-schema passkey sessions",()=>{
       await db.sql`INSERT INTO account_passkey_sessions(id,token_hash,account_id,credential_id,serving_generation,scopes,expires_at)
         VALUES(${sessionId},${tokenHash(token)},${account},${credential},1,'["account:read","grants:read","messages:read","messages:write"]',now()+interval '12 hours')`;
       const accounts=new AccountApiRepository(db.sql),authenticated=(await accounts.authenticate(undefined,token))!;
+      await db.sql`UPDATE account_passkey_sessions SET last_seen_at=now()-interval '2 minutes' WHERE id=${sessionId}`;
+      const idleBefore=(await db.sql`SELECT last_seen_at FROM account_passkey_sessions WHERE id=${sessionId}`)[0]!.last_seen_at;
+      expect(await accounts.authenticate(undefined,token,false)).not.toBeNull();
+      expect((await accounts.authenticateReference("passkey",sessionId))?.credential_id).toBe(sessionId);
+      expect((await db.sql`SELECT last_seen_at FROM account_passkey_sessions WHERE id=${sessionId}`)[0]!.last_seen_at).toEqual(idleBefore);
       expect(authenticated.canonical_address).toBe("before@example.com");expect(authenticated.passkey_credential_id).toBe(credential);
       const passkeys=new PasskeyAuth(db.sql,"example.com","https://example.com");
       expect((await passkeys.list(authenticated)).passkeys).toHaveLength(2);
@@ -43,6 +48,7 @@ integration("current-schema passkey sessions",()=>{
       expect((await accounts.authenticate(undefined,token))?.canonical_address).toBe("after@example.com");
       await db.sql`UPDATE account_passkey_sessions SET last_seen_at=now()-interval '31 minutes' WHERE id=${sessionId}`;
       expect(await accounts.authenticate(undefined,token)).toBeNull();
+      expect(await accounts.authenticateReference("passkey",sessionId)).toBeNull();
       const policy={idleSeconds:3600,absoluteSeconds:86400};
       const longerAccounts=new AccountApiRepository(db.sql,policy);
       const longerPasskeys=new PasskeyAuth(db.sql,"example.com","https://example.com",undefined,policy);
@@ -61,6 +67,7 @@ integration("current-schema passkey sessions",()=>{
       await db.sql.begin(async tx=>{await tx`SELECT set_config('hail.returning_account',${account},true)`;
         await tx`UPDATE account_serving_generations SET generation=2 WHERE account_id=${account}`;});
       expect(await accounts.authenticate(undefined,token)).toBeNull();
+      expect(await accounts.authenticateReference("passkey",sessionId)).toBeNull();
       const rollback=await db.sql.reserve();try{
         await expect(rollback.unsafe(await Bun.file(new URL("../migrations/rollback/0054_passkey_sessions.sql",import.meta.url)).text())).rejects.toThrow("active passkey access");
         await rollback.unsafe("ROLLBACK");
@@ -80,6 +87,7 @@ integration("current-schema passkey sessions",()=>{
       await db.sql`UPDATE account_passkey_enrollment_capabilities SET consumed_at=now(),credential_id=${credential} WHERE id=${capability}`;
       await db.migrate();
       expect(await accounts.authenticate(undefined,token)).toBeNull();
+      expect(await accounts.authenticateReference("passkey",sessionId)).toBeNull();
       expect(await db.sql`SELECT credential_id FROM account_passkeys WHERE account_id=${account} AND revoked_at IS NOT NULL`).toHaveLength(2);
       expect((await db.sql`SELECT consumed_at FROM account_passkey_enrollment_capabilities WHERE id=${capability}`)[0]!.consumed_at).not.toBeNull();
 

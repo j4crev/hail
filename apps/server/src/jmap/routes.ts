@@ -1,3 +1,5 @@
+import {HAIL_PUSH,type JmapPush} from './push.js';
+import {HAIL_EVENTS,eventOptions,stateStream} from './events.js';
 import {JmapOperations,JmapOperationError} from './operations.js';
 import {JmapCollections,COLLECTIONS,HAIL_ACCOUNT,canReadCollection,type Collection} from './collections.js';
 import {JmapBlobs,MAX_UPLOAD_BYTES} from './blobs.js';
@@ -44,14 +46,14 @@ function references(args:Record<string,unknown>,responses:Invocation[]){
   return result;
 }
 
-export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messages:JmapMessages,origin:string,browserOrigin=origin,drafts?:JmapDrafts,blobs?:JmapBlobs,collections?:JmapCollections,operations?:JmapOperations){
-  const rate=new FixedWindowRateLimit(),active=new Map<string,number>(),uploads=new Map<string,number>(),approvalRate=new FixedWindowRateLimit();let processing=0;
+export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messages:JmapMessages,origin:string,browserOrigin=origin,drafts?:JmapDrafts,blobs?:JmapBlobs,collections?:JmapCollections,operations?:JmapOperations,push?:JmapPush){
+  const rate=new FixedWindowRateLimit(),active=new Map<string,number>(),uploads=new Map<string,number>(),approvalRate=new FixedWindowRateLimit();let processing=0,streamCount=0;const streams=new Map<string,number>();
   function sessionObject(session:AccountApiSession){
     const accountId=messages.accountId(session),read=session.scopes.includes('messages:read');
     const writable=canMutateMessages(session),destroyable=canDestroyMessages(session),draftRead=!!drafts&&canReadDrafts(session);
     const capabilities={maxSizeUpload:blobs?MAX_UPLOAD_BYTES:0,maxConcurrentUpload:2,maxSizeRequest:MAX_REQUEST,maxConcurrentRequests:4,
       maxCallsInRequest:MAX_CALLS,maxObjectsInGet:MAX_OBJECTS,maxObjectsInSet:MAX_OBJECTS,collationAlgorithms:[]};
-    const document={capabilities:{...((collections||operations)?{[HAIL_ACCOUNT]:{version:1,types:COLLECTIONS}}:{}),[JMAP_CORE]:capabilities,[HAIL_MESSAGES]:{version:1,mutableProperties:['isRead','isInTrash'],canDestroy:true},...(drafts?{[HAIL_DRAFTS]:{version:1,mutableProperties:['content','isInTrash'],canCreate:true,canDestroy:true,maxGetBytes:MAX_DRAFT_GET_BYTES}}:{})},
+    const document={capabilities:{...(push?{[HAIL_PUSH]:push.capability()}:{}),[HAIL_EVENTS]:{types:['HailMessage',...(drafts?['HailDraft']:[]),...(collections?COLLECTIONS:[])],transport:"eventsource"},...((collections||operations)?{[HAIL_ACCOUNT]:{version:1,types:COLLECTIONS}}:{}),[JMAP_CORE]:capabilities,[HAIL_MESSAGES]:{version:1,mutableProperties:['isRead','isInTrash'],canDestroy:true},...(drafts?{[HAIL_DRAFTS]:{version:1,mutableProperties:['content','isInTrash'],canCreate:true,canDestroy:true,maxGetBytes:MAX_DRAFT_GET_BYTES}}:{})},
       accounts:{[accountId]:{name:session.canonical_address,isPersonal:true,isReadOnly:!destroyable,accountCapabilities:{...((collections||operations)?{[HAIL_ACCOUNT]:{types:COLLECTIONS.filter(c=>canReadCollection(session,c))}}:{}),...(read?{[HAIL_MESSAGES]:{mutableProperties:writable?['isRead','isInTrash']:[],canDestroy:destroyable},...(draftRead?{[HAIL_DRAFTS]:{readOnly:!writable}}:{})}:{})}}},
       primaryAccounts:{...((collections||operations)?{[HAIL_ACCOUNT]:accountId}:{}),...(read?{[HAIL_MESSAGES]:accountId,...(draftRead?{[HAIL_DRAFTS]:accountId}:{})}:{})},username:session.canonical_address,
       apiUrl:`${origin}/jmap`,downloadUrl:`${origin}/jmap/download/{accountId}/{blobId}/{name}?type={type}`,
@@ -64,11 +66,33 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
     const retry=rate.take(clientAddress(context.req.raw),120);
     if(retry!==null){const response=problem(429,'limit');response.headers.set('Retry-After',String(retry));return response;}
     let session:AccountApiSession|null;
-    try{session=await accounts.authenticate(context.req.header('Authorization'),getCookie(context,'hail_session'));}
+    try{session=await accounts.authenticate(context.req.header('Authorization'),getCookie(context,'hail_session'),context.req.path!=='/jmap/events'&&context.req.header('X-Hail-Background')!=='true');}
     catch{return problem(503,'serverUnavailable');}
     if(!session){const response=problem(401,'unauthorized');response.headers.set('WWW-Authenticate','Bearer realm="hail-jmap"');return response;}
     if(context.req.header('Origin')!==undefined&&context.req.header('Origin')!==browserOrigin)return problem(403,'forbidden');
     if(getCookie(context,'hail_session')&&context.req.method!=='GET'&&context.req.header('Origin')!==browserOrigin)return problem(403,'forbidden');
+    if(context.req.path==='/jmap/events'){
+      if(context.req.method!=='GET')return problem(405,'unknownMethod');
+      const options=eventOptions(new URL(context.req.url)),lastId=context.req.header('Last-Event-ID')??null;
+      if(!options||lastId!==null&&!/^[A-Za-z0-9_-]{43}$/.test(lastId))return problem(400,'invalidArguments');
+      const allowed=(s:AccountApiSession)=>options.types.filter(t=>t==='HailMessage'?s.scopes.includes('messages:read'):
+        t==='HailDraft'?!!drafts&&canReadDrafts(s):!!collections&&canReadCollection(s,t as Collection));
+      if(session.migration_state||!allowed(session).length)return problem(403,'forbidden');
+      const count=streams.get(session.account_id)??0;if(streamCount>=64||count>=2)return problem(429,'limit');
+      const identity=(s:AccountApiSession)=>JSON.stringify([s.account_id,s.credential_id,s.serving_generation??1,s.did,[...s.scopes].sort()]);
+      const admitted=identity(session),account=session.account_id;
+      streams.set(account,count+1);streamCount++;
+      return stateStream(async()=>{
+        const current=await accounts.authenticate(context.req.header('Authorization'),getCookie(context,'hail_session'),false);
+        if(!current||current.migration_state||identity(current)!==admitted)return null;
+        return withServingGeneration(current.account_id,current.serving_generation??1,async()=>{
+          const states:Record<string,string>={};
+          for(const type of allowed(current))states[type]=type==='HailMessage'?await messages.currentState(current):
+            type==='HailDraft'?await drafts!.currentState(current):await collections!.currentState(current,type as Collection);
+          return {accountId:messages.accountId(current),states};
+        });
+      },options,context.req.raw.signal,lastId,()=>{streamCount--;const left=(streams.get(account)??1)-1;if(left)streams.set(account,left);else streams.delete(account);});
+    }
     const count=active.get(session.account_id)??0;
     if(processing>=32||count>=4)return problem(429,'limit');
     active.set(session.account_id,count+1);processing++;
@@ -100,7 +124,6 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
         catch(error){if(error instanceof JmapError)return problem(error.type==='overQuota'?413:error.type==='invalidArguments'?400:403,error.type);throw error;}
         finally{const remaining=(uploads.get(session.account_id)??1)-1;if(remaining)uploads.set(session.account_id,remaining);else uploads.delete(session.account_id);}
       }
-      if(path==='/jmap/events')return problem(501,'unsupportedCapability');
       if(path!=='/jmap'||context.req.method!=='POST')return problem(405,'unknownMethod');
       if(new URL(context.req.url).search)return problem(400,'invalidArguments');
       if(context.req.header('Content-Type')?.split(';')[0]?.trim()!=='application/json'||context.req.header('Content-Encoding'))return problem(415,'notJSON');
@@ -112,7 +135,7 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
         input.methodCalls.some(call=>!Array.isArray(call)||call.length!==3||typeof call[0]!=='string'||!object(call[1])||typeof call[2]!=='string'||call[2].length>255)||
         input.createdIds!==undefined&&(!object(input.createdIds)||Object.entries(input.createdIds).some(([k,v])=>! /^[A-Za-z0-9_-]{1,255}$/.test(k)||typeof v!=='string'||! /^[A-Za-z0-9_-]{1,255}$/.test(v))))return problem(400,'notRequest');
       if(input.methodCalls.length>MAX_CALLS)return problem(400,'limit');
-      if(!input.using.includes(JMAP_CORE)||input.using.some(c=>c!==JMAP_CORE&&c!==HAIL_MESSAGES&&(!drafts||c!==HAIL_DRAFTS)&&(!(collections||operations)||c!==HAIL_ACCOUNT)))return problem(400,'unknownCapability');
+      if(!input.using.includes(JMAP_CORE)||input.using.some(c=>c!==JMAP_CORE&&(!push||c!==HAIL_PUSH)&&c!==HAIL_EVENTS&&c!==HAIL_MESSAGES&&(!drafts||c!==HAIL_DRAFTS)&&(!(collections||operations)||c!==HAIL_ACCOUNT)))return problem(400,'unknownCapability');
       const responses:Invocation[]=[];
       const createdIds:Record<string,string>=Object.assign(Object.create(null),input.createdIds??{});
       const remember=(result:Record<string,unknown>)=>{if(object(result.created))for(const [key,value] of Object.entries(result.created))
@@ -125,6 +148,10 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
           // Resolve only fields typed as JMAP IDs, never arbitrary message text.
           for(const key of ['ids','destroy','blobIds'])if(Array.isArray(args[key]))args[key]=args[key].map(creationId);
           if(object(args.update))args.update=Object.fromEntries(Object.entries(args.update).map(([key,value])=>[String(creationId(key)),value]));
+          if(push&&['PushSubscription/get','PushSubscription/set'].includes(name)){
+            const result=name==='PushSubscription/get'?await push.get(session,args):await push.set(session,args);
+            remember(result);responses.push([name,result,callId]);continue;
+          }
           if(name==='Blob/copy'){if(!blobs)throw new JmapError('unknownMethod');responses.push([name,await blobs.copy(session,args),callId]);continue;}
           const [type,operation]=name.split('/');
           if(collections&&COLLECTIONS.includes(type as Collection)&&['get','query','changes','queryChanges','set'].includes(operation??'')){

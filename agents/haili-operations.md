@@ -329,3 +329,34 @@ see the [retention procedure](release-process.md#bounded-local-image-retention).
 Follow the [rollout procedure](release-process.md#routine-production-rollout--operators-and-agents)
 for publication, deployment, recovery and future wrapper maintenance.
 Regression checks: `bun run --cwd apps/server test -- test/provider-ops.test.ts`.
+
+### Optional encrypted browser notifications
+
+The reference provider leaves Web Push disabled unless all three settings are present:
+`WEB_PUSH_VAPID_SUBJECT` (operator `mailto:` contact or HTTPS contact URL),
+`WEB_PUSH_VAPID_PUBLIC_KEY`, and `WEB_PUSH_VAPID_PRIVATE_KEY` (canonical unpadded
+base64url P-256 keys). Generate a dedicated pair on a trusted development/operator
+machine using the installed `web-push` library's `generateVAPIDKeys()`; deliver the
+private key through the existing secret configuration process. Do not print it in
+release logs, commit it, or reuse identity/session encryption keys. Keep the pair
+stable across restarts. The public and standalone compose profiles pass these
+optional variables through. Routine application deployment does not generate keys
+or opt users in.
+
+After configuration and normal release verification, use Settings → Browser
+notifications in a supported secure-context browser. Verify the “Notifications
+enabled” notification, hide/close the client, deliver a test message, and check
+that the generic mailbox-update notification opens the client and normal JMAP
+sync retrieves it without marking it read. Check disable/re-enable, browser
+permission revocation, logout and expired sessions. Browser/platform background
+restrictions and `userVisibleOnly` enforcement must be checked on actual devices;
+unit fixtures do not establish push-service interoperability.
+
+Subscriptions are local to a credential/device, capped at seven days, and stop
+when its session expires, idles out, is revoked or becomes migration-fenced. They
+do not extend authentication. Users can enable again after signing in. Rotating
+the VAPID pair requires browser resubscription. Disabling configuration removes
+the advertised capability and stops delivery; retained rows remain subject to
+expiry when re-enabled. Subscriptions are deliberately absent from portable
+account history. Migration 0118 rollback requires removing unexpired subscriptions
+first; preserve operator approval and the normal database rollback process.

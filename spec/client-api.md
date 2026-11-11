@@ -38,6 +38,11 @@ the provider's responsibility; ordinary login does not replace Hail owner/recove
 authority. This permission does not claim that the reference provider implements
 SSO connectors. A future shared OAuth client API remains an optional profile.
 
+Connected notification transport is defined by [JMAP events](jmap-events.md).
+It carries state hints only and uses the same session/credential authorization;
+clients still synchronize through JMAP methods. Encrypted background push subscriptions are
+credential-bound and advertised only when the provider configures VAPID.
+
 ## Provider selection and transport
 
 The user explicitly selects a canonical HTTPS DNS origin for login. Credential

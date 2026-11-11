@@ -1,3 +1,4 @@
+import {validateVapid,type VapidConfig} from './jmap/push-crypto.js';
 import {sessionPolicy, type SessionPolicy} from "./accounts/session-policy.js";
 import { publicPlcAuthorityConfig } from "./plc/public-resolver.js";
 import type { PublicPlcAuthorityConfig } from "./plc/observers.js";
@@ -7,6 +8,7 @@ import { base58btc } from "multiformats/bases/base58";
 export type NodeEnvironment = "development" | "test" | "production";
 
 export interface AppConfig {
+  webPush?: VapidConfig;
   sessionPolicy?: SessionPolicy;
   nodeEnv: NodeEnvironment;
   port: number;
@@ -217,7 +219,11 @@ export function loadConfig(environment: Environment = Bun.env): AppConfig {
       throw new Error("Alpha signup requires an external canonical HTTPS monitor identity");
     alphaSignup={invitationKey,monitorOrigin};
   }else if(environment.ALPHA_SIGNUP_INVITE_KEY||environment.ALPHA_SIGNUP_MONITOR_ORIGIN)throw new Error("Alpha signup declarations require PUBLIC_ALPHA_SIGNUP=true");
+  let webPush:VapidConfig|undefined;
+  if(['WEB_PUSH_VAPID_SUBJECT','WEB_PUSH_VAPID_PUBLIC_KEY','WEB_PUSH_VAPID_PRIVATE_KEY'].some(name=>environment[name]?.trim()))
+    webPush=validateVapid({subject:required(environment,'WEB_PUSH_VAPID_SUBJECT'),publicKey:required(environment,'WEB_PUSH_VAPID_PUBLIC_KEY'),privateKey:required(environment,'WEB_PUSH_VAPID_PRIVATE_KEY')});
   return {
+    ...(webPush?{webPush}:{}),
     sessionPolicy: sessionPolicy(environment),
     nodeEnv,
     port,

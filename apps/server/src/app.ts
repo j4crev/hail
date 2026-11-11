@@ -1,3 +1,4 @@
+import type {JmapPush} from './jmap/push.js';
 import {JmapOperations} from './jmap/operations.js';
 import type {JmapCollections} from './jmap/collections.js';
 import type {JmapBlobs} from './jmap/blobs.js';
@@ -82,6 +83,7 @@ export interface AppDependencies {
   grantReceiver?: GrantReceiver;
   bodyStore?: BodyStore;
   bodyProof?: BodyRequestVerifier;
+  jmapPush?: JmapPush;
   jmap?: JmapMessages;
   jmapDrafts?: JmapDrafts;
   jmapBlobs?: JmapBlobs;
@@ -185,7 +187,7 @@ export function createApp(
   if(dependencies.jmap&&dependencies.accountApi)registerJmapRoutes(app,dependencies.accountApi.accounts,dependencies.jmap,config.publicOrigin,config.passkeys?.origin??config.publicOrigin,dependencies.jmapDrafts,dependencies.jmapBlobs,dependencies.jmapCollections,
     new JmapOperations({...dependencies.accountApi,...(dependencies.jmapBlobs?{blobs:dependencies.jmapBlobs}:{}),
       ...(dependencies.passkeys&&dependencies.servingSql?{permissions:new GrantPermissions(dependencies.servingSql,dependencies.accountApi.accounts,
-        dependencies.accountApi.grants,dependencies.accountApi.service,dependencies.passkeys,config.publicOrigin)}:{})}));
+        dependencies.accountApi.grants,dependencies.accountApi.service,dependencies.passkeys,config.publicOrigin)}:{})}),dependencies.jmapPush);
   if (dependencies.bodyStore) registerBodyRoutes(app, dependencies.bodyStore, dependencies.bodyProof);
   if (dependencies.envelopeReceiver) registerEnvelopeRoutes(app, dependencies.envelopeReceiver,
     dependencies.deliveryStatusSigner, protectedSchedule);

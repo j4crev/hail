@@ -61,6 +61,11 @@ integration("provider authentication boundary", () => {
     expect(result.status).toBe(200);
     expect(await result.json()).toMatchObject({did: f.did, scopes: ["account:read","messages:read"]});
     expect(await db.sql`SELECT * FROM account_passkeys WHERE account_id=${f.accountId}`).toHaveLength(0);
+    await db.sql`UPDATE account_provider_sessions SET last_seen_at=now()-interval '2 minutes' WHERE id=${session.sessionId}`;
+    const idleBefore=(await db.sql`SELECT last_seen_at FROM account_provider_sessions WHERE id=${session.sessionId}`)[0]!.last_seen_at;
+    expect(await f.accounts.authenticate(undefined,session.token,false)).not.toBeNull();
+    expect((await f.accounts.authenticateReference("provider",session.sessionId))?.credential_id).toBe(session.sessionId);
+    expect((await db.sql`SELECT last_seen_at FROM account_provider_sessions WHERE id=${session.sessionId}`)[0]!.last_seen_at).toEqual(idleBefore);
     const identity = await f.accounts.authenticate(undefined,session.token);
     expect(identity?.authentication?.method).toBe("provider");
     expect(identity?.passkey_credential_id).toBeUndefined();
@@ -74,6 +79,7 @@ integration("provider authentication boundary", () => {
     const f = await fixture(), session = await f.login(); f.change(change);
     await expect(f.login()).rejects.toThrow("Login refused");
     expect(await f.accounts.authenticate(undefined,session.token)).toBeNull();
+    expect(await f.accounts.authenticateReference("provider",session.sessionId)).toBeNull();
   });
 
   it("rejects forged application proofs, raw claims and unknown integrations", async () => {
@@ -103,6 +109,7 @@ integration("provider authentication boundary", () => {
     }
     await db.sql`UPDATE account_provider_identities SET scopes='["account:write"]' WHERE id=${f.bindingId}`;
     expect(await f.accounts.authenticate(undefined,session.token)).toBeNull();
+    expect(await f.accounts.authenticateReference("provider",session.sessionId)).toBeNull();
   });
 
   it("enforces CSRF and refuses invalid Authorization rather than falling back to a cookie", async () => {
@@ -136,14 +143,17 @@ integration("provider authentication boundary", () => {
     const f = await fixture(), session = await f.login(), check = f.adapter.checkSession;
     f.adapter.checkSession = async id => {const result = await check(id); await f.auth.disable(f.bindingId); return result;};
     expect(await f.accounts.authenticate(undefined,session.token)).toBeNull();
+    expect(await f.accounts.authenticateReference("provider",session.sessionId)).toBeNull();
   });
 
   it("enforces idle and absolute expiry, account closure and serving generation", async () => {
     const f = await fixture(), session = await f.login();
     await db.sql`UPDATE account_provider_sessions SET last_seen_at=now()-interval '31 minutes' WHERE id=${session.sessionId}`;
     expect(await f.accounts.authenticate(undefined,session.token)).toBeNull();
+    expect(await f.accounts.authenticateReference("provider",session.sessionId)).toBeNull();
     await db.sql`UPDATE account_provider_sessions SET last_seen_at=now(),expires_at=now()-interval '1 millisecond' WHERE id=${session.sessionId}`;
     expect(await f.accounts.authenticate(undefined,session.token)).toBeNull();
+    expect(await f.accounts.authenticateReference("provider",session.sessionId)).toBeNull();
     const next = await f.login();
     await db.sql.begin(async tx => {await tx`SELECT set_config('hail.returning_account',${f.accountId},true)`;
       await tx`UPDATE account_serving_generations SET generation=2 WHERE account_id=${f.accountId}`;});
@@ -158,6 +168,7 @@ integration("provider authentication boundary", () => {
     const f = await fixture(), session = await f.login();
     f.change({authenticatedAt:new Date()});
     expect(await f.accounts.authenticate(undefined,session.token)).toBeNull();
+    expect(await f.accounts.authenticateReference("provider",session.sessionId)).toBeNull();
     const fresh = await f.login();
     expect(await f.accounts.authenticate(undefined,fresh.token)).not.toBeNull();
   });
