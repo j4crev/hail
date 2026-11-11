@@ -13,7 +13,7 @@ Expires: 15 May 2027
 
 Abstract
 
-   RACR (Recipient-Authorized Content Retrieval, pronounced “racer”) is
+   RACR (Recipient-Authorized Content Retrieval, pronounced "racer") is
    a federated protocol for exchanging recipient-authorized messages
    between portable identities.  Stable decentralized identifiers let
    participants operate independently of their current hosting
@@ -96,14 +96,14 @@ Table of Contents
      5.1.  Resource Budgets  . . . . . . . . . . . . . . . . . . . .   9
    6.  Recipient Grants  . . . . . . . . . . . . . . . . . . . . . .  10
      6.1.  Publication and Conditional Updates . . . . . . . . . . .  11
-   7.  Core Envelope Delivery  . . . . . . . . . . . . . . . . . . .  12
+   7.  Core Envelope Delivery  . . . . . . . . . . . . . . . . . . .  11
      7.1.  Validation and Atomic Acceptance  . . . . . . . . . . . .  12
      7.2.  Submission Responses and Disclosure . . . . . . . . . . .  13
    8.  Body Content and Retrieval  . . . . . . . . . . . . . . . . .  14
      8.1.  Token and Recipient Proof of Possession . . . . . . . . .  15
-     8.2.  Content Verification and Compression  . . . . . . . . . .  17
+     8.2.  Content Verification and Compression  . . . . . . . . . .  16
    9.  Delivery State and Status Reporting . . . . . . . . . . . . .  17
-   10. Implemented Extensions and Deferred Features  . . . . . . . .  19
+   10. Implemented Extensions and Deferred Features  . . . . . . . .  18
    11. Security Considerations . . . . . . . . . . . . . . . . . . .  20
    12. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  21
 
@@ -429,11 +429,7 @@ Internet-Draft                    RACR                     November 2026
    preimage with the descriptor bytes.  The verifier MUST check this
    preimage hash before exposing descriptor fields, and MUST verify the
    signature and current authority before admission or retrieval.
-   Labels 3 and 260, alternate preimage locations, and the superseded
-   direct-payload envelope are rejected.  The old provider-domain
-   preimage label and maps containing both labels MUST be rejected.
-   This pre-launch namespace correction defines no compatibility
-   fallback.
+   Envelopes that do not conform to this profile MUST be rejected.
 
    *  Address Binding, Sender Profile, and Grant revision digests hash
       complete signed COSE representation bytes.  A Grant predecessor
@@ -443,15 +439,16 @@ Internet-Draft                    RACR                     November 2026
       envelope descriptor bytes, excluding the COSE wrapper; they do not
       hash the embedded digest a second time.
 
+   *  Body identity hashes exact uncompressed deterministic body bytes
+      using SHA-256.
+
+
 
 
 Creviston                  Expires 15 May 2027                  [Page 8]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   *  Body identity hashes exact uncompressed deterministic body bytes
-      using SHA-256.
 
    *  URL digest segments and bearer credentials use canonical unpadded
       base64url [RFC4648].  A 32-byte digest renders as 43 ASCII
@@ -498,6 +495,9 @@ Internet-Draft                    RACR                     November 2026
    In the table, "Object limit" means the applicable object
    representation limit.  The application root counts as one item at
    depth zero.  Container elements, map keys, and map values count
+   recursively; string contents do not.  Map length counts pairs.  Byte
+   budgets include headers and use UTF-8 bytes rather than character
+   counts.
 
 
 
@@ -505,10 +505,6 @@ Creviston                  Expires 15 May 2027                  [Page 9]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   recursively; string contents do not.  Map length counts pairs.  Byte
-   budgets include headers and use UTF-8 bytes rather than character
-   counts.
 
    For the outer COSE domain, tag 18 counts as a root item and its array
    has depth one.  Protected headers restart counting at their map with
@@ -549,9 +545,13 @@ Internet-Draft                    RACR                     November 2026
    authoritative for delivery.  This profile permits one active Grant
    per grantor/grantee pair.
 
-
-
-
+   Every revision is a full-state snapshot.  Revision 1 has a null
+   predecessor.  Subsequent revisions increment by one and name the
+   SHA-256 digest of the previous complete signed representation.  The
+   fields type, version, grant_id, grantor, grantee, and issued_at are
+   immutable within the lineage.  Revision gaps, forks, conflicting
+   representations, and changed immutable fields are rejected.
+   Revocation is terminal for that lineage.
 
 
 
@@ -561,14 +561,6 @@ Creviston                  Expires 15 May 2027                 [Page 10]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   Every revision is a full-state snapshot.  Revision 1 has a null
-   predecessor.  Subsequent revisions increment by one and name the
-   SHA-256 digest of the previous complete signed representation.  The
-   fields type, version, grant_id, grantor, grantee, and issued_at are
-   immutable within the lineage.  Revision gaps, forks, conflicting
-   representations, and changed immutable fields are rejected.
-   Revocation is terminal for that lineage.
 
    Expanding the selected categories requires fresh explicit consent
    against current verified discovery evidence.  Restriction or
@@ -607,17 +599,6 @@ Internet-Draft                    RACR                     November 2026
    HTTP binding.  Grant publication does not permit querying unrelated
    relationships.
 
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 11]
-
-Internet-Draft                    RACR                     November 2026
-
-
 7.  Core Envelope Delivery
 
    A Grant-authorized Envelope version 1 contains type, version,
@@ -629,6 +610,13 @@ Internet-Draft                    RACR                     November 2026
    Envelope MUST contain a category authorized by the Grant.  The
    complete closed schema and conditional fields are defined by
    [HAIL-SPEC].
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 11]
+
+Internet-Draft                    RACR                     November 2026
+
 
    A body descriptor contains a SHA-256 digest, size from 1 through
    1048576, media_type application/hail-body+cbor, profile spt-1/spt-2/
@@ -664,16 +652,6 @@ Internet-Draft                    RACR                     November 2026
       miss follows the generic path without body retrieval or a replay
       reservation.
 
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 12]
-
-Internet-Draft                    RACR                     November 2026
-
-
    *  Serialize the authenticated (from DID, message_id) record.
       Identical payload digests reuse stored state; different payload
       digests conflict.  Before reserving a new ID, apply bounded
@@ -683,6 +661,18 @@ Internet-Draft                    RACR                     November 2026
       callers receive 429 with Retry-After.  Existing authenticated
       replay state remains recoverable.  Reserve ordinary authenticated
       rejection results only after resource admission succeeds.
+
+
+
+
+
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 12]
+
+Internet-Draft                    RACR                     November 2026
+
 
    *  Atomically recheck current recipient authorization and policy,
       then persist accepted delivery and required capability state.
@@ -722,14 +712,6 @@ Internet-Draft                    RACR                     November 2026
 
    {"outcome":"received"}
 
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 13]
-
-Internet-Draft                    RACR                     November 2026
-
-
    An eligible authenticated accepted or duplicate submission returns
    HTTP 200 with the current signed Delivery Status.  Explicit protected
    errors map message-id-conflict to 409, invalid-envelope to 400,
@@ -737,6 +719,16 @@ Internet-Draft                    RACR                     November 2026
    temporarily-unavailable to 503.  Every explicit unsuccessful response
    uses Problem Details [RFC9457] without disclosing more than the
    caller is entitled to learn.
+
+
+
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 13]
+
+Internet-Draft                    RACR                     November 2026
+
 
    Relationship-independent method, media type, size, framing, and
    service-wide rate limits may return safe transport errors.  A 421 is
@@ -779,13 +771,6 @@ Internet-Draft                    RACR                     November 2026
    and presentation rules.  A profile is not extensible merely because
    its data is represented as a map.
 
-
-
-Creviston                  Expires 15 May 2027                 [Page 14]
-
-Internet-Draft                    RACR                     November 2026
-
-
    A cta text block has exactly one spt.link annotation, with every span
    carrying only that annotation key, no list fields, and a concatenated
    single-line label of at most 128 UTF-8 bytes containing a character
@@ -793,6 +778,14 @@ Internet-Draft                    RACR                     November 2026
    are prohibited.  Its absolute HTTPS destination has no credentials
    and is at most 2048 UTF-8 bytes.  It renders as an accessible
    navigation link with client-controlled button styling, never fetching
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 14]
+
+Internet-Draft                    RACR                     November 2026
+
+
    its destination until explicit navigation.  Optional text-block
    alignment is left, center, or right; absent means left.  This hint
    changes neither reading order nor directionality and may be adapted
@@ -827,21 +820,6 @@ Internet-Draft                    RACR                     November 2026
    associated with body digest, recipient, message, expiry, and active
    state.
 
-
-
-
-
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 15]
-
-Internet-Draft                    RACR                     November 2026
-
-
    GET bodies/{digest} sends Authorization: Bearer followed by the
    canonical unpadded base64url token, using the scheme syntax of
    [RFC6750] without adopting OAuth issuance flows.  Tokens MUST NOT
@@ -856,6 +834,14 @@ Internet-Draft                    RACR                     November 2026
    responses that conceal body existence.  Authorization-lookup and
    replay-store outages also use this path.  A missing or unavailable
    body may produce retryable 503 only after BOTH token authorization
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 15]
+
+Internet-Draft                    RACR                     November 2026
+
+
    and recipient proof succeed.  Concealed 404 results use authenticated
    endpoint refresh and bounded retries through the effective deadline,
    never a bearer-only fallback.
@@ -888,16 +874,6 @@ Internet-Draft                    RACR                     November 2026
    copies need access controls and log redaction.  A signature
    authenticates token bytes but does not encrypt them.
 
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 16]
-
-Internet-Draft                    RACR                     November 2026
-
-
 8.2.  Content Verification and Compression
 
    A successful retrieval returns 200 with application/hail-body+cbor
@@ -908,6 +884,19 @@ Internet-Draft                    RACR                     November 2026
    validated signed size, not merely check size after unbounded
    expansion.  Streaming and bounded buffered implementations are both
    permitted.
+
+
+
+
+
+
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 16]
+
+Internet-Draft                    RACR                     November 2026
+
 
    After decompression, the recipient verifies exact signed length,
    SHA-256 digest, HTTP media type, profile, deterministic CBOR
@@ -946,14 +935,6 @@ Internet-Draft                    RACR                     November 2026
    receiver-resource-constrained.  Permanent failure reasons are body-
    authorization-failed, body-integrity-failed, body-invalid, body-
    unsupported, delivery-expired, and receiver-policy-rejected.
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 17]
-
-Internet-Draft                    RACR                     November 2026
-
-
    Cancellation reasons are recipient-cancelled and receiver-
    administrative-cancellation.  The recipient owns bounded retrieval
    retries and scheduling within the signed deadline.
@@ -965,6 +946,14 @@ Internet-Draft                    RACR                     November 2026
    states begin at revision 2. on-hold includes reason and retry_at;
    failure and cancellation include the appropriate reason; other states
    omit them.  The status object's from field equals the original
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 17]
+
+Internet-Draft                    RACR                     November 2026
+
+
    envelope's to field, and its to field equals the original envelope's
    from field.  The original recipient messaging key signs it. retry_at
    is no earlier than occurred_at and no later than the effective
@@ -1001,15 +990,6 @@ Internet-Draft                    RACR                     November 2026
    delivery receipt does not attest client synchronization, display,
    opening, or reading.
 
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 18]
-
-Internet-Draft                    RACR                     November 2026
-
-
 10.  Implemented Extensions and Deferred Features
 
    *  Connections use deliberate invitation review, identity-signed
@@ -1022,6 +1002,13 @@ Internet-Draft                    RACR                     November 2026
       Reply creation in the specification snapshot [HAIL-SPEC] uses
       Envelope version 3; historical unthreaded reply forms are not a
       mandatory compatibility baseline.
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 18]
+
+Internet-Draft                    RACR                     November 2026
+
 
    *  Fixed-roster shared conversations use descriptors, per-recipient
       Envelope version 4, Reply all, leave, and individual participation
@@ -1058,6 +1045,19 @@ Internet-Draft                    RACR                     November 2026
    Session discovery, typed methods, changes, binary transfer and
    connected events.  Domain-controlled capabilities cover messages,
    drafts, account operations, events and optionally encrypted Web Push.
+   These do not imply RFC 8621 Mail compatibility or a shared OAuth
+   login profile.  Provider authentication remains provider-owned,
+   separate from owner/recovery authority.  Notifications contain state
+   hints, recover through synchronization, and neither mutate read state
+   nor constitute RACR delivery evidence.  The complete profiles are in
+   [HAIL-SPEC].
+
+
+
+
+
+
+
 
 
 
@@ -1065,13 +1065,6 @@ Creviston                  Expires 15 May 2027                 [Page 19]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   These do not imply RFC 8621 Mail compatibility or a shared OAuth
-   login profile.  Provider authentication remains provider-owned,
-   separate from owner/recovery authority.  Notifications contain state
-   hints, recover through synchronization, and neither mutate read state
-   nor constitute RACR delivery evidence.  The complete profiles are in
-   [HAIL-SPEC].
 
    Attachment definitions are in [HAIL-ATTACHMENTS]; the other extension
    definitions are in the fixed snapshot [HAIL-SPEC].  Their eventual
@@ -1112,16 +1105,6 @@ Internet-Draft                    RACR                     November 2026
    require explicit rejection or their separately defined extension
    handling; they are not best-effort parsing opportunities.
 
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 20]
-
-Internet-Draft                    RACR                     November 2026
-
-
    Acceptance, revocation, replay reservation, reply consumption,
    cancellation, and terminal publication require atomic ordering.  A
    valid signature does not resolve races.  Incorrect transaction
@@ -1131,6 +1114,14 @@ Internet-Draft                    RACR                     November 2026
    Resource attacks include large declared CBOR lengths, deeply nested
    structures, expensive signatures, DID-resolution amplification,
    stalled transfers, gzip expansion, and image decoder attacks.  Apply
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 20]
+
+Internet-Draft                    RACR                     November 2026
+
+
    structural limits before expensive work; bound concurrent work and
    scratch allocation separately.  Grants authorize delivery categories,
    not unlimited resource consumption.
@@ -1168,6 +1159,15 @@ Internet-Draft                    RACR                     November 2026
    decisions must remain independent of protected account and
    relationship state.
 
+   Signed delivery status exposes provider processing and availability,
+   not user reading.  Bodies and bundled images are fetched during
+   delivery and rendered locally.  User-initiated navigation to an HTTPS
+   link can still disclose information to the destination; this is
+   distinct from automatic content loading.  Additional analytics or
+   read-receipt extensions require separate privacy review.
+
+
+
 
 
 
@@ -1177,13 +1177,6 @@ Creviston                  Expires 15 May 2027                 [Page 21]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   Signed delivery status exposes provider processing and availability,
-   not user reading.  Bodies and bundled images are fetched during
-   delivery and rendered locally.  User-initiated navigation to an HTTPS
-   link can still disclose information to the destination; this is
-   distinct from automatic content loading.  Additional analytics or
-   read-receipt extensions require separate privacy review.
 
    Recipient-specific cache provenance is required even when physical
    bytes are deduplicated.  Retained consent context and history improve
@@ -1225,6 +1218,13 @@ Internet-Draft                    RACR                     November 2026
    value behavior remains profile-specific.  No new IANA registry is
    proposed; future open extension points require an explicit allocation
    and negotiation policy.
+
+
+
+
+
+
+
 
 
 

@@ -15,7 +15,7 @@ Hail is designed for independent providers, portable `did:plc` identities, rich 
 
 ## Status
 
-Hail is currently in public alpha.
+Hail is currently in public alpha, which means there could be loss of data or breaking changes. You can try out our alpha provider's web client at https://haili.app or the [cli client](./apps/cli)
 
 Public identities use the PLC Organization's `https://plc.directory` for DID registration and management - originally created by Bluesky Social PBC for the AT Protocol.
 
