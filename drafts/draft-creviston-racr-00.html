@@ -6,9 +6,9 @@
 <meta content="initial-scale=1.0" name="viewport">
 <title>RACR Protocol: Recipient-Authorized Content Retrieval</title>
 <meta content="Jason Creviston" name="author">
-<meta content='
-       RACR (Recipient-Authorized Content Retrieval, pronounced "racer") is a federated protocol for exchanging hail: recipient-authorized messages between portable identities. Stable decentralized identifiers identify participants independently of their current hosting providers. Signed authorization records and message envelopes use deterministic Concise Binary Object Representation (CBOR) and CBOR Object Signing and Encryption (COSE). A recipient provider validates authorization before retrieving a detached, digest-bound body from the sender provider. This document describes the architecture, core grant-authorized delivery, content profiles, privacy boundaries, and unresolved design issues of the current experimental protocol. 
-    ' name="description">
+<meta content="
+       RACR (Recipient-Authorized Content Retrieval, pronounced “racer”) is a federated protocol for exchanging recipient-authorized messages between portable identities. Stable decentralized identifiers let participants operate independently of their current hosting providers. RACR uses deterministic Concise Binary Object Representation (CBOR) and CBOR Object Signing and Encryption (COSE) for signed authorization records and message envelopes. A recipient provider validates authorization before retrieving a detached, digest-bound body from the sender provider. This document specifies the protocol architecture, grant-authorized delivery, and privacy boundaries. 
+    " name="description">
 <meta content="xml2rfc 3.35.0" name="generator">
 <meta content="permission-based messaging" name="keyword">
 <meta content="draft-creviston-racr-00" name="ietf.draft">
@@ -1257,7 +1257,7 @@ li > p:last-of-type:only-child {
 <h1 id="title">RACR Protocol: Recipient-Authorized Content Retrieval</h1>
 <section id="section-abstract">
       <h2 id="abstract"><a href="#abstract" class="selfRef">Abstract</a></h2>
-<p id="section-abstract-1">RACR (Recipient-Authorized Content Retrieval, pronounced "racer") is a federated protocol for exchanging hail: recipient-authorized messages between portable identities. Stable decentralized identifiers identify participants independently of their current hosting providers. Signed authorization records and message envelopes use deterministic Concise Binary Object Representation (CBOR) and CBOR Object Signing and Encryption (COSE). A recipient provider validates authorization before retrieving a detached, digest-bound body from the sender provider. This document describes the architecture, core grant-authorized delivery, content profiles, privacy boundaries, and unresolved design issues of the current experimental protocol.<a href="#section-abstract-1" class="pilcrow">¶</a></p>
+<p id="section-abstract-1">RACR (Recipient-Authorized Content Retrieval, pronounced “racer”) is a federated protocol for exchanging recipient-authorized messages between portable identities. Stable decentralized identifiers let participants operate independently of their current hosting providers. RACR uses deterministic Concise Binary Object Representation (CBOR) and CBOR Object Signing and Encryption (COSE) for signed authorization records and message envelopes. A recipient provider validates authorization before retrieving a detached, digest-bound body from the sender provider. This document specifies the protocol architecture, grant-authorized delivery, and privacy boundaries.<a href="#section-abstract-1" class="pilcrow">¶</a></p>
 </section>
 <section class="note rfcEditorRemove" id="section-note.1">
       <h2 id="name-editorial-status">
@@ -1265,7 +1265,7 @@ li > p:last-of-type:only-child {
       </h2>
 <p id="section-note.1-1">This note is to be removed before publishing as an RFC.<a href="#section-note.1-1" class="pilcrow">¶</a></p>
 <p id="section-note.1-2">This is a first local working draft prepared for review. It is an individual contribution, not a working-group document or an RFC. Experimental is a proposed publication status, not an allocation of an RFC stream or a claim of IETF consensus.<a href="#section-note.1-2" class="pilcrow">¶</a></p>
-<p id="section-note.1-3">This working draft describes RACR using the specification snapshot maintained in the Hail repository and cited as <span>[<a href="#HAIL-SPEC" class="cite xref">HAIL-SPEC</a>]</span>. Some normative protocol details remain defined only in that snapshot, so this document is not yet a self-contained specification. The open-issue appendix identifies work required before submission or publication.<a href="#section-note.1-3" class="pilcrow">¶</a></p>
+<p id="section-note.1-3">This working draft describes RACR using the specification snapshot maintained in the Hail repository and cited as <span>[<a href="#HAIL-SPEC" class="cite xref">HAIL-SPEC</a>]</span>. Some normative protocol details remain defined only in that snapshot, so this document is not yet a self-contained specification. The open protocol questions are identified in <a href="#open-issues" class="auto internal xref">Appendix A</a>. Before seeking stable publication, incorporate the remaining schemas and detailed validation rules into this document or standalone normative companions, including the existing attachment rules and implemented extension definitions, while preserving their authority boundaries.<a href="#section-note.1-3" class="pilcrow">¶</a></p>
 </section>
 <div id="status-of-memo">
 <section id="section-boilerplate.1">
@@ -1395,7 +1395,7 @@ li > p:last-of-type:only-child {
             <p id="section-toc.1-1.15.1"><a href="#section-15" class="auto internal xref">15</a>. <a href="#name-normative-references" class="internal xref">Normative References</a></p>
 </li>
           <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.16">
-            <p id="section-toc.1-1.16.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-open-issues-and-publication" class="internal xref">Open Issues and Publication Work</a></p>
+            <p id="section-toc.1-1.16.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-open-protocol-questions" class="internal xref">Open Protocol Questions</a></p>
 </li>
           <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.17">
             <p id="section-toc.1-1.17.1"><a href="#appendix-B" class="auto internal xref">Appendix B</a>.  <a href="#name-source-map-and-review-bound" class="internal xref">Source Map and Review Boundary</a></p>
@@ -1415,10 +1415,9 @@ li > p:last-of-type:only-child {
       <h2 id="name-introduction">
 <a href="#section-1" class="section-number selfRef">1. </a><a href="#name-introduction" class="section-name selfRef">Introduction</a>
       </h2>
-<p id="section-1-1">Recipient-Authorized Content Retrieval (RACR) separates permission to deliver a message from transport of its content. A recipient grants a particular sender permission to deliver selected categories of messages. The recipient provider remains authoritative for current permission, including revocation, even if the sender retains an older signed Grant. Senders publish immutable bodies and submit small recipient-specific signed envelopes. Recipients fetch content only after authenticating and authorizing an envelope.<a href="#section-1-1" class="pilcrow">¶</a></p>
-<p id="section-1-2">The design aims to preserve recipient consent across provider changes, authenticate sending identities independently of their hosting domains, and avoid exposing user activity through message retrieval. It does not attempt to prevent abuse by a sender who has obtained consent, guarantee availability, or make provider-held message content end-to-end confidential.<a href="#section-1-2" class="pilcrow">¶</a></p>
-<p id="section-1-3">RACR is not an SMTP or MIME profile, and an email-like address does not imply SMTP mailbox semantics. A gateway would require separately specified identity, consent, content-conversion, and failure rules. No such gateway is defined here.<a href="#section-1-3" class="pilcrow">¶</a></p>
-<p id="section-1-4">The protocol remains an alpha design. Wire-version numbers select particular object formats, not a stability guarantee. An Internet-Draft revision number is unrelated to a RACR object version or an implementation release version.<a href="#section-1-4" class="pilcrow">¶</a></p>
+<p id="section-1-1">Recipient-Authorized Content Retrieval (RACR) is a messaging protocol in which recipients decide who may send them messages and which categories of messages they wish to receive. Senders make message content available for retrieval and submit a small delivery envelope to each recipient. The content is retrieved only after the envelope has been checked against the recipient's current permissions. Recipients can revoke a sender's permission at any time.<a href="#section-1-1" class="pilcrow">¶</a></p>
+<p id="section-1-2">RACR aims to preserve recipient consent when users change providers, let senders establish their identities independently of the domains that host their services, and protect recipient activity from being exposed through content retrieval. It does not prevent abuse by an authorized sender, guarantee message availability, or provide end-to-end confidentiality for content held by providers.<a href="#section-1-2" class="pilcrow">¶</a></p>
+<p id="section-1-3">RACR defines a separate messaging protocol, not an extension to SMTP or MIME. Although its addresses may resemble email addresses, they do not imply compatibility with email systems. This specification does not define a gateway between RACR and email.<a href="#section-1-3" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="conventions">
@@ -1922,35 +1921,17 @@ li > p:last-of-type:only-child {
 </section>
 <div id="open-issues">
 <section id="appendix-A">
-      <h2 id="name-open-issues-and-publication">
-<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-open-issues-and-publication" class="section-name selfRef">Open Issues and Publication Work</a>
+      <h2 id="name-open-protocol-questions">
+<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-open-protocol-questions" class="section-name selfRef">Open Protocol Questions</a>
       </h2>
 <p id="appendix-A-1">This section is to be removed before publishing as an RFC.<a href="#appendix-A-1" class="pilcrow">¶</a></p>
-<p id="appendix-A-2">This appendix is an explicit issue inventory, not permission for implementers to choose incompatible behavior. The current snapshot remains the implementation target while these questions are reviewed.<a href="#appendix-A-2" class="pilcrow">¶</a></p>
+<p id="appendix-A-2">These questions remain unresolved; they are not permission for implementers to choose incompatible behavior. The current snapshot remains the implementation target while these questions are reviewed.<a href="#appendix-A-2" class="pilcrow">¶</a></p>
 <ul class="normal">
 <li class="normal" id="appendix-A-3.1">
           <p id="appendix-A-3.1.1">Historical authority: define acceptable evidence and reconciliation after PLC recovery or nullified branches, including unacknowledged Grant identity-key rotation. Retention of signed bytes alone does not settle authority at acceptance time.<a href="#appendix-A-3.1.1" class="pilcrow">¶</a></p>
 </li>
         <li class="normal" id="appendix-A-3.2">
-          <p id="appendix-A-3.2.1">Document completeness: incorporate or split the full object schemas, consent/category grammars, Sender Profile limits, address DNS-delegation and IDNA policy, status cross-field rules, and endpoint error matrices. Replace the monolithic repository reference with suitable standalone normative documents before seeking stable publication.<a href="#appendix-A-3.2.1" class="pilcrow">¶</a></p>
-</li>
-        <li class="normal" id="appendix-A-3.3">
-          <p id="appendix-A-3.3.1">Resolver policy: distinguish the strict-public reference fresh-read/evidence policy from deployment choices, and establish the interoperability consequences of directory disagreement, caching, and recovery windows.<a href="#appendix-A-3.3.1" class="pilcrow">¶</a></p>
-</li>
-        <li class="normal" id="appendix-A-3.4">
-          <p id="appendix-A-3.4.1">Registration: confirm the standards-tree publication path and author/contact metadata, attach the prepared templates to the appropriate submission, track actual requests and outcomes, and coordinate any transition required by assigned values. Project-local provisional names are not IANA provisional registrations.<a href="#appendix-A-3.4.1" class="pilcrow">¶</a></p>
-</li>
-        <li class="normal" id="appendix-A-3.5">
-          <p id="appendix-A-3.5.1">Extension publication: select companion-document boundaries for connection admission, threaded replies, shared conversations, attachments, custody, and transfer; retain their current normative authority boundaries.<a href="#appendix-A-3.5.1" class="pilcrow">¶</a></p>
-</li>
-        <li class="normal" id="appendix-A-3.6">
-          <p id="appendix-A-3.6.1">Content evolution: define new safe publisher-layout nodes and client presentation semantics. Define capability discovery and downgrade behavior only when optional profiles exist. The three current SPT profiles remain mandatory.<a href="#appendix-A-3.6.1" class="pilcrow">¶</a></p>
-</li>
-        <li class="normal" id="appendix-A-3.7">
-          <p id="appendix-A-3.7.1">Attachments: incorporate the existing declaration, retrieval, validation, availability, retry, delivery-completion, and retention rules from <span>[<a href="#HAIL-ATTACHMENTS" class="cite xref">HAIL-ATTACHMENTS</a>]</span> into this draft or a companion document. Additional file formats require separately specified validation and limits.<a href="#appendix-A-3.7.1" class="pilcrow">¶</a></p>
-</li>
-        <li class="normal" id="appendix-A-3.8">
-          <p id="appendix-A-3.8.1">Submission preparation: review author metadata, intended status, intellectual property rights (IPR) obligations, references, current draft date, and all unresolved editorial notes; run xml2rfc and idnits; then use the Datatracker submission tool.<a href="#appendix-A-3.8.1" class="pilcrow">¶</a></p>
+          <p id="appendix-A-3.2.1">Resolver interoperability: the strict-public reference policy already defines reader selection, audit validation, refusal conditions, evidence retention, and fresh reads without stale-cache substitution. Determine which resolution guarantees all interoperable deployments must provide and how providers reconcile differing views of authoritative PLC state, including the effects of caching and recovery windows.<a href="#appendix-A-3.2.1" class="pilcrow">¶</a></p>
 </li>
       </ul>
 </section>
@@ -1962,7 +1943,7 @@ li > p:last-of-type:only-child {
       </h2>
 <p id="appendix-B-1">The normative source snapshot is 7f05efcbdde7775e108288bf9c210c5b56f607d2 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, retrieval-signatures.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md; transfer to transfer-formats.md and account-history.md; optional account access to provider-authentication.md and the jmap*.md profiles.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
 <p id="appendix-B-2">This working revision updates the pinned snapshot only for protocol namespaces: current envelope preimage labels use the protocol domain, and Hail JMAP capability URIs use the prefix <code>https://racrproto.com/ns/jmap/</code>. Only the current envelope label is accepted; JMAP clients and providers upgrade together. Protected signature inputs and authorization rules do not change. The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.<a href="#appendix-B-2" class="pilcrow">¶</a></p>
-<p id="appendix-B-3">Open issues distinguish editorial incorporation work from genuinely unresolved protocol decisions. In particular, current body size, mandatory SPT support, token-plus-signature body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.<a href="#appendix-B-3" class="pilcrow">¶</a></p>
+<p id="appendix-B-3">The open protocol questions do not reopen established requirements. In particular, current body size, mandatory SPT support, token-plus-signature body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.<a href="#appendix-B-3" class="pilcrow">¶</a></p>
 </section>
 </div>
 <div id="body-cddl">

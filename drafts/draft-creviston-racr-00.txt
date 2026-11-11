@@ -13,18 +13,17 @@ Expires: 15 May 2027
 
 Abstract
 
-   RACR (Recipient-Authorized Content Retrieval, pronounced "racer") is
-   a federated protocol for exchanging hail: recipient-authorized
-   messages between portable identities.  Stable decentralized
-   identifiers identify participants independently of their current
-   hosting providers.  Signed authorization records and message
-   envelopes use deterministic Concise Binary Object Representation
-   (CBOR) and CBOR Object Signing and Encryption (COSE).  A recipient
+   RACR (Recipient-Authorized Content Retrieval, pronounced “racer”) is
+   a federated protocol for exchanging recipient-authorized messages
+   between portable identities.  Stable decentralized identifiers let
+   participants operate independently of their current hosting
+   providers.  RACR uses deterministic Concise Binary Object
+   Representation (CBOR) and CBOR Object Signing and Encryption (COSE)
+   for signed authorization records and message envelopes.  A recipient
    provider validates authorization before retrieving a detached,
-   digest-bound body from the sender provider.  This document describes
-   the architecture, core grant-authorized delivery, content profiles,
-   privacy boundaries, and unresolved design issues of the current
-   experimental protocol.
+   digest-bound body from the sender provider.  This document specifies
+   the protocol architecture, grant-authorized delivery, and privacy
+   boundaries.
 
 Editorial status
 
@@ -38,16 +37,17 @@ Editorial status
    This working draft describes RACR using the specification snapshot
    maintained in the Hail repository and cited as [HAIL-SPEC].  Some
    normative protocol details remain defined only in that snapshot, so
-   this document is not yet a self-contained specification.  The open-
-   issue appendix identifies work required before submission or
-   publication.
+   this document is not yet a self-contained specification.  The open
+   protocol questions are identified in Appendix A.  Before seeking
+   stable publication, incorporate the remaining schemas and detailed
+   validation rules into this document or standalone normative
+   companions, including the existing attachment rules and implemented
+   extension definitions, while preserving their authority boundaries.
 
 Status of This Memo
 
    This Internet-Draft is submitted in full conformance with the
    provisions of BCP 78 and BCP 79.
-
-
 
 
 
@@ -117,38 +117,32 @@ Internet-Draft                    RACR                     November 2026
    13. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  22
    14. Implementation and Evaluation Status  . . . . . . . . . . . .  23
    15. Normative References  . . . . . . . . . . . . . . . . . . . .  23
-   Appendix A.  Open Issues and Publication Work . . . . . . . . . .  25
+   Appendix A.  Open Protocol Questions  . . . . . . . . . . . . . .  25
    Appendix B.  Source Map and Review Boundary . . . . . . . . . . .  26
    Appendix C.  Body Structural Schema Excerpt . . . . . . . . . . .  27
    Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  29
 
 1.  Introduction
 
-   Recipient-Authorized Content Retrieval (RACR) separates permission to
-   deliver a message from transport of its content.  A recipient grants
-   a particular sender permission to deliver selected categories of
-   messages.  The recipient provider remains authoritative for current
-   permission, including revocation, even if the sender retains an older
-   signed Grant.  Senders publish immutable bodies and submit small
-   recipient-specific signed envelopes.  Recipients fetch content only
-   after authenticating and authorizing an envelope.
+   Recipient-Authorized Content Retrieval (RACR) is a messaging protocol
+   in which recipients decide who may send them messages and which
+   categories of messages they wish to receive.  Senders make message
+   content available for retrieval and submit a small delivery envelope
+   to each recipient.  The content is retrieved only after the envelope
+   has been checked against the recipient's current permissions.
+   Recipients can revoke a sender's permission at any time.
 
-   The design aims to preserve recipient consent across provider
-   changes, authenticate sending identities independently of their
-   hosting domains, and avoid exposing user activity through message
-   retrieval.  It does not attempt to prevent abuse by a sender who has
-   obtained consent, guarantee availability, or make provider-held
-   message content end-to-end confidential.
+   RACR aims to preserve recipient consent when users change providers,
+   let senders establish their identities independently of the domains
+   that host their services, and protect recipient activity from being
+   exposed through content retrieval.  It does not prevent abuse by an
+   authorized sender, guarantee message availability, or provide end-to-
+   end confidentiality for content held by providers.
 
-   RACR is not an SMTP or MIME profile, and an email-like address does
-   not imply SMTP mailbox semantics.  A gateway would require separately
-   specified identity, consent, content-conversion, and failure rules.
-   No such gateway is defined here.
-
-   The protocol remains an alpha design.  Wire-version numbers select
-   particular object formats, not a stability guarantee.  An Internet-
-   Draft revision number is unrelated to a RACR object version or an
-   implementation release version.
+   RACR defines a separate messaging protocol, not an extension to SMTP
+   or MIME.  Although its addresses may resemble email addresses, they
+   do not imply compatibility with email systems.  This specification
+   does not define a gateway between RACR and email.
 
 2.  Conventions and Scope
 
@@ -161,6 +155,12 @@ Internet-Draft                    RACR                     November 2026
    awaiting replacement.  This terminology does not change wire bytes,
    signature domains, or interoperability requirements.
 
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
 
 
 
@@ -169,12 +169,6 @@ Creviston                  Expires 15 May 2027                  [Page 3]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
-   "OPTIONAL" in this document are to be interpreted as described in BCP
-   14 [RFC2119] [RFC8174] when, and only when, they appear in all
-   capitals, as shown here.
 
    This draft specifies the architecture and summarizes normative core
    requirements from [HAIL-SPEC].  Where a complete wire or semantic
@@ -212,6 +206,12 @@ Internet-Draft                    RACR                     November 2026
    signs the Grant before its provider publishes it; the providers
    perform discovery, envelope exchange, content retrieval, and status
    reporting on behalf of the participant identities.
+
+
+
+
+
+
 
 
 
@@ -1382,11 +1382,11 @@ Internet-Draft                    RACR                     November 2026
               Hash Envelope", RFC 9995, DOI 10.17487/RFC9995, July 2026,
               <https://www.rfc-editor.org/info/rfc9995>.
 
-Appendix A.  Open Issues and Publication Work
+Appendix A.  Open Protocol Questions
 
    This section is to be removed before publishing as an RFC.
 
-   This appendix is an explicit issue inventory, not permission for
+   These questions remain unresolved; they are not permission for
    implementers to choose incompatible behavior.  The current snapshot
    remains the implementation target while these questions are reviewed.
 
@@ -1402,44 +1402,13 @@ Creviston                  Expires 15 May 2027                 [Page 25]
 Internet-Draft                    RACR                     November 2026
 
 
-   *  Document completeness: incorporate or split the full object
-      schemas, consent/category grammars, Sender Profile limits, address
-      DNS-delegation and IDNA policy, status cross-field rules, and
-      endpoint error matrices.  Replace the monolithic repository
-      reference with suitable standalone normative documents before
-      seeking stable publication.
-
-   *  Resolver policy: distinguish the strict-public reference fresh-
-      read/evidence policy from deployment choices, and establish the
-      interoperability consequences of directory disagreement, caching,
-      and recovery windows.
-
-   *  Registration: confirm the standards-tree publication path and
-      author/contact metadata, attach the prepared templates to the
-      appropriate submission, track actual requests and outcomes, and
-      coordinate any transition required by assigned values.  Project-
-      local provisional names are not IANA provisional registrations.
-
-   *  Extension publication: select companion-document boundaries for
-      connection admission, threaded replies, shared conversations,
-      attachments, custody, and transfer; retain their current normative
-      authority boundaries.
-
-   *  Content evolution: define new safe publisher-layout nodes and
-      client presentation semantics.  Define capability discovery and
-      downgrade behavior only when optional profiles exist.  The three
-      current SPT profiles remain mandatory.
-
-   *  Attachments: incorporate the existing declaration, retrieval,
-      validation, availability, retry, delivery-completion, and
-      retention rules from [HAIL-ATTACHMENTS] into this draft or a
-      companion document.  Additional file formats require separately
-      specified validation and limits.
-
-   *  Submission preparation: review author metadata, intended status,
-      intellectual property rights (IPR) obligations, references,
-      current draft date, and all unresolved editorial notes; run
-      xml2rfc and idnits; then use the Datatracker submission tool.
+   *  Resolver interoperability: the strict-public reference policy
+      already defines reader selection, audit validation, refusal
+      conditions, evidence retention, and fresh reads without stale-
+      cache substitution.  Determine which resolution guarantees all
+      interoperable deployments must provide and how providers reconcile
+      differing views of authoritative PLC state, including the effects
+      of caching and recovery windows.
 
 Appendix B.  Source Map and Review Boundary
 
@@ -1450,14 +1419,6 @@ Appendix B.  Source Map and Review Boundary
    profile.md, address-binding.md, sender-profile.md and plc-read-
    evidence.md; encoding to encoding.md and hail.cddl; Grants to
    grants.md; core delivery to core-delivery.md and envelopes.md; HTTP
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 26]
-
-Internet-Draft                    RACR                     November 2026
-
-
    operations to http-binding.md; content to bodies.md, retrieval-
    signatures.md, assets.md, and the separately referenced
    attachments.md; state to delivery-state.md; transfer to transfer-
@@ -1476,11 +1437,26 @@ Internet-Draft                    RACR                     November 2026
    attachment formats, advanced layouts, end-to-end encryption, and
    federated read/open receipts remain deferred.
 
-   Open issues distinguish editorial incorporation work from genuinely
-   unresolved protocol decisions.  In particular, current body size,
-   mandatory SPT support, token-plus-signature body retrieval, Address
-   Binding non-expiration, and permission ordering are already
-   specified; they are not re-opened by this draft.
+   The open protocol questions do not reopen established requirements.
+   In particular, current body size, mandatory SPT support, token-plus-
+   signature body retrieval, Address Binding non-expiration, and
+   permission ordering are already specified; they are not re-opened by
+   this draft.
+
+
+
+
+
+
+
+
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 26]
+
+Internet-Draft                    RACR                     November 2026
+
 
 Appendix C.  Body Structural Schema Excerpt
 
@@ -1506,14 +1482,6 @@ Appendix C.  Body Structural Schema Excerpt
    hail-attachment = {
      "filename": tstr,
      "media_type": "application/pdf" / "text/plain" / "image/png" /
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 27]
-
-Internet-Draft                    RACR                     November 2026
-
-
                    "image/jpeg" / "image/webp",
      "size": 1..26214400,
      "digest": digest
@@ -1538,6 +1506,14 @@ Internet-Draft                    RACR                     November 2026
      "_type": "span",
      "text": tstr,
      "marks": []
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 27]
+
+Internet-Draft                    RACR                     November 2026
+
+
    }
 
    ; spt-2 adds a closed set of styles, lists, decorators
@@ -1562,14 +1538,6 @@ Internet-Draft                    RACR                     November 2026
 
    spt-2-span = {
      "_type": "span",
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 28]
-
-Internet-Draft                    RACR                     November 2026
-
-
      "text": tstr,
      "marks": [* tstr]
    }
@@ -1594,6 +1562,14 @@ Internet-Draft                    RACR                     November 2026
      "_type": "spt.image",
      "asset": tstr,
      "alt": tstr,
+
+
+
+Creviston                  Expires 15 May 2027                 [Page 28]
+
+Internet-Draft                    RACR                     November 2026
+
+
      ? "caption": tstr
    }
 
@@ -1617,14 +1593,6 @@ Internet-Draft                    RACR                     November 2026
    }
 
 Author's Address
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 29]
-
-Internet-Draft                    RACR                     November 2026
-
 
    Jason Creviston
    Email: j4@j4crev.com
@@ -1653,28 +1621,4 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 30]
+Creviston                  Expires 15 May 2027                 [Page 29]

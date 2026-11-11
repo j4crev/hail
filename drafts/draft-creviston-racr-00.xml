@@ -14,20 +14,19 @@
     <workgroup>Individual Submission</workgroup>
     <keyword>permission-based messaging</keyword>
     <abstract>
-      <t>RACR (Recipient-Authorized Content Retrieval, pronounced "racer") is a federated protocol for exchanging hail: recipient-authorized messages between portable identities. Stable decentralized identifiers identify participants independently of their current hosting providers. Signed authorization records and message envelopes use deterministic Concise Binary Object Representation (CBOR) and CBOR Object Signing and Encryption (COSE). A recipient provider validates authorization before retrieving a detached, digest-bound body from the sender provider. This document describes the architecture, core grant-authorized delivery, content profiles, privacy boundaries, and unresolved design issues of the current experimental protocol.</t>
+      <t>RACR (Recipient-Authorized Content Retrieval, pronounced “racer”) is a federated protocol for exchanging recipient-authorized messages between portable identities. Stable decentralized identifiers let participants operate independently of their current hosting providers. RACR uses deterministic Concise Binary Object Representation (CBOR) and CBOR Object Signing and Encryption (COSE) for signed authorization records and message envelopes. A recipient provider validates authorization before retrieving a detached, digest-bound body from the sender provider. This document specifies the protocol architecture, grant-authorized delivery, and privacy boundaries.</t>
     </abstract>
     <note title="Editorial status" removeInRFC="true">
       <t>This is a first local working draft prepared for review. It is an individual contribution, not a working-group document or an RFC. Experimental is a proposed publication status, not an allocation of an RFC stream or a claim of IETF consensus.</t>
-      <t>This working draft describes RACR using the specification snapshot maintained in the Hail repository and cited as <xref target="HAIL-SPEC" />. Some normative protocol details remain defined only in that snapshot, so this document is not yet a self-contained specification. The open-issue appendix identifies work required before submission or publication.</t>
+      <t>This working draft describes RACR using the specification snapshot maintained in the Hail repository and cited as <xref target="HAIL-SPEC" />. Some normative protocol details remain defined only in that snapshot, so this document is not yet a self-contained specification. The open protocol questions are identified in <xref target="open-issues" />. Before seeking stable publication, incorporate the remaining schemas and detailed validation rules into this document or standalone normative companions, including the existing attachment rules and implemented extension definitions, while preserving their authority boundaries.</t>
     </note>
   </front>
   <middle>
     <section anchor="introduction">
       <name>Introduction</name>
-      <t>Recipient-Authorized Content Retrieval (RACR) separates permission to deliver a message from transport of its content. A recipient grants a particular sender permission to deliver selected categories of messages. The recipient provider remains authoritative for current permission, including revocation, even if the sender retains an older signed Grant. Senders publish immutable bodies and submit small recipient-specific signed envelopes. Recipients fetch content only after authenticating and authorizing an envelope.</t>
-      <t>The design aims to preserve recipient consent across provider changes, authenticate sending identities independently of their hosting domains, and avoid exposing user activity through message retrieval. It does not attempt to prevent abuse by a sender who has obtained consent, guarantee availability, or make provider-held message content end-to-end confidential.</t>
-      <t>RACR is not an SMTP or MIME profile, and an email-like address does not imply SMTP mailbox semantics. A gateway would require separately specified identity, consent, content-conversion, and failure rules. No such gateway is defined here.</t>
-      <t>The protocol remains an alpha design. Wire-version numbers select particular object formats, not a stability guarantee. An Internet-Draft revision number is unrelated to a RACR object version or an implementation release version.</t>
+      <t>Recipient-Authorized Content Retrieval (RACR) is a messaging protocol in which recipients decide who may send them messages and which categories of messages they wish to receive. Senders make message content available for retrieval and submit a small delivery envelope to each recipient. The content is retrieved only after the envelope has been checked against the recipient's current permissions. Recipients can revoke a sender's permission at any time.</t>
+      <t>RACR aims to preserve recipient consent when users change providers, let senders establish their identities independently of the domains that host their services, and protect recipient activity from being exposed through content retrieval. It does not prevent abuse by an authorized sender, guarantee message availability, or provide end-to-end confidentiality for content held by providers.</t>
+      <t>RACR defines a separate messaging protocol, not an extension to SMTP or MIME. Although its addresses may resemble email addresses, they do not imply compatibility with email systems. This specification does not define a gateway between RACR and email.</t>
     </section>
     <section anchor="conventions">
       <name>Conventions and Scope</name>
@@ -596,32 +595,14 @@ been incorporated into this document. This document obsoletes RFC
       </reference>
     </references>
     <section anchor="open-issues" removeInRFC="true">
-      <name>Open Issues and Publication Work</name>
-      <t>This appendix is an explicit issue inventory, not permission for implementers to choose incompatible behavior. The current snapshot remains the implementation target while these questions are reviewed.</t>
+      <name>Open Protocol Questions</name>
+      <t>These questions remain unresolved; they are not permission for implementers to choose incompatible behavior. The current snapshot remains the implementation target while these questions are reviewed.</t>
       <ul>
         <li>
           <t>Historical authority: define acceptable evidence and reconciliation after PLC recovery or nullified branches, including unacknowledged Grant identity-key rotation. Retention of signed bytes alone does not settle authority at acceptance time.</t>
         </li>
         <li>
-          <t>Document completeness: incorporate or split the full object schemas, consent/category grammars, Sender Profile limits, address DNS-delegation and IDNA policy, status cross-field rules, and endpoint error matrices. Replace the monolithic repository reference with suitable standalone normative documents before seeking stable publication.</t>
-        </li>
-        <li>
-          <t>Resolver policy: distinguish the strict-public reference fresh-read/evidence policy from deployment choices, and establish the interoperability consequences of directory disagreement, caching, and recovery windows.</t>
-        </li>
-        <li>
-          <t>Registration: confirm the standards-tree publication path and author/contact metadata, attach the prepared templates to the appropriate submission, track actual requests and outcomes, and coordinate any transition required by assigned values. Project-local provisional names are not IANA provisional registrations.</t>
-        </li>
-        <li>
-          <t>Extension publication: select companion-document boundaries for connection admission, threaded replies, shared conversations, attachments, custody, and transfer; retain their current normative authority boundaries.</t>
-        </li>
-        <li>
-          <t>Content evolution: define new safe publisher-layout nodes and client presentation semantics. Define capability discovery and downgrade behavior only when optional profiles exist. The three current SPT profiles remain mandatory.</t>
-        </li>
-        <li>
-          <t>Attachments: incorporate the existing declaration, retrieval, validation, availability, retry, delivery-completion, and retention rules from <xref target="HAIL-ATTACHMENTS" /> into this draft or a companion document. Additional file formats require separately specified validation and limits.</t>
-        </li>
-        <li>
-          <t>Submission preparation: review author metadata, intended status, intellectual property rights (IPR) obligations, references, current draft date, and all unresolved editorial notes; run xml2rfc and idnits; then use the Datatracker submission tool.</t>
+          <t>Resolver interoperability: the strict-public reference policy already defines reader selection, audit validation, refusal conditions, evidence retention, and fresh reads without stale-cache substitution. Determine which resolution guarantees all interoperable deployments must provide and how providers reconcile differing views of authoritative PLC state, including the effects of caching and recovery windows.</t>
         </li>
       </ul>
     </section>
@@ -629,7 +610,7 @@ been incorporated into this document. This document obsoletes RFC
       <name>Source Map and Review Boundary</name>
       <t>The normative source snapshot is 7f05efcbdde7775e108288bf9c210c5b56f607d2 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, retrieval-signatures.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md; transfer to transfer-formats.md and account-history.md; optional account access to provider-authentication.md and the jmap*.md profiles.</t>
       <t>This working revision updates the pinned snapshot only for protocol namespaces: current envelope preimage labels use the protocol domain, and Hail JMAP capability URIs use the prefix <tt>https://racrproto.com/ns/jmap/</tt>. Only the current envelope label is accepted; JMAP clients and providers upgrade together. Protected signature inputs and authorization rules do not change. The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.</t>
-      <t>Open issues distinguish editorial incorporation work from genuinely unresolved protocol decisions. In particular, current body size, mandatory SPT support, token-plus-signature body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.</t>
+      <t>The open protocol questions do not reopen established requirements. In particular, current body size, mandatory SPT support, token-plus-signature body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.</t>
     </section>
     <section anchor="body-cddl">
       <name>Body Structural Schema Excerpt</name>
