@@ -23,10 +23,9 @@ pub async fn run(client: &Client, args: &Args) -> Result<Value, Error> {
             "view":"connectionThread","sender":args.positionals[0],"messageId":args.positionals[1],"offset":opt("offset")
         })).await,
         "conversation inbox" | "sent list" => {
-            if let Some(after) = opt("after") {
-                if !reads::cursor(if args.command == "sent list" { "grants" } else { "inbox" }, after) {
-                    return Err(Error::usage("Invalid continuation cursor"));
-                }
+            if let Some(after) = opt("after")
+                && !reads::cursor(if args.command == "sent list" { "grants" } else { "inbox" }, after) {
+                return Err(Error::usage("Invalid continuation cursor"));
             }
             client.jmap("HailMailbox/view", &json!({
                 "view":if args.command == "sent list" { "sent" } else { "connectionInbox" },"after":opt("after")
