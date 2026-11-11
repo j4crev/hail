@@ -375,8 +375,9 @@ async function accountOperation(name:string,args:Record<string,any>,request:Requ
   const enc=(value:string)=>encodeURIComponent(value);
   const query=(values:Record<string,unknown>)=>{const q=new URLSearchParams();for(const [key,value] of Object.entries(values))if(value!==null&&value!==undefined)q.set(key,String(value));return q.size?'?'+q:'';};
   if(name==='HailMailbox/view'){
-    fields('view','after','channel','trash','sender','messageId','kind','offset');
+    fields('view','after','channel','trash','sender','messageId','kind','offset','peer');
     switch(args.view){
+      case 'connectionAddress':return json({owner:did,contact:null});
       case 'settings':path='/message-preferences';break;
       case 'unreadCounts':path='/unread-counts';break;
       case 'inbox':path='/inbox'+query({after:args.after});break;
@@ -423,7 +424,7 @@ const server=Bun.serve({hostname:'::',port:0,async fetch(request){
   assert(!request.headers.get('Referer')?.includes(fixtureAdmissionToken),'Connection token leaked into referrer');
   const jmapPath=path==='/.well-known/jmap'?'/api/jmap/session':path==='/jmap'?'/api/jmap':path;
   if(jmapPath==='/api/jmap/session'||jmapPath==='/api/jmap'){
-    assert(request.headers.get('Cookie')?.includes('hail_session='+sessionToken));
+    if(!authenticated||!request.headers.get('Cookie')?.includes('hail_session='+sessionToken))return json({error:'Unauthorized'},401);
     const body=await request.text(),input=body?JSON.parse(body):{};
     requests.push({path:jmapPath,body,authorization:request.headers.get('Authorization')??''});
     if(jmapPath==='/api/jmap/session')return jmapFixture(jmapPath,request.method,input)!;
@@ -529,7 +530,9 @@ try{
   };
   const fill=async(label:string,value:string)=>evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)})).querySelector('input');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
   async function file(label:string,path:string){const {root}=await cdp("DOM.getDocument"),{nodeId}=await cdp("DOM.querySelector",{nodeId:root.nodeId,selector:`input[type=file][data-proof="${label}"]`});assert(nodeId);await cdp("DOM.setFileInputFiles",{nodeId,files:[path]});}
-  const upload=async(label:string,path:string)=>{await evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)})).querySelector('input');e.dataset.proof='upload';})()`);await file("upload",path);};
+  const upload=async(label:string,path:string)=>{
+    await wait(()=>evaluate(`!![...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)}))?.querySelector('input[type=file]')`),"file input: "+label);
+    await evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(${JSON.stringify(label)})).querySelector('input');e.dataset.proof='upload';})()`);await file("upload",path);};
   await cdp("Page.enable");await cdp("Runtime.enable");await cdp("Log.enable");await cdp("WebAuthn.enable");
   if(process.env.HAIL_WIZARD_MOBILE==="true")await cdp("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:3,mobile:true});
   else await cdp("Emulation.setDeviceMetricsOverride",{width:1440,height:1000,deviceScaleFactor:1,mobile:false});

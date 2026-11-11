@@ -4,8 +4,8 @@ mod schema;
 mod tests;
 
 use crate::contract::Error;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use cbor::{decode, invalid, Limits, Value};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use cbor::{Limits, Value, decode, invalid};
 use sha2::{Digest, Sha256};
 
 pub fn decode_base64(text: &str) -> Result<Vec<u8>, Error> {

@@ -1,5 +1,6 @@
 import type {Draft} from '@racrproto/client-support/drafts';
 import {jmapDraftFixture} from './jmap-draft-fixture.js';
+const json=(value:unknown)=>Response.json(value,{headers:{'Content-Type':'application/json'}});
 // Fictional read-state provider shared by local preview and browser scenarios.
 // This is not a compatibility implementation or a production provider.
 export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:boolean;trashedAt?:string|null}[],write:(id:string,value:boolean)=>void,trashEnabled=()=>true,trashWrite:(id:string,value:boolean|null)=>void=()=>{},drafts=new Map<string,Draft>(),operation?:(name:string,args:Record<string,any>)=>Record<string,unknown>){
@@ -7,7 +8,7 @@ export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:
   const accountCapability='https://haili.app/ns/jmap/account';
   const capability='https://haili.app/ns/jmap/messages',accountId='fixture_account';let revision=0;
   return (path:string,method:string,input:Record<string,any>):Response|null=>{
-    if(path==='/api/jmap/session'&&method==='GET')return Response.json({capabilities:{'urn:ietf:params:jmap:core':{},[capability]:{},[draftFixture.capability]:{},...(operation?{[accountCapability]:{version:1,types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{})},primaryAccounts:{[capability]:accountId,[draftFixture.capability]:accountId,...(operation?{[accountCapability]:accountId}:{})},
+    if(path==='/api/jmap/session'&&method==='GET')return json({capabilities:{'urn:ietf:params:jmap:core':{},[capability]:{},[draftFixture.capability]:{},...(operation?{[accountCapability]:{version:1,types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{})},primaryAccounts:{[capability]:accountId,[draftFixture.capability]:accountId,...(operation?{[accountCapability]:accountId}:{})},
       accounts:{[accountId]:{isReadOnly:false,accountCapabilities:{...(operation?{[accountCapability]:{types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{}),[capability]:{mutableProperties:['isRead','isInTrash'],canDestroy:true}}}}});
     if(path!=='/api/jmap'||method!=='POST')return null;
     const responses=(input.methodCalls??[]).map(([name,args,tag]:[string,Record<string,any>,string])=>{
@@ -44,7 +45,7 @@ export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:
       }
       return [name,{accountId,oldState,newState:String(revision),destroyed:destroyed.length?destroyed:null,notDestroyed:Object.keys(notDestroyed).length?notDestroyed:null,updated:Object.keys(updated).length?updated:null,notUpdated:Object.keys(notUpdated).length?notUpdated:null},tag];
     });
-    return Response.json({methodResponses:responses,sessionState:'fixture'});
+    return json({methodResponses:responses,sessionState:'fixture'});
   };
 }
 
