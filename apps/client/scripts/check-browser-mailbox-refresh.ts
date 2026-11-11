@@ -20,7 +20,7 @@ const origin=`http://localhost:${fixturePort}`;
 // The fixture API starts before the GUI; wait for rendered HTML before navigating.
 await wait(async()=>{try{return (await fetch(origin+'/?view=connections')).ok;}catch{return false;}});
 // Require the same typed mailbox fixture used by the built client before checking refresh UI.
-const capability='https://haili.app/ns/jmap/account';
+const capability='https://racrproto.com/ns/jmap/account';
 const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
 const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];
 assert.equal(typeof accountId,'string');

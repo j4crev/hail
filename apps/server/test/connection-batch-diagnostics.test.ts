@@ -12,7 +12,7 @@ it('correlates rejected connection batches without logging bodies, credentials o
     new JmapOperations({accounts:accounts as never,grants:{} as never,service:{} as never,publications:{createConnections:async()=>{throw failure;}} as never}));
   const send=async()=>{
     const response=await app.request('/jmap',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer private-credential'},
-      body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/account'],methodCalls:[['HailSubmission/submit',{accountId:'account',kind:'connections',input:{publicationId:id,text:'private message text',connections:[]}},'send']]})});
+      body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://racrproto.com/ns/jmap/account'],methodCalls:[['HailSubmission/submit',{accountId:'account',kind:'connections',input:{publicationId:id,text:'private message text',connections:[]}},'send']]})});
     return (await response.json() as any).methodResponses[0][1];
   };
   try{

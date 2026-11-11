@@ -13,7 +13,7 @@ const account={type:"racr.account",version:1,provider,accountId:"12345678-1234-1
   credential:{credentialId:"12345678-1234-1234-1234-123456789def",expiresAt:"2027-01-01T00:00:00.000Z"}};
 
 it("loads a new alpha account's empty inbox through the real session account client without relabeling assurance",async()=>{
-  const capability='https://haili.app/ns/jmap/account',jmapAccount='a_fixture';
+  const capability='https://racrproto.com/ns/jmap/account',jmapAccount='a_fixture';
   const json=(value:unknown)=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
   const request=vi.fn(async(url:string,init?:RequestInit)=>{
     expect(init?.headers).toMatchObject({Cookie:`hail_session=${token}`});

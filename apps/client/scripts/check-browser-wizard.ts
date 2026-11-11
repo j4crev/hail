@@ -367,7 +367,7 @@ async function domainFixture(request:Request):Promise<Response>{
   if(path===`/api/v1/signup/${setupId}/complete`){assert(authenticated);retired=true;return json({state:"complete",signupId:setupId});}
   return json({},404);
 }
-const accountCapability='https://haili.app/ns/jmap/account';
+const accountCapability='https://racrproto.com/ns/jmap/account';
 async function accountOperation(name:string,args:Record<string,any>,request:Request):Promise<Response>{
   assert.equal(args.accountId,'fixture_account');
   const fields=(...allowed:string[])=>assert(Object.keys(args).every(key=>['accountId',...allowed].includes(key)),`Unexpected arguments for ${name}`);

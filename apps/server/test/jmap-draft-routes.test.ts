@@ -22,7 +22,7 @@ it('guards draft writes with scopes, passkeys, Origin and migration policy',asyn
   const app=new Hono();registerJmapRoutes(app,{authenticate:async()=>authenticated?session:null} as unknown as AccountApiRepository,
     {accountId:()=> 'account_fixture'} as unknown as JmapMessages,'https://provider.example.com',undefined,
     {set:async()=>{writes++;return {accountId:'account_fixture'};}} as unknown as JmapDrafts);
-  const body=JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/drafts'],methodCalls:[['HailDraft/set',{accountId:'account_fixture'},'set']]});
+  const body=JSON.stringify({using:['urn:ietf:params:jmap:core','https://racrproto.com/ns/jmap/drafts'],methodCalls:[['HailDraft/set',{accountId:'account_fixture'},'set']]});
   const post=(origin='https://provider.example.com')=>app.request('/jmap',{method:'POST',headers:{Cookie:'hail_session=fixture',Origin:origin,'Content-Type':'application/json'},body});
   authenticated=false;expect((await post()).status).toBe(401);authenticated=true;
   expect((await post('https://other.example.com')).status).toBe(403);

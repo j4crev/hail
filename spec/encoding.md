@@ -53,7 +53,7 @@ Examples in object specifications are diagnostic JSON unless explicitly identifi
 
 ## COSE_Sign1 Profile
 
-Every object in the COSE registry below is one tagged COSE_Sign1 structure under RFC 9052. Envelopes and snapshots use the RFC 9995 hash profile below. The following direct-payload profile applies to the other registered objects. Transfer handshake records retain their separately defined signatures in [transfer-formats.md](transfer-formats.md):
+Every object in the signed-object inventory below is one tagged COSE_Sign1 structure under RFC 9052. Envelopes and snapshots use the RFC 9995 hash profile below. The following direct-payload profile applies to the other listed objects. Transfer handshake records retain their separately defined signatures in [transfer-formats.md](transfer-formats.md):
 
 ```cbor-diag
 18([
@@ -92,7 +92,7 @@ with exactly these protected labels: `1: -19` (Ed25519), `4: kid`,
 `258: -16` (SHA-256), `259: "application/hail-envelope+cbor"`.
 The embedded COSE payload is the 32-byte SHA-256 of the exact deterministic
 closed envelope descriptor. The unprotected map contains exactly
-`"https://haili.app/ns/racr/preimage": descriptor_bytes`. This domain-controlled
+`"https://racrproto.com/ns/racr/preimage": descriptor_bytes`. This domain-controlled
 text label is a RACR extension, not a registered numeric COSE label.
 
 Tag 18, deterministic encoding, empty external AAD, 64-byte Ed25519 signature,
@@ -109,7 +109,7 @@ protected = deterministicCBOR({1: -19, 4: UTF8(kid), 258: -16,
 digest = SHA256(descriptor_bytes)
 input = deterministicCBOR(["Signature1", protected, h'', digest])
 wire = deterministicCBOR(18([protected,
-       {"https://haili.app/ns/racr/preimage": descriptor_bytes}, digest,
+       {"https://racrproto.com/ns/racr/preimage": descriptor_bytes}, digest,
        Ed25519(input)]))
 ```
 
@@ -117,13 +117,46 @@ Limits: descriptor 16384 bytes, complete envelope 17408 bytes, protected header
 1024 bytes. The descriptor hash remains `envelope_digest`; it is not the hash of
 the complete signed representation. Other objects keep their documented digest
 domains. Current admission MUST reject the superseded direct-payload envelope.
-Reading saved envelopes uses this same current profile; no superseded format
-is supported. See [account history](account-history.md).
+Reading saved envelopes uses this same current hash profile; old namespace labels
+and superseded direct-payload envelopes are unsupported. See [account history](account-history.md).
 
 Snapshots use the same signature structure but an empty unprotected map and the
 exact manifest carried separately. Their purpose/version-specific label 259 and
 limits are defined in [transfer formats](transfer-formats.md#snapshot-profile-and-standardization-boundary).
-The registry's envelope content type denotes label 259; other rows use label 3.
+The inventory's envelope content type denotes label 259; other rows use label 3.
+
+### Protocol namespace cutover
+
+Current writers MUST use `https://racrproto.com/ns/racr/preimage`. This is a fixed
+protocol identifier, never a provider-specific endpoint and never dereferenced.
+The reference provider's `haili.app` origin does not own the protocol namespace.
+
+Readers and writers MUST use the current label exclusively. The former
+`https://haili.app/ns/racr/preimage` label, a map containing both labels, and
+arbitrary provider-domain labels MUST be rejected. There is no fallback.
+
+This is a pre-launch namespace correction. The operator confirmed there are no
+subscriptions, connections or messages requiring old-envelope compatibility.
+Account identities, keys, recovery material and snapshot signature purposes do
+not depend on this unprotected header name. No account-data migration or deletion
+is needed. Synthetic history fixtures are recaptured from isolated workflows to
+exercise the current format, not rewritten and presented as original evidence.
+
+JMAP capabilities likewise use `https://racrproto.com/ns/jmap/` with the existing
+`messages`, `drafts`, `account`, `events` and `push` suffixes. Clients and providers
+use only these current capability names; no provider-domain JMAP alias is advertised.
+Object IDs, serving generations, synchronization states, tokens, keys and user data
+are not changed by this namespace correction. Frozen experimental RFC 9995 candidates
+retain their original labels solely as evaluation artifacts, not current identifiers.
+
+**Rollout and rollback:** coordinate the alpha provider and web/CLI/shared-client
+upgrade. Old clients cannot use renamed JMAP capabilities, and old providers
+cannot accept new envelope carriers. Reload browsers and upgrade the CLI;
+credential reenrollment is not required solely by this change. No mixed-version
+fallback is defined. Before any new-format messages exist, coordinated binary
+rollback is possible; after new writes, an older binary cannot read those envelopes
+and is not a safe rollback without a separately reviewed data plan. Do not rewrite
+signed history or automatically delete user data to enable rollback.
 
 ## Signed Object Types
 
@@ -268,3 +301,126 @@ Before Hail claims cross-implementation interoperability, the project must publi
 - negative vectors for every prohibited CBOR and COSE form
 - cross-language conformance results
 - realistic size, allocation, encode/decode, sign/verify, and end-to-end benchmarks
+
+## Publication identifiers and registration templates
+
+This is the current publication inventory; the [profile index](README.md#current-profiles)
+owns versions, and the object specifications own schemas and authority rules.
+The earlier [phase 0 inventory](../agents/standards-baseline.md#initial-media-type-and-extension-inventory)
+is superseded by this section. The namespace correction below moves current protocol identifiers to `racrproto.com`.
+
+### Media-type inventory
+
+The nine exact protected content types in [Signed Object Types](#signed-object-types)
+plus the following four types are the current registration candidates. The
+historical `application/hail-connection-grant+cbor` is excluded: retaining a codec
+shape does not make it a current creation profile or a registration candidate.
+
+| Media type | Representation and specification | Parameters |
+| --- | --- | --- |
+| `application/hail-body+cbor` | Deterministic CBOR content document; [bodies](bodies.md), [SPT bodies](bodies.md), [assets](assets.md), [attachments](attachments.md) | None |
+| `application/hail-transfer+json` | UTF-8 JSON lifecycle request/response wrappers, with separately authenticated embedded objects; [transfer formats](transfer-formats.md#http-operation-inventory) | None |
+| `application/hail-portable-snapshot+json` | Exact retained portable JSON manifest preimage, not its COSE wrapper; [transfer formats](transfer-formats.md#snapshot-profile-and-standardization-boundary), [history](account-history.md) | Required `version=11` |
+| `application/hail-managed-snapshot+json` | Exact retained managed JSON manifest preimage, not its COSE wrapper; same owners | Required `version=12` |
+
+The nine `+cbor` protected types describe deterministic **payload/preimage** maps,
+not tagged COSE containers. HTTP delivery of their signatures uses the existing
+`application/cose` allocation. Snapshot `version` parameters are part of the
+exact signed label 259 string; HTTP normalization does not apply to signed names.
+
+### Registration template fields
+
+These are preparation templates under [RFC 6838 section 5.6](https://www.rfc-editor.org/rfc/rfc6838.html#section-5.6).
+Each candidate above or in the signed-object table instantiates the common fields
+below with its exact subtype and the per-format specification/security entry.
+This shared form avoids thirteen independently drifting copies. When submitting,
+expand one complete template per type and replace repository references with
+immutable published references. The status below applies to every candidate.
+
+| Field | Value |
+| --- | --- |
+| Type name | `application` |
+| Subtype name | Exact portion after `application/` in the candidate's media type, without parameters |
+| Required parameters | None, except the two snapshot types' `version` as listed above |
+| Optional parameters | None |
+| Encoding considerations | Binary for `+cbor`; 8bit UTF-8 for `+json` |
+| Security considerations | The format-specific entry below, this document's bounded decoding and signature rules, and [profile security review](README.md#standards-profile-security-review) |
+| Interoperability considerations | Closed alpha schemas; no unknown-field or signature fallback. Exact bytes and current authority must be verified. See [current profiles](README.md#current-profiles) and [conformance evidence](vectors/README.md#phase-7-evidence-and-limits). Generic CBOR/JSON parsing does not establish RACR validity. |
+| Published specification | This specification and the format-specific entry below; immutable reference to be fixed at submission |
+| Applications that use this media type | RACR messaging providers, Hail clients, and independent codec/history consumers |
+| Fragment identifier considerations | None defined; no fragment-based selection of signed or authorized subobjects |
+| Deprecated alias names | None |
+| Magic numbers | None |
+| File extensions | None assigned |
+| Macintosh file type codes | None assigned |
+| Person and email address to contact | Jason Creviston, j4@j4crev.com (existing draft author; confirm for external submission) |
+| Intended usage | LIMITED USE (experimental RACR interoperability) |
+| Restrictions on usage | Use only with the applicable RACR profile; a media type alone grants no delivery, retrieval or migration authority |
+| Author | Jason Creviston and Hail contributors |
+| Change controller | Proposed author control pending publication-stream review; no IETF change control or endorsement is asserted |
+| Provisional registration? | Not submitted; see registration status below |
+
+| Subtype | Format-specific specification and security considerations |
+| --- | --- |
+| `hail-address-binding+cbor` | [Address binding](address-binding.md): domain publication AND current identity signature; retained bindings do not preserve current domain authority |
+| `hail-sender-profile+cbor` | [Sender profile](sender-profile.md): messaging signature, bounded assets and monotonic revision; display metadata does not establish organizational identity or consent |
+| `hail-grant+cbor` | [Grants](grants.md): recipient identity signature, exact consent context, category limits, revision/revocation ordering |
+| `hail-envelope+cbor` | [Envelopes](envelopes.md): RFC 9995 descriptor hash, current sender authority, recipient consent, replay and deadlines; token-bearing descriptors require private storage |
+| `hail-delivery-status+cbor` | [Delivery state](delivery-state.md): recipient signature and original-envelope correlation; provider delivery is not a read receipt |
+| `hail-connection-invitation+cbor` | [Connection consent](connection-auth.md), [wire](connection-wire.md): inviter identity signature and explicit review, not unsolicited delivery authority |
+| `hail-connection-confirmation+cbor` | Same owners: invitee identity signature and exact reviewed invitation/coordinator binding |
+| `hail-connection-control+cbor` | [Connection federation](connection-federation.md), [wire](connection-wire.md): authenticated participant controls, disconnect and replay semantics |
+| `hail-conversation+cbor` | [Shared conversations](shared-conversations.md): creator signature, roster binding, membership/leave and per-recipient authorization |
+| `hail-body+cbor` | [Bodies](bodies.md), [SPT bodies](bodies.md), [assets](assets.md), [attachments](attachments.md): inert rendering, bounded decompression/decoding, digest-bound local assets; never arbitrary active HTML |
+| `hail-transfer+json` | [Transfer formats](transfer-formats.md): closed lifecycle wrappers, exact embedded proofs, source/destination/transfer binding; wrapper parsing is not authorization |
+| `hail-portable-snapshot+json` | [History](account-history.md), [transfer formats](transfer-formats.md): private exact manifest bytes, user authority, fences and live cutover evidence |
+| `hail-managed-snapshot+json` | Same owners plus [managed custody](managed-custody.md): administrator/monitor authority is distinct from portable owner authority |
+
+### Extension allocation policy
+
+No new IANA registry, numeric COSE label, algorithm, URI scheme, well-known suffix,
+or structured syntax suffix is requested. Reuse existing CBOR/COSE, `+cbor`/`+json`,
+HTTP signature and JMAP allocations. The [RFC 8126](https://www.rfc-editor.org/rfc/rfc8126.html)
+review yields the following scoped decisions, not a global RACR registry:
+
+| Surface | Allocation and change rule | Definition owner |
+| --- | --- | --- |
+| COSE preimage text label `https://racrproto.com/ns/racr/preimage` | Domain-controlled URI; exact closed-profile key, no private numeric allocation or alternate spelling | [Hash profile](#rfc-9995-hash-profile) |
+| WebFinger relation `https://racrproto.com/rel/address-binding` | Extension relation URI; no registered short relation token requested | [Address binding](address-binding.md) |
+| DID fragments `#hail-identity`, `#hail-messaging`, `#hail`; service `HailMessaging` | Exact application profile names; preserve unrelated DID entries; no new DID method | [DID profile](did-profile.md) |
+| `_hail-provider` DNS delegation convention | Existing TXT-record application convention, not a new DNS RR type; delegation only under its authenticated discovery rules | [Address binding](address-binding.md) |
+| JMAP `https://racrproto.com/ns/jmap/` capabilities: `messages`, `drafts`, `account`, `events`, `push` | Domain-controlled capabilities; require the advertised capability and method-specific authority. No `urn:ietf:params:jmap:*` RACR allocation | [JMAP](jmap.md), [drafts](jmap-drafts.md), [collections](jmap-collections.md), [events](jmap-events.md) |
+| `hail-retrieval-v1` signature tag and `hail` signature dictionary member | Fixed application-profile identifiers; no negotiation or bearer-only fallback | [Retrieval signatures](retrieval-signatures.md) |
+| `hail.*` types, object versions, SPT profiles, authorization selectors and status/reason values | Closed specification-owned sets, not first-come allocations. Changes require updated normative schema, authority rules and positive/negative vectors; unknown-value behavior stays object-specific | [Profile index](README.md#current-profiles), [CDDL](hail.cddl), [delivery state](delivery-state.md) |
+| Transfer, checkpoint, consent, activation and monitor signature domains | Purpose-specific exact byte strings; retain only current distinct purposes and required authenticated evidence. Never normalize or alias a domain | [Transfer formats](transfer-formats.md), [history](account-history.md), [monitor providers](monitor-providers.md), [monitor incidents](monitor-incidents.md) |
+| Account `racr.*` types, scopes and login identifiers | Reference client/provider contract; changes do not allocate federation authority | [Client API](client-api.md), [provider authentication](provider-authentication.md) |
+| Optional OAuth and MLS identifiers | Deferred; no allocation or capability claim for unimplemented profiles | [Design roadmap](../agents/DESIGN.md) |
+
+For a future open extension point, its proposal must specify the namespace owner,
+allocation/review procedure, required registration fields, collision handling,
+unknown-value behavior, negotiation and downgrade constraints before use. A new
+name alone never extends a closed schema or grants authority. Domain-controlled
+identifiers remain stable even when the account's hosting provider changes.
+
+### Registration status and remaining publication gates
+
+As of 2026-11-11, the thirteen templates are prepared locally, not submitted or
+registered. The [IANA media-type registry](https://www.iana.org/assignments/media-types/)
+lookup found no `hail-` entries. Here, “provisional” describes project-local names;
+it does **not** mean an entry in IANA's provisional registry.
+
+The chosen names are in the standards tree. Under RFC 6838 section 3.1 and the
+IANA registry's procedure, their final registration requires the applicable
+standards publication/approval path. The project does not claim recognition as a
+standards organization. An unsubmitted individual Experimental draft does not
+establish that path or qualify the project automatically for provisional registration.
+Keep these exact names for current alpha interoperability; do not introduce a
+vendor-tree rename just to mark registration work complete.
+
+External submission remains pending publication-path and author/contact confirmation,
+and a stable public specification reference. [Draft submission preparation](../drafts/README.md#before-submission)
+owns that handoff. Record the submission date, actual request/Datatracker URL,
+assigned values and disposition here when they exist. If review requires renamed
+signed values, coordinate codecs, schemas, vectors, retained evidence and writer/reader
+cutover before adoption. Local preparation does not imply registration, IETF
+adoption, stability, deployment, or resolution of historical recovery authority.

@@ -1,6 +1,6 @@
 # Hail JMAP account collections v1
 
-Status: implemented alpha extension under `https://haili.app/ns/jmap/account`.
+Status: implemented alpha extension under `https://racrproto.com/ns/jmap/account`.
 The [account profile](jmap.md) defines discovery, framing and authentication.
 These are Hail objects using RFC 8620 method conventions, not RFC 8621 Email,
 Mailbox, EmailSubmission or Identity objects.

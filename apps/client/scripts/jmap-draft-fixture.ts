@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {parseDraftContent,type Draft} from '@racrproto/client-support/drafts';
 export function jmapDraftFixture(drafts:Map<string,Draft>,trashEnabled:()=>boolean){
-  const capability='https://haili.app/ns/jmap/drafts',accountId='fixture_account';
+  const capability='https://racrproto.com/ns/jmap/drafts',accountId='fixture_account';
   const state=()=>createHash('sha256').update(JSON.stringify([...drafts])).digest('hex');
   const present=(d:Draft)=>({...d,id:'d_'+d.id.replaceAll('-',''),draftId:d.id,isInTrash:!!d.trashedAt});
   return {capability,accountId,call(name:string,args:Record<string,any>){

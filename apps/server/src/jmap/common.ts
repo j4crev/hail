@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {AccountApiSession} from '../accounts/repository.js';
 export const JMAP_CORE='urn:ietf:params:jmap:core';
-export const HAIL_MESSAGES='https://haili.app/ns/jmap/messages';
+export const HAIL_MESSAGES='https://racrproto.com/ns/jmap/messages';
 export const MAX_OBJECTS=50;
 export const canMutateMessages=(session:AccountApiSession)=>session.scopes.includes('messages:read')&&session.scopes.includes('messages:write')&&!!session.passkey_credential_id&&!session.migration_state;
 export const canDestroyMessages=(session:AccountApiSession)=>session.scopes.includes('messages:read')&&session.scopes.includes('messages:write')&&!session.migration_state;

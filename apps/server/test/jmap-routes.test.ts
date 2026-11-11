@@ -21,6 +21,16 @@ describe('JMAP request conformance vectors',()=>{
     else expect(body.type).toBe(vector.problem);
     if("createdIds" in vector)expect(body.createdIds).toEqual(vector.createdIds);
   });
+  it('advertises protocol-domain capabilities and rejects the retired provider namespace',async()=>{
+    const server=app(),headers={Authorization:'Bearer valid','Content-Type':'application/json'};
+    const document=await (await server.request(origin+'/.well-known/jmap',{headers})).json();
+    expect(document.capabilities['https://racrproto.com/ns/jmap/messages']).toBeDefined();
+    expect(document.primaryAccounts['https://racrproto.com/ns/jmap/messages']).toBe('account_fixture');
+    expect(JSON.stringify(document)).not.toContain('https://haili.app/ns/jmap/');
+    const old=await server.request(origin+'/jmap',{method:'POST',headers,body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/messages'],methodCalls:[]})});
+    expect(old.status).toBe(400);
+    expect((await old.json()).type).toBe('urn:ietf:params:jmap:error:unknownCapability');
+  });
   it('rejects duplicate keys and cookies without exact browser Origin',async()=>{
     const server=app();const headers={'Content-Type':'application/json',Cookie:'hail_session=valid'};
     const body='{"using":["urn:ietf:params:jmap:core"],"methodCalls":[]}';

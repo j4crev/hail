@@ -1,7 +1,7 @@
 # JMAP account operations
 
 Status: current alpha application methods under the capability
-`https://haili.app/ns/jmap/account`. These methods complement the synchronized
+`https://racrproto.com/ns/jmap/account`. These methods complement the synchronized
 `HailMessage`, `HailDraft`, `HailSent`, `HailGrant`, `HailRelationship` and
 `HailSubmission` collections. They are Hail extensions to the JMAP Core method
 framework, not JMAP Mail methods or a generic HTTP tunnel.

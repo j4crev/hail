@@ -2,7 +2,7 @@ import {EVENT_CAPABILITY} from './jmap-events.js';
 import {readJmapJson} from './jmap.js';
 import {mailboxCache} from './mailbox-cache.js';
 const CORE='urn:ietf:params:jmap:core';
-const MESSAGE='https://haili.app/ns/jmap/messages',DRAFT='https://haili.app/ns/jmap/drafts',ACCOUNT='https://haili.app/ns/jmap/account';
+const MESSAGE='https://racrproto.com/ns/jmap/messages',DRAFT='https://racrproto.com/ns/jmap/drafts',ACCOUNT='https://racrproto.com/ns/jmap/account';
 const object=(v:unknown):v is Record<string,any>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 // Each browser owns its cursor set. A lost cursor means refetching projections,
 // never resetting server read state or drafts. No credentials/content persisted.

@@ -6,7 +6,7 @@ import {withServingGeneration} from '../db/serving.js';
 import {JmapError,argumentsOnly,object,jmapAccountId} from './common.js';
 import {encryptedPush,validatePushKeys,type PushKeys,type VapidConfig} from './push-crypto.js';
 
-export const HAIL_PUSH='https://haili.app/ns/jmap/push';
+export const HAIL_PUSH='https://racrproto.com/ns/jmap/push';
 type Kind='api'|'passkey'|'provider';
 export const credentialKind=(s:AccountApiSession):Kind=>s.authentication?.method??'api';
 export type PushStates=(s:AccountApiSession,types:string[])=>Promise<Record<string,string>>;

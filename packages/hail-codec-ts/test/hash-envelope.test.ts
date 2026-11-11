@@ -9,6 +9,13 @@ function mutate(change:(a:any[])=>void){
  const t=decode(current,{useMaps:true,tags:Tagged.preserve(18)}) as Tagged;change(t.value as any[]);return encode(t,rfc8949EncodeOptions);
 }
 describe('production RFC 9995 envelope cutover',()=>{
+ it('accepts only the protocol namespace, rejecting the old label and ambiguous maps',()=>{
+  expect(HASH_ENVELOPE_PREIMAGE).toBe('https://racrproto.com/ns/racr/preimage');
+  for(const label of ['https://haili.app/ns/racr/preimage','https://other.example/ns/racr/preimage']){
+   expect(()=>inspectSignedPayload('hail.envelope',mutate(a=>a[1].set(label,a[1].get(HASH_ENVELOPE_PREIMAGE))))).toThrow();
+   expect(()=>inspectSignedPayload('hail.envelope',mutate(a=>{a[1].set(label,a[1].get(HASH_ENVELOPE_PREIMAGE));a[1].delete(HASH_ENVELOPE_PREIMAGE);}))).toThrow();
+  }
+ });
  it('authenticates the descriptor before exposing metadata or invoking key verification',async()=>{
   const tampered=mutate(a=>{const p=a[1].get(HASH_ENVELOPE_PREIMAGE).slice();p[p.length-1]^=1;a[1].set(HASH_ENVELOPE_PREIMAGE,p);});
   const verifier={verify:vi.fn(async()=>true)};

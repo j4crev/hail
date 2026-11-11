@@ -214,7 +214,7 @@ impl Client {
     }
     pub async fn upload_attachment(&self, filename: &str, bytes: Vec<u8>) -> Result<Value, Error> {
         let session = self.request_at("/.well-known/jmap", "", None).await?;
-        let account = session["primaryAccounts"]["https://haili.app/ns/jmap/account"]
+        let account = session["primaryAccounts"]["https://racrproto.com/ns/jmap/account"]
             .as_str()
             .filter(|s| {
                 !s.is_empty()

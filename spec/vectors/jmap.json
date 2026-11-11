@@ -137,7 +137,7 @@
       "request": {
         "using": [
           "urn:ietf:params:jmap:core",
-          "https://haili.app/ns/jmap/messages"
+          "https://racrproto.com/ns/jmap/messages"
         ],
         "methodCalls": [
           [
@@ -177,7 +177,7 @@
       "request": {
         "using": [
           "urn:ietf:params:jmap:core",
-          "https://haili.app/ns/jmap/messages"
+          "https://racrproto.com/ns/jmap/messages"
         ],
         "methodCalls": [
           [

@@ -158,7 +158,7 @@ specifications. Before proposing a stable specification for RFC publication:
   No particular implementation language or second provider implementation is
   required. Go vector verification is independent format evidence, not a deployed
   provider trial.
-- Resolve provisional media types and registries and the remaining open questions
+- Complete the [registration templates and status](encoding.md#publication-identifiers-and-registration-templates) and the remaining open questions
   in individual specifications, especially historical authority and recovery.
   Current mandatory body profiles and size requirements are defined; capability
   discovery is future work for optional profiles, not a plain-text-only restriction.
@@ -167,6 +167,45 @@ specifications. Before proposing a stable specification for RFC publication:
 
 No official-body approval, registration or interoperable third-party deployment is
 implied by this working specification.
+
+## Standards profile security review
+
+Phase 7 review (2026-11-11) applies the subject/resource/operation model of
+[ACE AIF](https://www.rfc-editor.org/rfc/rfc9237.html) and the explicit key-possession
+binding of [CWT proof of possession](https://www.rfc-editor.org/rfc/rfc8747.html)
+as review questions. RACR does not adopt AIF/CWT wire tokens. Existing protocol
+owners below remain authoritative; this is a review map, not a second set of schemas.
+
+| Profile / attempted abuse | Required boundary and reviewed evidence |
+| --- | --- |
+| HTTP: attacker substitutes a host, cache entry, digest or compressed representation | [HTTP](http-binding.md), [bodies](bodies.md) and [phase 1 evidence](../agents/standards-phase-1.md): hostname verification, safe destination resolution, private responses, transfer digest distinct from signed uncompressed digest, bounded decoding |
+| RFC 9995: valid signature over a substituted descriptor, purpose or snapshot | [Encoding](encoding.md#rfc-9995-hash-profile), [transfer formats](transfer-formats.md): exact preimage hash, algorithm, content type, signer/party/key role, closed headers and current authority; reject direct-payload envelope downgrade. [TS/Go vectors](vectors/README.md) and [phase 2 checks](../agents/standards-phase-2.md#implementation-validation) separate cryptographic validity from admission/cutover |
+| Retrieval: leaked token, different recipient/resource, stale key or replay | [Retrieval signatures](retrieval-signatures.md): token-first local lookup fixes recipient and body; current recipient key signs method, full target and Authorization; atomic provider-wide nonce consumption, freshness and token expiry. [HTTP/database cases](../apps/server/test/retrieval-signature.integration.test.ts) cover both proofs, target substitution, concurrent replay, restart, rotation, attachment isolation and disclosure only after authorization |
+| Provider login: forged issuer/tenant, cross-account linking, scope escalation or revoked SSO session | [Provider authentication](provider-authentication.md): trusted server adapter, exact issuer/tenant/subject binding, per-request active-session validation, generation/fence checks. [Integration cases](../apps/server/test/provider-authentication.integration.test.ts) reject login-only owner authority and credential delegation, fail closed on upstream outage and preserve revocation across restart |
+| JMAP: account/blob/state substitution, stale writes, send duplication or consent escalation | [JMAP](jmap.md), [operations](jmap-operations.md), [collections](jmap-collections.md): account/scope isolation and generation-bound IDs; immutable signed bytes; optimistic concurrency; exact approval for consent changes; durable submission identity. [Phase 5 evidence](../agents/standards-phase-5.md) covers these boundaries; advertising a capability never adds scope or owner authority |
+| Events/push: foreign subscription, endpoint SSRF, stale credentials, forged hints or inferred reads | [Events](jmap-events.md): credential/account/generation binding, endpoint validation, encrypted bounded hints, verification before repeated pushes, expiry/revocation and bounded retries. [Events](../apps/server/test/jmap-events.test.ts) and [push cases](../apps/server/test/jmap-push.integration.test.ts) exercise lifecycle. JMAP changes recover loss; notifications never alter read state or prove RACR delivery |
+| Migration: old provider continues acting, import to wrong destination, old credentials/nonces reused | [History](account-history.md), [cutover](transfer-formats.md), [PLC evidence](plc-read-evidence.md): retain exact authenticated history and deadlines, fence source, bind destination and transfer, verify live cutover independently of snapshot signature. Client credentials and push subscriptions do not transfer. Retrieval replay state remains at its origin; same-origin replacement preserves it or observes the required quiet period |
+| Malicious provider: claims owner authority or confidentiality based on valid transport signatures | [Custody](account-onboarding.md), [managed custody](managed-custody.md), [alpha limitations](alpha-onboarding.md): provider login and messaging keys do not create independent user identity/recovery authority. Providers still see plaintext and metadata and can withhold service; a compromised recipient provider can violate its local consent enforcement. Protocol signatures do not force a malicious provider to behave honestly |
+
+The subsequent [protocol namespace correction](encoding.md#protocol-namespace-cutover)
+uses `racrproto.com` exclusively for preimage and JMAP identifiers. The operator
+confirmed no existing messaging data requires an old-label reader. It does not add authorization or change signature inputs.
+
+Review result: the examined profiles already specify these constraints; phase 7
+corrects the publication draft's stale bearer-only, envelope and snapshot descriptions
+without introducing a new token format. The separate namespace cutover above
+changes wire names while preserving signed inputs and stored evidence. Reproducible execution
+results and scope are in the [vector evidence record](vectors/README.md#phase-7-evidence-and-limits).
+This is a bounded repository review, not independent security certification.
+
+Remaining limits: general recovery/nullified-branch reconciliation and unacknowledged
+Grant rotation remain open below. PLC monitoring and its recovery window remain
+operational dependencies. Provider-served web code is not a trust boundary against
+that provider. Encrypted Web Push protects its payload from the push service but
+does not provide end-to-end message confidentiality or hide delivery metadata.
+Real-device push and a complete independently implemented provider trial are not
+established by these tests. Optional OAuth, production SSO connectors and MLS are
+not reviewed as implemented features.
 
 ## Specification audit follow-up (2026-11-01)
 
@@ -203,7 +242,7 @@ Remaining issues, not resolved by these fixes or passing conformance vectors:
 - **Historical authority:** exact evidence retention, current-key checks and
   connection-history verification exist, but general recovery/nullified-branch
   reconciliation and unacknowledged Grant rotation still need a reviewed procedure.
-- **Publication and extensions:** media-type registration remains pending. Future
+- **Publication and extensions:** [registration preparation and allocation policy](encoding.md#publication-identifiers-and-registration-templates) are recorded; external submission/registration remains pending. Future
   optional SPT profiles need support negotiation; additional attachment formats need explicit wire,
   availability and delivery rules. These are not implied by existing header assets.
 

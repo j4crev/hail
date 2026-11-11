@@ -1,6 +1,6 @@
 import {AccountApiError,type AccountApiClient} from '@racrproto/client-support/account-api';
 import {parseDraft,type DraftContent} from '@racrproto/client-support/drafts';
-const CORE='urn:ietf:params:jmap:core',DRAFTS='https://haili.app/ns/jmap/drafts';
+const CORE='urn:ietf:params:jmap:core',DRAFTS='https://racrproto.com/ns/jmap/drafts';
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 async function connection(client:AccountApiClient){
   const session=await client.request('/.well-known/jmap',undefined,'');

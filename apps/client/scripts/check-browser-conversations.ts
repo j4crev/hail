@@ -18,7 +18,7 @@ const evaluate=async(expression:string)=>{const r=await cdp('Runtime.evaluate',{
 await cdp('Page.enable');await cdp('Runtime.enable');
 const origin=`http://localhost:${fixturePort}`;
 const accountOperation=async(name:string,args:Record<string,unknown>={})=>{
- const capability='https://haili.app/ns/jmap/account';
+ const capability='https://racrproto.com/ns/jmap/account';
  const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
  const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];assert.equal(accountId,'fixture_account');
  const response=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -48,7 +48,7 @@ const grouped=()=>accountOperation('HailMailbox/view',{view:'connectionInbox'});
 if(!sharedMode)for(const width of [1440,390,320]){
  const initial=await api();
  for(const m of initial.messages.filter((m:any)=>!m.body.blocks.some((b:any)=>b.children?.some((s:any)=>s.text==='The photos turned out beautifully')))){
-  const capability='https://haili.app/ns/jmap/messages';
+  const capability='https://racrproto.com/ns/jmap/messages';
   const session=await (await fetch(`${origin}/api/jmap/session`)).json();const accountId=session.primaryAccounts[capability];
   const call=async(name:string,args:unknown)=>(await (await fetch(`${origin}/api/jmap`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,args,'test']]})})).json()).methodResponses[0][1];
   const query=await call('HailMessage/query',{accountId,filter:{sender:m.sender,messageId:m.messageId,inTrash:false}});

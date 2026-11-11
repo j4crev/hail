@@ -2,7 +2,7 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 // Evaluated in the page so mutations traverse the same browser fetch hooks.
 const jmapDraftOps=`async (draftId,content)=>{
-  const capability='https://haili.app/ns/jmap/drafts';
+  const capability='https://racrproto.com/ns/jmap/drafts';
   const session=await(await fetch('/api/jmap/session')).json(),accountId=session.primaryAccounts[capability];
   const call=async(name,args)=>{const r=await(await fetch('/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{accountId,...args},'d']]})})).json();if(r.methodResponses[0][0]!==name)throw Error('Draft call failed');return r.methodResponses[0][1];};
   const query=await call('HailDraft/query',{filter:{draftId}});

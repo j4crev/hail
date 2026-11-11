@@ -1,7 +1,7 @@
 export class JmapRequestError extends Error {constructor(readonly status:number,message:string){super(message);}}
 // Fixed same-origin JSON bridge routes bind requests to the configured provider;
 // never send the browser session to URLs obtained from discovery responses.
-const CORE='urn:ietf:params:jmap:core',MESSAGES='https://haili.app/ns/jmap/messages';
+const CORE='urn:ietf:params:jmap:core',MESSAGES='https://racrproto.com/ns/jmap/messages';
 const failure=()=>new Error('The change could not be confirmed. Refresh and try again.');
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export async function readJmapJson(response:Response,maximum:number):Promise<unknown>{
@@ -61,7 +61,7 @@ export async function restoreReceivedMessage(sender:string,messageId:string){
 }
 
 export async function mutateDraft(draftId:string,restore:boolean,trashEnabled:boolean){
-  const capability='https://haili.app/ns/jmap/drafts',session=await request('/api/jmap/session');
+  const capability='https://racrproto.com/ns/jmap/drafts',session=await request('/api/jmap/session');
   const accountId=object(session.primaryAccounts)?session.primaryAccounts[capability]:null;
   if(typeof accountId!=='string')throw failure();
   const query=await call('HailDraft/query',{accountId,filter:{draftId,inTrash:restore},limit:2},capability);
@@ -72,7 +72,7 @@ export async function mutateDraft(draftId:string,restore:boolean,trashEnabled:bo
 }
 
 export async function accountOperation(name:string,args:Record<string,unknown>={}){
-  const capability='https://haili.app/ns/jmap/account',session=await request('/api/jmap/session');
+  const capability='https://racrproto.com/ns/jmap/account',session=await request('/api/jmap/session');
   const accountId=object(session.primaryAccounts)?session.primaryAccounts[capability]:null;
   if(typeof accountId!=='string')throw failure();
   return call(name,{...args,accountId},capability);

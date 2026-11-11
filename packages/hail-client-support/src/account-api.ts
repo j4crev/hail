@@ -87,7 +87,7 @@ export class AccountApiClient {
   }
 
   async jmap(name:string,args:JsonObject={},maxResponse=40*1024*1024):Promise<JsonObject>{
-    const capability='https://haili.app/ns/jmap/account';
+    const capability='https://racrproto.com/ns/jmap/account';
     const session=await this.request('/.well-known/jmap',undefined,'');
     const accountId=object(session.primaryAccounts)[capability];
     if(typeof accountId!=='string')throw new AccountApiError(403);
@@ -103,7 +103,7 @@ export class AccountApiClient {
   async uploadAttachment(filename:string,bytes:Uint8Array):Promise<JsonObject>{
     if(bytes.length<1||bytes.length>25*1024*1024)throw new Error('Invalid attachment size');
     const session=await this.request('/.well-known/jmap',undefined,'');
-    const accountId=object(session.primaryAccounts)['https://haili.app/ns/jmap/account'];
+    const accountId=object(session.primaryAccounts)['https://racrproto.com/ns/jmap/account'];
     if(typeof accountId!=='string')throw new AccountApiError(403);
     const response=await fetch(`${this.transport}/jmap/upload/${encodeURIComponent(accountId)}`,{
       method:'POST',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(60_000),

@@ -395,7 +395,7 @@ func parseDirectPayloadCOSE(kind string, representation []byte) (*parsedCOSE, er
 	return &parsedCOSE{kind: kind, keyID: keyID, data: data, protected: bytes.Clone(protected), signature: bytes.Clone(signature), signaturePayload: bytes.Clone(payloadBytes)}, nil
 }
 
-const HashEnvelopePreimage = "https://haili.app/ns/racr/preimage"
+const HashEnvelopePreimage = "https://racrproto.com/ns/racr/preimage"
 
 func parseCOSE(kind string, representation []byte) (*parsedCOSE, error) {
 	if kind != EnvelopeType {

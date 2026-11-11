@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 
-export const HAIL_EVENTS='https://haili.app/ns/jmap/events';
+export const HAIL_EVENTS='https://racrproto.com/ns/jmap/events';
 export const EVENT_TYPES=['HailMessage','HailDraft','HailSent','HailSubmission','HailGrant','HailRelationship'] as const;
 export interface EventSnapshot {accountId:string; states:Record<string,string>}
 export interface EventOptions {types:string[]; closeAfterState:boolean; pingSeconds:number}

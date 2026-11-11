@@ -2,7 +2,7 @@ import {beforeEach,expect,it,vi} from 'vitest';
 const clear=vi.hoisted(()=>vi.fn());
 vi.mock('./mailbox-cache.js',()=>({mailboxCache:{clear}}));
 import {MailboxSync} from './jmap-sync.js';
-const CORE='urn:ietf:params:jmap:core',MESSAGE='https://haili.app/ns/jmap/messages',DRAFT='https://haili.app/ns/jmap/drafts',ACCOUNT='https://haili.app/ns/jmap/account';
+const CORE='urn:ietf:params:jmap:core',MESSAGE='https://racrproto.com/ns/jmap/messages',DRAFT='https://racrproto.com/ns/jmap/drafts',ACCOUNT='https://racrproto.com/ns/jmap/account';
 const types=['HailMessage','HailDraft','HailSent','HailSubmission','HailGrant','HailRelationship'];
 type Event={operation:'created'|'updated'|'destroyed';id:string};
 function provider(){

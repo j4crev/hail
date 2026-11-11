@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {setMessageRead,removeReceivedMessage,restoreReceivedMessage} from './jmap.js';
-const cap='https://haili.app/ns/jmap/messages',sender='did:plc:'+'a'.repeat(24),message='019a0000-0000-7000-8000-000000000001';
+const cap='https://racrproto.com/ns/jmap/messages',sender='did:plc:'+'a'.repeat(24),message='019a0000-0000-7000-8000-000000000001';
 const session={primaryAccounts:{[cap]:'account'},accounts:{account:{isReadOnly:false,accountCapabilities:{[cap]:{mutableProperties:['isRead','isInTrash'],canDestroy:true}}}}};
 const response=(name:string,value:unknown)=>({methodResponses:[[name,value,'read-state']]});
 afterEach(()=>vi.unstubAllGlobals());

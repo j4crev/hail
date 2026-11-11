@@ -1,5 +1,5 @@
 import {readJmapJson} from './jmap.js';
-const CORE='urn:ietf:params:jmap:core',PUSH='https://haili.app/ns/jmap/push';
+const CORE='urn:ietf:params:jmap:core',PUSH='https://racrproto.com/ns/jmap/push';
 const DEVICE='hail.push.device.v1',BINDING='hail.push.binding.v1';
 interface Subscription {id:string;deviceClientId:string;verificationCode:string|null;verificationError?:string|null;expires:string}
 interface Capability {applicationServerKey:string;contentEncoding:string}

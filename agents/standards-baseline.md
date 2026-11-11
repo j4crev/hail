@@ -216,16 +216,31 @@ push-service delivery remains an operator smoke test, not established interopera
 
 ### 7. Publication and interoperability
 
-**Current behavior and reuse.** [Encoding's profile table](../spec/encoding.md),
-[spec index](../spec/README.md), [vector index](../spec/vectors/README.md) and
-[Internet-Draft workspace](../drafts/README.md) are the publication owners. Reuse
-TS/Go consumers and database history exporters; do not label them a full second
-provider implementation or the draft an adopted standard.
+Local publication preparation and bounded review implemented 2026-11-11 against
+`7f05efcbdde7775e108288bf9c210c5b56f607d2` plus this documentation change.
+The initial phase 7 preparation was documentation-only. The subsequent
+[protocol namespace cutover](../spec/encoding.md#protocol-namespace-cutover) changes
+current envelope/JMAP identifiers with a coordinated client/provider upgrade.
+No old-label reader is needed: the operator confirmed there is no existing messaging data. No account-data rewrite or deployment is performed.
 
-**Spec/schema/vector owners.** All profiles changed by earlier phases, their exact
-schemas and vectors, plus draft source/renderings when its snapshot is advanced.
-Registration templates/allocation policy and independent-client/provider evidence
-are **planned**. The initial inventory below precedes final names and submissions.
+Reuse the canonical owners, rather than a separate phase-7 inventory:
+
+- [Encoding publication inventory](../spec/encoding.md#publication-identifiers-and-registration-templates):
+  thirteen current media-type templates, historical exclusions, exact signed names,
+  extension allocation policy and actual submission status.
+- [Spec security review](../spec/README.md#standards-profile-security-review):
+  authority/privacy cases across phases 1–6, migration and adversarial providers;
+  unresolved historical-authority and operational limits remain explicit.
+- [Vector evidence](../spec/vectors/README.md#phase-7-evidence-and-limits):
+  current reproducible cross-language and provider-boundary checks and their limits.
+- [Draft workspace](../drafts/README.md): updated pinned snapshot, RFC 9995 and
+  token-plus-signature retrieval, current transfer/JMAP scope and regenerated outputs.
+
+**External completion remains pending.** The existing unprefixed media types need
+an appropriate standards-tree publication/approval path and confirmed submission
+metadata; local templates are neither submissions nor registrations. The encoding
+inventory owns the status and external request links when available. No independent
+provider trial, third-party certification or stable RFC publication is claimed.
 
 ### 8. MLS conversations
 
@@ -262,19 +277,11 @@ rules above; unresolved profile choices must be resolved before that phase ships
 
 ## Initial media-type and extension inventory
 
-This inventories existing values and candidate allocation surfaces, not completed
-registration templates. Values called provisional in the current spec remain so.
-
-| Surface | Existing owner/value | Phase dependency |
-| --- | --- | --- |
-| COSE wrapper | `application/cose; cose-type="cose-sign1"`; protected labels 1/3/4 in `spec/encoding.md` and TS/Go COSE | Reuse existing container allocations; phase 2 decides any revised hash-envelope profile and extension labels. |
-| Protected content types | `application/hail-{address-binding,sender-profile,grant,envelope,delivery-status,connection-invitation,connection-confirmation,connection-control,conversation}+cbor` (brace notation lists nine individual strings) | Exact strings are signature-domain inputs; phase 2/7 must coordinate changes. |
-| Historical codec profile | `application/hail-connection-grant+cbor` remains in TS profiles | Distinguish retained evidence from required current creation; do not register obsolete formats merely because a reader exists. |
-| Body and transfer HTTP types | `application/hail-body+cbor` in body service/codec; `application/hail-transfer+json` in migration wire | Phase 1 retains current body identity; phases 2/8 may revise profiles. |
-| Signature domains outside COSE | `hail-migration-snapshot-v7\0` / `v8\0`; handshake, consent, activation, monitor and checkpoint domains inventoried in `spec/transfer-formats.md` and `spec/account-history.md` | Phase 2 must account for snapshot domains; unrelated authority domains are not implicitly replaced. |
-| Discovery and identity | WebFinger relations and DID fragments/service endpoints in `spec/address-binding.md` and `spec/did-profile.md` | Retain authenticated federation discovery; phase 4/5 adds client discovery separately. |
-| Closed object/profile identifiers | `hail.*`, SPT profiles and envelope versions in `spec/hail.cddl` and codec profiles; reference account `racr.*` in `spec/client-api.md` | Phases 2/5/8 define extension/negotiation policy before adding values; no silent signed-schema normalization. |
-| New standards surfaces | OAuth issuer/resource metadata and scopes; RACR JMAP capability/type IDs; retrieval-signature profile; MLS device/content identifiers | Names and allocation policies remain open in phases 3–8. Prefer appropriate existing allocations/domain-controlled identifiers; no private COSE label assigned here. |
+The phase 0 inventory has been reconciled into the current
+[encoding publication inventory](../spec/encoding.md#publication-identifiers-and-registration-templates).
+Use that single owner for exact current types, registration templates, allocation
+policy, historical exclusions and submission status. The initial table is removed
+to avoid presenting superseded snapshot domains and planned capabilities as current.
 
 ## Baseline validation and limits
 

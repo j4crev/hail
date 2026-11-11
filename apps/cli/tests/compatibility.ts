@@ -32,7 +32,7 @@ let publicCheck = false;
 let server: ReturnType<typeof Bun.serve> | undefined;
 // Translate frozen domain fixtures only after validating the new wire contract.
 // No migrated HTTP route is accepted by this HTTPS server.
-const accountCapability = "https://haili.app/ns/jmap/account";
+const accountCapability = "https://racrproto.com/ns/jmap/account";
 const fixtureJson = (value: unknown) => new Response(JSON.stringify(value), {headers:{"Content-Type":"application/json"}});
 let typedCalls = 0;
 async function typedFixture(request: Request, fixture: (request: Request) => Promise<Response>): Promise<Response> {

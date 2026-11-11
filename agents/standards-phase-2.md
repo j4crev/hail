@@ -193,7 +193,7 @@ interoperability tests. Current implementation evidence is recorded below.
 ## Final implementation and preservation
 
 The production envelope has protected labels 1, 4, 258 and 259 as in candidate B,
-but its sole unprotected label is **`https://haili.app/ns/racr/preimage`**. The
+but its sole unprotected label is **`https://racrproto.com/ns/racr/preimage`**. The
 experimental label is rejected. Both TS and Go writers use the new profile and
 both live verifiers reject old direct-payload envelopes. Provider transport and
 metadata admission use a 17408-byte carrier limit and a 16384-byte descriptor limit.

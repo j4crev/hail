@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 export async function jmapCases(binary:string,provider:string,env:Record<string,string|undefined>,install:(handler:(r:Request)=>Promise<Response>)=>void){
- const did='did:plc:'+'a'.repeat(24),message='019a0000-0000-7000-8000-000000000001',account='opaque-account',id='m_opaque-message',cap='https://haili.app/ns/jmap/messages';
+ const did='did:plc:'+'a'.repeat(24),message='019a0000-0000-7000-8000-000000000001',account='opaque-account',id='m_opaque-message',cap='https://racrproto.com/ns/jmap/messages';
  const json=(value:unknown)=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
  let mode='',calls:string[]=[],cases=0;
  install(async request=>{

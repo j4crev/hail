@@ -8,7 +8,7 @@ Status: implemented alpha phase 6 notification profile. This profile follows
 
 ## Wire contract
 
-The Session advertises `https://haili.app/ns/jmap/events` with
+The Session advertises `https://racrproto.com/ns/jmap/events` with
 `{transport:"eventsource",types:[...]}` listing implemented collection types.
 The extension may appear in a JMAP request's `using` list but defines no methods.
 The `eventSourceUrl` template is
@@ -83,7 +83,7 @@ The bridge permits SSE only for that exact endpoint and propagates cancellation.
 
 ## Background subscriptions
 
-When configured, the Session advertises `https://haili.app/ns/jmap/push` with
+When configured, the Session advertises `https://racrproto.com/ns/jmap/push` with
 `{applicationServerKey:"<base64url P-256 point>",contentEncoding:"aes128gcm",maxSubscriptions:4}`.
 This extension declares the encryption/VAPID profile; `PushSubscription/get` and
 `PushSubscription/set` use the RFC 8620 core capability. Without configuration,

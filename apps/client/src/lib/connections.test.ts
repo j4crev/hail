@@ -4,7 +4,7 @@ import {encodeDeterministic} from "@racrproto/codec/cbor";
 import {encodeBase64Url} from "@racrproto/codec/base64url";
 import {returnPath} from "./auth-routing.js";
 
-const capability='https://haili.app/ns/jmap/account',accountId='a_fixture';
+const capability='https://racrproto.com/ns/jmap/account',accountId='a_fixture';
 function jmapFetch(result:unknown){
   return vi.fn(async(path:string,init?:RequestInit)=>{
     if(path==='/api/jmap/session')return Response.json({apiUrl:'https://evil.example/jmap',primaryAccounts:{[capability]:accountId}});
