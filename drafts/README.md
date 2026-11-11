@@ -33,9 +33,10 @@ advanced publisher layouts remain future work.
 It is grounded in the immutable specification snapshot at
 `7f05efcbdde7775e108288bf9c210c5b56f607d2`. Some detailed normative semantics still
 depend on that snapshot; this draft is explicitly **not yet a self-contained
-implementation specification**. Appendix A distinguishes missing editorial
-incorporation from unresolved protocol decisions. Appendix B maps chapters to
-source files. Appendix C carries the body CDDL excerpt; its comments are wrapped
+implementation specification**. The editorial status note identifies remaining
+document incorporation work.
+Appendix A records unresolved historical-authority and resolver-interoperability
+questions. Appendix B maps chapters to source files. Appendix C carries the body CDDL excerpt; its comments are wrapped
 for RFC text layout, with attachment fields and the separately cited attachment
 specification drawn from the same snapshot.
 
@@ -96,10 +97,20 @@ a future submitted revision must follow the preservation procedure below.
 1. Confirm the standards-tree media-type publication/approval path and the prepared
    [registration templates](../spec/encoding.md#registration-template-fields).
    Review the proposed title, Experimental status, scope, author details, open
-   issues, and IPR/submission obligations. Keep unresolved protocol work visible;
-   do not remove it simply to make a checklist look complete.
+   protocol questions, and IPR/submission obligations. Attach the prepared templates
+   to the appropriate submission, track requests and outcomes in the encoding
+   inventory, and coordinate any wire changes required by assigned values.
+   Keep unresolved protocol work visible; do not remove it simply to make a
+   checklist look complete.
 2. Decide how much of the pinned normative specification to incorporate into the
-   core document and how to publish its companion extension definitions.
+   core document and how to publish its companion extension definitions. This
+   includes full object schemas, consent/category grammars, Sender Profile limits,
+   address DNS-delegation and IDNA policy, status cross-field rules, and endpoint
+   error matrices. Select companion boundaries for connection admission, threaded
+   replies, shared conversations, attachments, custody, and transfer, preserving
+   their existing authority boundaries. Incorporate the existing attachment
+   declaration, retrieval, validation, availability, retry, delivery-completion,
+   and retention rules into the core or a companion document.
 3. Refresh the draft date and reference snapshot deliberately, reconcile any
    intervening protocol changes, regenerate both outputs, and rerun validation.
 4. Submit the standalone XML through the
