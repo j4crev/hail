@@ -124,31 +124,25 @@ Internet-Draft                    RACR                     November 2026
 
 1.  Introduction
 
-   Recipient-Authorized Content Retrieval (RACR) separates permission to
-   deliver a message from transport of its content.  A recipient grants
-   a particular sender permission to deliver selected categories of
-   messages.  The recipient provider remains authoritative for current
-   permission, including revocation, even if the sender retains an older
-   signed Grant.  Senders publish immutable bodies and submit small
-   recipient-specific signed envelopes.  Recipients fetch content only
-   after authenticating and authorizing an envelope.
+   Recipient-Authorized Content Retrieval (RACR) is a messaging protocol
+   in which recipients decide who may send them messages and which
+   categories of messages they wish to receive.  Senders make message
+   content available for retrieval and submit a small delivery envelope
+   to each recipient.  The content is retrieved only after the envelope
+   has been checked against the recipient's current permissions.
+   Recipients can revoke a sender's permission at any time.
 
-   The design aims to preserve recipient consent across provider
-   changes, authenticate sending identities independently of their
-   hosting domains, and avoid exposing user activity through message
-   retrieval.  It does not attempt to prevent abuse by a sender who has
-   obtained consent, guarantee availability, or make provider-held
-   message content end-to-end confidential.
+   RACR aims to preserve recipient consent when users change providers,
+   let senders establish their identities independently of the domains
+   that host their services, and protect recipient activity from being
+   exposed through content retrieval.  It does not prevent abuse by an
+   authorized sender, guarantee message availability, or provide end-to-
+   end confidentiality for content held by providers.
 
-   RACR is not an SMTP or MIME profile, and an email-like address does
-   not imply SMTP mailbox semantics.  A gateway would require separately
-   specified identity, consent, content-conversion, and failure rules.
-   No such gateway is defined here.
-
-   The protocol remains an alpha design.  Wire-version numbers select
-   particular object formats, not a stability guarantee.  An Internet-
-   Draft revision number is unrelated to a RACR object version or an
-   implementation release version.
+   RACR defines a separate messaging protocol, not an extension to SMTP
+   or MIME.  Although its addresses may resemble email addresses, they
+   do not imply compatibility with email systems.  This specification
+   does not define a gateway between RACR and email.
 
 2.  Conventions and Scope
 
@@ -161,6 +155,12 @@ Internet-Draft                    RACR                     November 2026
    awaiting replacement.  This terminology does not change wire bytes,
    signature domains, or interoperability requirements.
 
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
 
 
 
@@ -169,12 +169,6 @@ Creviston                  Expires 15 May 2027                  [Page 3]
 
 Internet-Draft                    RACR                     November 2026
 
-
-   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
-   "OPTIONAL" in this document are to be interpreted as described in BCP
-   14 [RFC2119] [RFC8174] when, and only when, they appear in all
-   capitals, as shown here.
 
    This draft specifies the architecture and summarizes normative core
    requirements from [HAIL-SPEC].  Where a complete wire or semantic
@@ -212,6 +206,12 @@ Internet-Draft                    RACR                     November 2026
    signs the Grant before its provider publishes it; the providers
    perform discovery, envelope exchange, content retrieval, and status
    reporting on behalf of the participant identities.
+
+
+
+
+
+
 
 
 
