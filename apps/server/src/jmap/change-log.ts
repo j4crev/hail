@@ -32,7 +32,7 @@ export class JmapChangeLog {
     argumentsOnly(args,['accountId','sinceState','maxChanges']);
     const since=this.parseState(session,args.sinceState),max=args.maxChanges??MAX_OBJECTS;
     if(!Number.isSafeInteger(max)||Number(max)<1||Number(max)>MAX_OBJECTS)throw new JmapError('invalidArguments');
-    return this.sql.begin(async tx=>{
+    const result=await this.sql.begin(async tx=>{
       const owner=[session.account_id,session.serving_generation??1];
       const state=(await tx.unsafe<State[]>(`SELECT revision::text,retained_from::text FROM ${this.states}
         WHERE account_id=$1 AND generation=$2 FOR UPDATE`,owner))[0];
@@ -43,7 +43,7 @@ export class JmapChangeLog {
       let floor=BigInt(state.retained_from);for(const row of removed)if(BigInt(row.revision)>floor)floor=BigInt(row.revision);
       if(floor!==BigInt(state.retained_from))await tx.unsafe(`UPDATE ${this.states} SET retained_from=$3
         WHERE account_id=$1 AND generation=$2`,[...owner,floor.toString()]);
-      if(BigInt(since)<floor||BigInt(since)>BigInt(state.revision))throw new JmapError('cannotCalculateChanges');
+      if(BigInt(since)<floor||BigInt(since)>BigInt(state.revision))return null;
       const rows=await tx.unsafe<{revision:string;id:string;operation:'created'|'updated'|'destroyed'}[]>(`
         SELECT revision::text,id,operation FROM ${this.events} WHERE account_id=$1 AND generation=$2
         AND revision>$3::bigint ORDER BY revision LIMIT $4`,[...owner,since,Number(max)+1]);
@@ -55,5 +55,6 @@ export class JmapChangeLog {
       return {accountId:this.accountId(session),oldState:args.sinceState,newState:this.state(session,rows.length>Number(max)?page.at(-1)!.revision:state.revision),
         hasMoreChanges:rows.length>Number(max),created,updated,destroyed};
     });
+    if(result===null)throw new JmapError('cannotCalculateChanges');return result;
   }
 }

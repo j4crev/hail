@@ -145,10 +145,10 @@ pub async fn run(client: &Client, args: &Args) -> Result<Value, Error> {
     if args.command == "connection status" {
         let state = selected(client, path, None).await?;
         let response = client
-            .get(&format!(
-                "/connections/cli-status?requestId={}",
-                state["request"]["requestId"].as_str().unwrap()
-            ))
+            .jmap(
+                "HailRelationship/status",
+                &json!({"requestId":state["request"]["requestId"]}),
+            )
             .await?;
         summary(&state, &response)?;
         return result(&state, &response);
@@ -167,7 +167,10 @@ pub async fn run(client: &Client, args: &Args) -> Result<Value, Error> {
     };
     let state = selected(client, path, Some(&input)).await?;
     let mut response = client
-        .post("/connections/cli-prepare", &state["request"])
+        .jmap(
+            "HailRelationship/prepare",
+            &json!({"input":state["request"]}),
+        )
         .await?;
     summary(&state, &response)?;
     let proposal_path = format!("{path}.proposal.json");
@@ -214,7 +217,7 @@ pub async fn run(client: &Client, args: &Args) -> Result<Value, Error> {
         if codec::inspect(kind, &signed)? != *payload {
             return Err(invalid());
         }
-        response=client.post("/connections/cli-commit",&json!({"requestId":state["request"]["requestId"],"cose":URL_SAFE_NO_PAD.encode(signed)})).await?;
+        response=client.jmap("HailRelationship/commit",&json!({"input":{"requestId":state["request"]["requestId"],"cose":URL_SAFE_NO_PAD.encode(signed)}})).await?;
         summary(&state, &response)?;
     }
     if !create {

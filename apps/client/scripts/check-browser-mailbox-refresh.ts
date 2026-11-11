@@ -19,6 +19,18 @@ await cdp('Page.enable');await cdp('Runtime.enable');
 const origin=`http://localhost:${fixturePort}`;
 // The fixture API starts before the GUI; wait for rendered HTML before navigating.
 await wait(async()=>{try{return (await fetch(origin+'/?view=connections')).ok;}catch{return false;}});
+// Require the same typed mailbox fixture used by the built client before checking refresh UI.
+const capability='https://haili.app/ns/jmap/account';
+const sessionResponse=await fetch(origin+'/api/jmap/session');assert(sessionResponse.ok);
+const session=await sessionResponse.json(),accountId=session.primaryAccounts[capability];
+assert.equal(typeof accountId,'string');
+const countsResponse=await fetch(origin+'/api/jmap',{method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({using:['urn:ietf:params:jmap:core',capability],methodCalls:[['HailMailbox/view',{accountId,view:'unreadCounts'},'refresh-fixture']]})});
+assert(countsResponse.ok);
+const [counts]= (await countsResponse.json()).methodResponses;
+assert.equal(counts[0],'HailMailbox/view');assert.equal(counts[1].accountId,accountId);assert.equal(counts[2],'refresh-fixture');
+assert.equal(typeof counts[1].subscriptions,'number');assert.equal(typeof counts[1].connections,'number');
+
 
 async function navigate(path:string,title:string){
  await cdp('Page.navigate',{url:origin+path});

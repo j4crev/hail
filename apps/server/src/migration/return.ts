@@ -1,3 +1,4 @@
+import {sameSentRecord} from './sent-history.js';
 import {isDeepStrictEqual} from "node:util";
 import type {SQL} from "bun";
 import {parseJsonWithoutDuplicateKeys} from "../discovery/strict-json.js";
@@ -32,7 +33,7 @@ export async function validateReturningEvidence(sql:SQL,manifest:TransferManifes
 
 type HistoryTables=TransferManifest["tables"]|ManagedTransferManifest["tables"];
 function validateRetainedHistory(previous:HistoryTables,currentTables:HistoryTables) {
-  const immutable={grant_revisions:["grant_id","revision"],grant_consent_evidence:["grant_id","revision"],
+  const immutable={account_publications:["account_id","id"],publication_targets:["account_id","publication_id","recipient_did"],grant_revisions:["grant_id","revision"],grant_consent_evidence:["grant_id","revision"],
     plc_operation_evidence:["operation_cid"],sent_envelopes:["sender_did","message_id"],received_envelopes:["sender_did","message_id"],
     delivery_status_payloads:["sender_did","message_id","revision"],delivery_status_wrappers:["sender_did","message_id","revision","signing_public_key"],
     delivered_messages:["recipient_did","sender_did","message_id"],verified_body_provenance:["recipient_did","sender_did","digest","media_type","profile"]} as const;
@@ -61,12 +62,16 @@ function validateRetainedHistory(previous:HistoryTables,currentTables:HistoryTab
         // Cursor allocation belongs to the destination provider, not message history.
         // Read/trash state may change while the owner uses the other provider.
         // The original export remains immutable; import retains the current state.
-        for(const field of ["delivery_sequence","is_read","trashed_at"]){
+        for(const field of ["is_read","trashed_at"]){
           delete expected[field];if(actual)delete actual[field];
         }
       }
-      if(!actual||!isDeepStrictEqual(actual,expected))throw new Error(`Returning snapshot loses or conflicts with retained ${table} history`);
+      if(!actual||!(['account_publications','publication_targets'].includes(name)?sameSentRecord(actual,expected):isDeepStrictEqual(actual,expected)))throw new Error(`Returning snapshot loses or conflicts with retained ${table} history`);
     }
+  }
+  for(const old of previous.account_sent_dispositions)if(old.deleted===true){
+    const current=currentTables.account_sent_dispositions.find(row=>row.kind===old.kind&&row.send_id===old.send_id);
+    if(!sameSentRecord(current,old))throw Error('Returning snapshot revives permanently deleted Sent history');
   }
   for(const row of previous.grant_lineages) {
     const current=currentTables.grant_lineages.find(candidate=>candidate.grant_id===row.grant_id);
@@ -103,7 +108,7 @@ function validateRetainedHistory(previous:HistoryTables,currentTables:HistoryTab
   }
   for(const old of previous.body_authorizations){
     const current=currentTables.body_authorizations.find(row=>row.token_hash===old.token_hash);
-    if(!current||!isDeepStrictEqual(current,old))throw new Error("Returning snapshot loses retained body authorization");
+    if(!sameSentRecord(current,old))throw new Error("Returning snapshot loses retained body authorization");
   }
 }
 

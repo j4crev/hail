@@ -24,7 +24,7 @@ export class PortableTransferCompletion {
     const row=input as Record<string,unknown>,snapshot=row.snapshot as Record<string,unknown>;
     const monitor=this.profile==="public"&&"monitor" in row?decodeSignedRecord(row.monitor):undefined;
     if(!snapshot||typeof snapshot!=="object"||Object.keys(snapshot).sort().join(",")!=="digest,manifest,signature,sourceMessagingPublicKey,type,version"||
-      snapshot.type!=="hail.portable-migration-transfer"||snapshot.version!==9||typeof snapshot.sourceMessagingPublicKey!=="string")throw new Error("Invalid source snapshot");
+      snapshot.type!=="hail.portable-migration-transfer"||snapshot.version!==11||typeof snapshot.sourceMessagingPublicKey!=="string")throw new Error("Invalid source snapshot");
     const decode=(value:unknown,max:number)=>{if(typeof value!=="string")throw new Error("Invalid transfer bytes");const bytes=decodeBase64Url(value);
       if(!bytes.length||bytes.length>max||encodeBase64Url(bytes)!==value)throw new Error("Transfer bytes exceed limit or are not canonical");return bytes;};
     const bytes=decode(snapshot.manifest,67108864),digest=decode(snapshot.digest,32),signature=decode(snapshot.signature,1024);

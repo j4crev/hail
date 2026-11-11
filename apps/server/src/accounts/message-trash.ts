@@ -137,6 +137,7 @@ export class MessageTrash {
       AND NOT EXISTS(SELECT 1 FROM provider_migration_fences f WHERE f.account_id=a.id)
       AND (EXISTS(SELECT 1 FROM delivered_messages m WHERE m.recipient_did=a.did AND m.trashed_at<=clock_timestamp()-interval '30 days')
         OR EXISTS(SELECT 1 FROM account_message_drafts d WHERE d.account_id=a.id AND d.trashed_at<=clock_timestamp()-interval '30 days')
+        OR EXISTS(SELECT 1 FROM account_sent_dispositions d WHERE d.account_id=a.id AND NOT d.deleted AND d.trashed_at<=clock_timestamp()-interval '30 days')
         OR EXISTS(SELECT 1 FROM attachment_uploads u WHERE u.account_id=a.id AND u.created_at<clock_timestamp()-interval '24 hours'
           AND NOT EXISTS(SELECT 1 FROM account_message_drafts d,jsonb_array_elements(COALESCE(d.content->'attachments','[]'::jsonb)) f
             WHERE d.account_id=u.account_id AND f->'digest'->>'value'=rtrim(translate(encode(u.digest,'base64'),'+/','-_'),'='))))
@@ -148,12 +149,14 @@ export class MessageTrash {
       const rows=await tx<BodyReference[]>`DELETE FROM delivered_messages WHERE (sender_did,message_id) IN
         (SELECT sender_did,message_id FROM delivered_messages WHERE recipient_did=${account.did}
           AND trashed_at<=clock_timestamp()-interval '30 days' ORDER BY trashed_at LIMIT 500) RETURNING sender_did,body_digest,media_type,profile`;
+      const sent=await tx`UPDATE account_sent_dispositions SET deleted=true WHERE account_id=${account.id} AND NOT deleted AND trashed_at<=clock_timestamp()-interval '30 days' RETURNING send_id`;
       const drafts=await tx`DELETE FROM account_message_drafts WHERE account_id=${account.id} AND trashed_at<=clock_timestamp()-interval '30 days' RETURNING id`;
       await tx`DELETE FROM attachment_uploads u WHERE u.account_id=${account.id} AND u.created_at<clock_timestamp()-interval '24 hours'
         AND NOT EXISTS(SELECT 1 FROM account_message_drafts d,jsonb_array_elements(COALESCE(d.content->'attachments','[]'::jsonb)) f
           WHERE d.account_id=u.account_id AND f->'digest'->>'value'=rtrim(translate(encode(u.digest,'base64'),'+/','-_'),'='))`;
-      await this.cleanBodies(tx as SQL,account.did,rows);deleted+=rows.length+drafts.length;
+      await this.cleanBodies(tx as SQL,account.did,rows);deleted+=rows.length+drafts.length+sent.length;
     }));
+    await this.sql`DELETE FROM jmap_uploads WHERE id IN (SELECT id FROM jmap_uploads WHERE expires_at<=clock_timestamp() ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
     await this.sql`SELECT hail_collect_received_blobs(500)`;
     await this.sql`DELETE FROM attachment_blobs b WHERE digest IN(SELECT digest FROM attachment_blobs a
       WHERE NOT EXISTS(SELECT 1 FROM attachment_uploads u WHERE u.digest=a.digest)

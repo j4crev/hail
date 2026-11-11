@@ -15,6 +15,7 @@ mod custody;
 mod cutover;
 mod doctor;
 mod grants;
+mod jmap;
 mod messages;
 mod plc;
 mod poll;
@@ -148,53 +149,17 @@ async fn run() -> Result<(), Error> {
         "conversation mark-read"
         | "conversation mark-unread"
         | "conversation trash"
-        | "conversation restore" => {
-            client
-                .post(
-                    &format!(
-                        "/conversations/{}/{}",
-                        reads::component(&args.positionals[0]),
-                        args.command.split_whitespace().nth(1).unwrap()
-                    ),
-                    &serde_json::json!({}),
-                )
-                .await?
-        }
-        "connection revoke-invitation" | "connection remove" => {
-            client
-                .post(
-                    if args.command == "connection remove" {
-                        "/connections/cli-remove"
-                    } else {
-                        "/connections/cli-revoke-invitation"
-                    },
-                    &serde_json::json!({"connectionId":args.positionals[0]}),
-                )
-                .await?
-        }
+        | "conversation restore" => client.jmap("HailMailbox/conversationAction", &serde_json::json!({
+            "peer":args.positionals[0],"action":args.command.split_whitespace().nth(1).unwrap()
+        })).await?,
+        "connection revoke-invitation" | "connection remove" => client.jmap(
+            if args.command == "connection remove" { "HailRelationship/credentialRemove" } else { "HailRelationship/credentialRevokeInvitation" },
+            &serde_json::json!({"connectionId":args.positionals[0]})
+        ).await?,
         "inbox delete" | "message delete" => {
-            client
-                .post(
-                    &format!(
-                        "/inbox/{}/{}/permanent-delete",
-                        reads::component(&args.positionals[0]),
-                        reads::component(&args.positionals[1])
-                    ),
-                    &serde_json::json!({}),
-                )
-                .await?
+            jmap::delete(&client, &args.positionals[0], &args.positionals[1]).await?
         }
-        "message submit" => {
-            client
-                .post(
-                    &format!(
-                        "/messages/{}/submit",
-                        reads::component(&args.positionals[0])
-                    ),
-                    &serde_json::json!({}),
-                )
-                .await?
-        }
+        "message submit" => client.jmap("HailSubmission/retry", &serde_json::json!({"id":args.positionals[0]})).await?,
         "send" | "reply" | "connection send" => messages::send(&client, &args).await?,
         "profile create" | "profile update" => {
             profiles::save(
@@ -245,54 +210,34 @@ async fn run() -> Result<(), Error> {
         "connection invite" | "connection accept" | "connection status" => {
             connections::run(&client, &args).await?
         }
-        "connection list" => client.get("/connections/cli-list").await?,
-        "connection invitations" => client.get("/connections/cli-invitations").await?,
+        "connection list" => client.jmap("HailRelationship/credentialList", &serde_json::json!({})).await?,
+        "connection invitations" => client.jmap("HailRelationship/credentialInvitations", &serde_json::json!({})).await?,
         "inbox list" | "grant list" | "credential list" => {
             let kind = match args.command.as_str() {
-                "inbox list" => "inbox",
-                "grant list" => "grants",
-                _ => "credentials",
+                "inbox list" => "inbox", "grant list" => "grants", _ => "credentials",
             };
-            reads::list_pages(kind, option("after"), args.pages, async |path| {
-                client.get(path).await
-            })
-            .await?
+            reads::list_pages(kind, option("after"), args.pages, async |after| {
+                if kind == "credentials" {
+                    let path=after.map_or("/credentials".to_owned(), |a| format!("/credentials?after={a}"));
+                    return client.get(&path).await;
+                }
+                if kind == "inbox" {
+                    client.jmap("HailMailbox/view", &serde_json::json!({"view":"inbox","after":after})).await
+                } else {
+                    client.jmap("HailGrant/list", &serde_json::json!({"after":after})).await
+                }
+            }).await?
         }
-        "inbox show" => {
-            client
-                .get(&format!(
-                    "/inbox/{}/{}",
-                    reads::component(&args.positionals[0]),
-                    reads::component(&args.positionals[1])
-                ))
-                .await?
-        }
-        "conversation thread" => {
-            client
-                .get(&format!(
-                    "/threads/{}/{}",
-                    reads::component(&args.positionals[0]),
-                    reads::component(&args.positionals[1])
-                ))
-                .await?
-        }
-        "conversation list" | "conversation show" => {
-            let suffix = args
-                .positionals
-                .first()
-                .map(|s| format!("/{}", reads::component(s)))
-                .unwrap_or_default();
-            let mut pairs = Vec::new();
-            if let Some(after) = option("after").filter(|s| !s.is_empty()) {
-                pairs.push(("after", after));
-            }
-            if args.options.contains_key("trash") {
-                pairs.push(("trash", "true"));
-            }
-            client
-                .get(&format!("/conversations{suffix}?{}", reads::query(&pairs)))
-                .await?
-        }
+        "inbox show" => client.jmap("HailMailbox/view", &serde_json::json!({
+            "view":"read","sender":args.positionals[0],"messageId":args.positionals[1]
+        })).await?,
+        "conversation thread" => client.jmap("HailMailbox/view", &serde_json::json!({
+            "view":"threads","sender":args.positionals[0],"messageId":args.positionals[1]
+        })).await?,
+        "conversation list" | "conversation show" => client.jmap("HailMailbox/view", &serde_json::json!({
+            "view":"conversations","peer":args.positionals.first(),
+            "after":option("after").filter(|s| !s.is_empty()),"trash":args.options.contains_key("trash")
+        })).await?,
         "message status" => {
             let seconds = args
                 .options

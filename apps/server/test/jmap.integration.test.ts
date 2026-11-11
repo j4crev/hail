@@ -195,6 +195,24 @@ integration('JMAP received message synchronization',()=>{
     expect((await (await request({Origin:origin})).json()).methodResponses[0]).toEqual(['error',{type:'forbidden'},'set']);
     expect((await snapshot(a)).list[0]!.isRead).toBe(true);
   });
+  it('preserves CLI permanent deletion without granting bearer read-state or Trash edits',async()=>{
+    const a=await account(),sent=await deliver(a);const bearer:AccountApiSession={...a,scopes:['messages:read','messages:write']};
+    await db.sql`INSERT INTO account_message_preferences(account_id,trash_enabled) VALUES(${a.account_id},true)`;
+    const before=await snapshot(a),id=before.list[0]!.id as string;
+    await expect(messages.set(bearer,{update:{[id]:{isRead:true}}})).rejects.toMatchObject({type:'forbidden'});
+    await expect(messages.set({...bearer,migration_state:'fenced'},{destroy:[id]})).rejects.toMatchObject({type:'forbidden'});
+    await expect(messages.set(a,{destroy:[id]})).rejects.toMatchObject({type:'forbidden'});
+    const app=new Hono();registerJmapRoutes(app,{authenticate:async()=>bearer} as unknown as AccountApiRepository,messages,origin);
+    const headers={Authorization:'Bearer fixture','Content-Type':'application/json'},accountId=messages.accountId(bearer);
+    const discovery=await (await app.request(origin+'/.well-known/jmap',{headers})).json();
+    expect(discovery.accounts[accountId]).toMatchObject({isReadOnly:false,accountCapabilities:{[HAIL_MESSAGES]:{mutableProperties:[],canDestroy:true}}});
+    const response=await app.request(origin+'/jmap',{method:'POST',headers,body:JSON.stringify({using:[JMAP_CORE,HAIL_MESSAGES],
+      methodCalls:[['HailMessage/set',{accountId,ifInState:before.state,destroy:[id]},'delete']]})});
+    expect((await response.json()).methodResponses[0][1].destroyed).toEqual([id]);
+    expect((await messages.changes(a,{sinceState:before.state})).destroyed).toEqual([id]);
+    expect(await db.sql`SELECT 1 FROM received_envelopes WHERE message_id=${sent.id}`).toHaveLength(1);
+    expect(await db.sql`SELECT 1 FROM delivered_messages WHERE message_id=${sent.id}`).toHaveLength(0);
+  });
   it('authenticates HTTP discovery, batches result references and rejects scope/origin/capability bypasses',async()=>{
     const a=await account();await deliver(a);const accounts=new AccountApiRepository(db.sql),credential=await accounts.issue(a.did,false,undefined,['messages:read']);
     const app=new Hono();registerJmapRoutes(app,accounts,messages,origin);

@@ -101,7 +101,7 @@ history collectors rather than replacing their authority with container validity
 [core delivery](../spec/core-delivery.md), [encoding](../spec/encoding.md),
 [transfer formats](../spec/transfer-formats.md), [account history](../spec/account-history.md),
 [connection portability](../spec/connection-portability.md), `spec/hail.cddl`,
-[history schema](../spec/schemas/account-history-v9-v10.json).
+[history schema](../spec/schemas/account-history-v11-v12.json).
 Codec vectors `v0.json`, `threads-v3.json`, `conversations-v1.json` and spec vectors
 `portable-history.json`, `managed-history.json`, `transfer-wire.json`,
 `connection-history.json`, `conversation-*.json`, `history-negative.json` own
@@ -180,45 +180,24 @@ of whether the provider offers the shared OAuth client API.
 
 ### 5. JMAP synchronization and operations
 
-**Accepted portability requirement.** Provider migration must preserve read/unread
-state and saved drafts with their required data. Trash portability is planned unless a concrete implementation complication requires omission;
-omitting Trash must not resurrect trashed/deleted items in active folders. Extend managed/portable history schemas and export/import explicitly;
-this is not implemented by current formats. Client synchronization cursors may
-reset independently. See [phase 5 preparation](standards-phase-5.md#accepted-product-decision-preserve-mailbox-state-on-provider-migration).
+The [phase 5 implementation record](standards-phase-5.md) and current
+[JMAP profile](../spec/jmap.md), [account collections](../spec/jmap-collections.md)
+and [operations](../spec/jmap-operations.md) define the implemented surface.
+Received messages, drafts, Sent, submissions, Grants and relationships have
+transactional change logs and generation-bound recovery. Web and native CLI
+mailbox workflows use typed JMAP; superseded HTTP routes and delivery cursors
+are removed. Existing domain services enforce consent, scopes and submission
+idempotency. Portable v11/managed v12 include required read/draft/Trash and Sent
+state; signed schema/vector and round-trip tests cover preservation.
 
-**Current behavior and reuse.** [Account routes](../apps/server/src/accounts/routes.ts),
-[messaging](../apps/server/src/accounts/messaging.ts),
-[drafts](../apps/server/src/accounts/drafts.ts), [Trash](../apps/server/src/accounts/message-trash.ts),
-[connections](../apps/server/src/accounts/connections.ts),
-[Grants](../apps/server/src/grants/service.ts), [conversations](../apps/server/src/accounts/conversations.ts)
-and submission/delivery repositories own existing operations. Reuse them behind
-JMAP. [Inbox updates](../apps/server/src/accounts/inbox-updates.ts) provides an
-account/filter-bound delivery-sequence cursor; it is not a complete change log for
-updates/deletes. The new JMAP received-message log captures those changes transactionally
-across existing writers. Drafts now have a separate durable log covering saves,
-Trash, cleanup and send consumption; sent items and relationships remain pending.
-Client mailbox cache and shared account API own client adaptation.
-
-**Spec/schema/vector owners.** `spec/client-api.md`, `spec/provider-mailbox.md`,
-`spec/provider-drafts.md`, `spec/grants.md`, `spec/connection-auth.md`,
-`spec/shared-conversations.md`, `spec/delivery-state.md`, `spec/account-history.md`;
-`spec/schemas/provider-draft.json`, `content-builder-draft.json`, and the history
-schema if export collections change. The initial [JMAP profile](../spec/jmap.md),
-message schema and request vectors define the implemented received-message read
-subset. The [draft profile](../spec/jmap-drafts.md) adds authenticated draft reads and conditional writes
-and changes, with a projection schema and executable capability vectors. Other object types and complete Core behavior remain pending.
-Provider-local JSON vectors are not federation encoding vectors.
-
-**Existing tests and missing proof.** Server `account-api.integration.test.ts`,
-`inbox-cursor.integration.test.ts`, `drafts.integration.test.ts`,
-`message-trash-routes.test.ts`, `connections.integration.test.ts`,
-`shared-conversations.integration.test.ts`; client mailbox-cache and draft tests.
-Add two-client convergence, durable tombstones, cursor expiry/reset, concurrent
-mutations and durable cross-request submission-idempotency proof.
+Core binary access and request mechanics are implemented. Event streams/Web Push
+remain phase 6. RFC 8621 Mail interoperability is not claimed. Independent HTTPS
+CLI fixtures and Go/Rust history readers provide evidence without claiming a
+complete third-party JMAP certification program.
 
 ### 6. Events and Web Push
 
-**Current behavior and reuse.** Inbox updates and phase 5's future durable change
+**Current behavior and reuse.** Phase 5's durable collection change
 state provide the synchronization seam. No JMAP events/Web Push completion is
 claimed. [Delivery statuses](../apps/server/src/delivery/status.ts) remain separate
 protocol evidence. Reuse account authorization and safe destination validation,

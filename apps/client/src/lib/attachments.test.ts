@@ -6,12 +6,12 @@ const file={filename:'test.log',media_type:'text/plain',size:3,digest:{algorithm
 it('uploads file bytes separately and preserves previously saved references',async()=>{
  const form=new FormData();form.set('savedAttachments',JSON.stringify([file]));form.append('attachment',new File(['log'],'test.log'));
  const request=vi.fn(async()=>file);
- expect(await formAttachments(form,{request} as never)).toEqual([file,file]);
- expect(request).toHaveBeenCalledWith('/attachments',{filename:'test.log',data:'bG9n'});
+ expect(await formAttachments(form,{uploadAttachment:request} as never)).toEqual([file,file]);
+ expect(request).toHaveBeenCalledWith('test.log',new TextEncoder().encode('log'));
 });
 it('preflights the aggregate before any upload and validates draft metadata',async()=>{
  const form=new FormData();form.set('savedAttachments',JSON.stringify([{...file,size:25*1024*1024}]));form.append('attachment',new File(['x'],'test.txt'));
- const request=vi.fn();await expect(formAttachments(form,{request} as never)).rejects.toThrow('25 MiB');expect(request).not.toHaveBeenCalled();
+ const request=vi.fn();await expect(formAttachments(form,{uploadAttachment:request} as never)).rejects.toThrow('25 MiB');expect(request).not.toHaveBeenCalled();
  expect(()=>parseAttachments([{...file,filename:'../test.log'}])).toThrow();
  const content={audience:'connections',category:'',connections:[],title:'',text:'',alt:'',caption:'',allowReply:false,header:null,forward:null,attachments:[file]};
  expect(parseDraftContent(content).attachments).toEqual([file]);
@@ -20,14 +20,14 @@ it('preflights the aggregate before any upload and validates draft metadata',asy
 it('uploads PNG attachments with their original filename',async()=>{
  const form=new FormData();form.append('attachment',new File(['fixture'],'screen.PNG',{type:'image/png'}));
  const png={...file,filename:'screen.PNG',media_type:'image/png',size:7};
- const request=vi.fn(async()=>png);expect(await formAttachments(form,{request} as never)).toEqual([png]);
- expect(request).toHaveBeenCalledWith('/attachments',{filename:'screen.PNG',data:'Zml4dHVyZQ'});
+ const request=vi.fn(async()=>png);expect(await formAttachments(form,{uploadAttachment:request} as never)).toEqual([png]);
+ expect(request).toHaveBeenCalledWith('screen.PNG',new TextEncoder().encode('fixture'));
 });
 it.each([['photo.jpg','image/jpeg'],['photo.JPEG','image/jpeg'],['photo.webp','image/webp']])('uploads %s attachments',async(filename,media_type)=>{
  const form=new FormData();form.append('attachment',new File(['fixture'],filename,{type:media_type}));
  const metadata={...file,filename,media_type,size:7};const request=vi.fn(async()=>metadata);
- expect(await formAttachments(form,{request} as never)).toEqual([metadata]);
- expect(request).toHaveBeenCalledWith('/attachments',{filename,data:'Zml4dHVyZQ'});
+ expect(await formAttachments(form,{uploadAttachment:request} as never)).toEqual([metadata]);
+ expect(request).toHaveBeenCalledWith(filename,new TextEncoder().encode('fixture'));
 });
 it('keeps browser metadata validation aligned with the protocol codec',async()=>{
  const {fromDiagnosticJson,encodePayload}=await import('@racrproto/codec');
@@ -49,7 +49,7 @@ it('ignores unselected multipart file controls while rejecting selected empty fi
  // Bun represents filename="" multipart parts with an undefined name.
  Object.defineProperty(blank,'name',{value:undefined});
  const request=vi.fn(),form={get:()=>null,getAll:()=>[blank]} as unknown as FormData;
- expect(await formAttachments(form,{request} as never)).toEqual([]);expect(request).not.toHaveBeenCalled();
+ expect(await formAttachments(form,{uploadAttachment:request} as never)).toEqual([]);expect(request).not.toHaveBeenCalled();
  const selected=new FormData();selected.append('attachment',new File([],'empty.txt'));
- await expect(formAttachments(selected,{request} as never)).rejects.toThrow('empty');
+ await expect(formAttachments(selected,{uploadAttachment:request} as never)).rejects.toThrow('empty');
 });

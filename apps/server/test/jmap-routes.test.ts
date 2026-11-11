@@ -18,6 +18,7 @@ describe('JMAP request conformance vectors',()=>{
     expect(result.status).toBe(vector.status);const body=await result.json();
     if(vector.responses)expect(body.methodResponses).toEqual(vector.responses);
     else expect(body.type).toBe(vector.problem);
+    if("createdIds" in vector)expect(body.createdIds).toEqual(vector.createdIds);
   });
   it('rejects duplicate keys and cookies without exact browser Origin',async()=>{
     const server=app();const headers={'Content-Type':'application/json',Cookie:'hail_session=valid'};

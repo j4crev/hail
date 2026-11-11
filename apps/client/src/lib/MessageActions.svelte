@@ -37,7 +37,7 @@
     if (busy) return;
     busy = true; error = '';
     try {
-      const settings = await mailboxRequest('message-preferences');
+      const settings = await mailboxRequest('HailMailbox/view',{view:'settings'});
       trashEnabled = settings.trashEnabled !== false;
       if (trashEnabled) await remove();
       else confirming = true;

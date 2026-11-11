@@ -34,7 +34,7 @@ and run `racr doctor --action "<command>"` for supported prerequisite checks.
 | `--account-id` | Account UUID assertion checked against the selected credential. |
 | `--action` | Doctor prerequisite check, e.g. `--action "account browser-login"`; does not perform the action. |
 | `--address` | Full Hail signup address, such as `alice@provider.example`. |
-| `--after` | Opaque cursor from the same operation/account/provider. Inbox-wait cursors also require the same sender filter and are incompatible with inbox-list cursors. |
+| `--after` | Opaque cursor from the same operation/account/provider. Inbox wait uses JMAP state; --from filters results locally. Inbox-list cursors are incompatible. |
 | `--allow` | Introduction policy: true/false globally; true/false/default with both --connection and --epoch. Default clears that connection override. |
 | `--approval` | Private signed owner approval output path for managed cutover. |
 | `--attachment` | Path to a PNG, JPEG, static WebP, PDF, UTF-8 TXT or LOG file. Repeat for up to 20 files totaling 25 MiB per message. |
@@ -649,7 +649,7 @@ Options: [`--output`](#options), [`--category`](#options), [`--vault`](#options)
 
 ### `inbox delete`
 
-Apply the selected account action; requires the corresponding write scope.
+Permanently delete through JMAP; requires messages:read and messages:write. A stale state requires an explicit retry.
 
 ```text
 racr inbox delete <sender-did> <message-id>
@@ -675,7 +675,7 @@ racr inbox show <sender-did> <message-id>
 
 ### `inbox wait`
 
-Wait for delivered messages (default 60s). Resume --after with the returned cursor and the same account/provider/--from; inbox list cursors are incompatible. Does not mark read. Timeout and SIGINT/SIGTERM return the last observed cursor. --timeout 1–300 seconds, --interval 1–30 (default 2).
+Wait for new deliveries (default 60s). Without --after, start from the current JMAP state. Resume with the returned state for the same account/provider; --from filters results locally. Inbox-list cursors are incompatible. Expired states require a fresh snapshot. Does not mark read. Timeout and SIGINT/SIGTERM return the last observed cursor. --timeout 1–300 seconds, --interval 1–30 (default 2).
 
 ```text
 racr inbox wait [--from <value>] [--after <value>] [--timeout <value>] [--interval <value>]
@@ -685,7 +685,7 @@ Options: [`--from`](#options), [`--after`](#options), [`--timeout`](#options), [
 
 ### `message delete`
 
-Apply the selected account action; requires the corresponding write scope.
+Permanently delete through JMAP; requires messages:read and messages:write. A stale state requires an explicit retry.
 
 ```text
 racr message delete <sender-did> <message-id>

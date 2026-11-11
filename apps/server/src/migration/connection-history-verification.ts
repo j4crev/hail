@@ -188,7 +188,7 @@ export async function verifyConnectionHistoryAuthority(history:ConnectionHistory
     const snapshot=bytes(exported?.manifest_bytes,67108864),digest=hash(snapshot),m=parseJsonWithoutDuplicateKeys(new TextDecoder('utf-8',{fatal:true}).decode(snapshot)) as any;
     if(!same(digest,cancel.snapshot_digest)||!same(digest,bytes(exported.manifest_digest,32))||m.did!==history.did||m.accountId!==history.accountId||m.transferId!==row.transfer_id||
       m.sourceServiceBase!==cancel.source_service_base||m.destinationServiceBase!==cancel.destination_service_base||m.destinationMessagingPublicKey!==archive.destinationKey||exported.source_messaging_public_key!==source.key||
-      ![9,10].includes(m.version))throw new Error('Historical cancellation lost its exact source snapshot');
+      ![11,12].includes(m.version))throw new Error('Historical cancellation lost its exact source snapshot');
     await verifySnapshotSignature(bytes(exported.signature,1024),snapshot,m.version,m.did,source.key);
     await verifyConnectionCancellation({...cancelSigned,signature:bytes(row.destination_signature,64)},m.destinationMessagingPublicKey,'destination-cancelled');
     const peers=new Set<string>(m.connections?.tables.federated_connection_pairs.filter((p:any)=>p.state!=='empty').map((p:any)=>p.peer_did)??[]),seen=new Set<string>();

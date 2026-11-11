@@ -1,3 +1,4 @@
+import {importSentHistory} from './sent-history.js';
 import {importAttachmentBlobs} from './attachment-history.js';
 import {createHash,randomUUID} from "node:crypto";
 import * as dagCbor from "@ipld/dag-cbor";
@@ -228,6 +229,7 @@ export class ManagedMigrationActivation {
       for(const table of ["public_envelope_authority_evidence","public_grant_authority_evidence","public_signing_authority_evidence"] as const)
         for(const row of manifest.tables[table])await insertImmutable(tx,table,row);
       await this.refreshProfile(tx,manifest,messagingKey,resolved.evidence,activatedAt);
+      await importSentHistory(tx as SQL,manifest);
       for(const table of ["account_message_preferences","account_message_drafts"] as const)for(const row of manifest.tables[table])await insert(tx,table,row);
       const activated=await tx`UPDATE pending_migration_imports SET state='active',activated_at=${activatedAt}
         WHERE transfer_id=${transferId} AND state='staged' RETURNING transfer_id`;

@@ -12,83 +12,41 @@ fn invalid() -> Error {
 
 pub async fn run(client: &Client, args: &Args) -> Result<Value, Error> {
     let opt = |key: &str| args.options.get(key).map(String::as_str);
-    let positional = |n: usize| reads::component(&args.positionals[n]);
     match args.command.as_str() {
         "conversation start" | "conversation reply-all" => submit(client, args).await,
         "conversation status" | "conversation cancel" => {
-            let path = format!("/connection-messages/{}", positional(0));
-            let result = if args.command == "conversation cancel" {
-                client.post(&format!("{path}/cancel"), &json!({})).await?
-            } else {
-                client.get(&path).await?
-            };
+            let method = if args.command == "conversation cancel" { "HailSubmission/cancel" } else { "HailSubmission/status" };
+            let result = client.jmap(method, &json!({"kind":"connections","id":args.positionals[0]})).await?;
             batch(result, &args.positionals[0])
         }
-        "conversation messages" => {
-            let query = opt("offset").map_or(String::new(), |v| format!("?offset={v}"));
-            client
-                .get(&format!(
-                    "/connection-threads/{}/{}{query}",
-                    positional(0),
-                    positional(1)
-                ))
-                .await
-        }
+        "conversation messages" => client.jmap("HailMailbox/view", &json!({
+            "view":"connectionThread","sender":args.positionals[0],"messageId":args.positionals[1],"offset":opt("offset")
+        })).await,
         "conversation inbox" | "sent list" => {
-            let query = if let Some(after) = opt("after") {
-                if !reads::cursor(
-                    if args.command == "sent list" {
-                        "grants"
-                    } else {
-                        "inbox"
-                    },
-                    after,
-                ) {
+            if let Some(after) = opt("after") {
+                if !reads::cursor(if args.command == "sent list" { "grants" } else { "inbox" }, after) {
                     return Err(Error::usage("Invalid continuation cursor"));
                 }
-                format!("?{}", reads::query(&[("after", after)]))
-            } else {
-                String::new()
-            };
-            let path = if args.command == "sent list" {
-                "/sent"
-            } else {
-                "/connection-inbox"
-            };
-            client.get(&format!("{path}{query}")).await
+            }
+            client.jmap("HailMailbox/view", &json!({
+                "view":if args.command == "sent list" { "sent" } else { "connectionInbox" },"after":opt("after")
+            })).await
         }
-        "sent show" => client.get(&format!("/sent/{}", positional(0))).await,
-        "conversation preferences show" => {
-            client
-                .get("/connections/cli-conversation-preferences")
-                .await
-        }
+        "sent show" => client.jmap("HailMailbox/view", &json!({"view":"sentMessage","messageId":args.positionals[0]})).await,
+        "conversation preferences show" => client.jmap("HailRelationship/conversationPreferences", &json!({})).await,
         "conversation preferences set" => {
             let allowed = match opt("allow").unwrap() {
-                "true" => json!(true),
-                "false" => json!(false),
-                _ => Value::Null,
+                "true" => json!(true), "false" => json!(false), _ => Value::Null,
             };
             let request = if let Some(connection) = opt("connection") {
                 json!({"connectionId":connection,"epoch":args.options["epoch"].parse::<u64>().unwrap(),"override":allowed})
-            } else {
-                json!({"allowIntroductions":allowed})
-            };
-            client
-                .post("/connections/cli-conversation-preferences", &request)
-                .await
+            } else { json!({"allowIntroductions":allowed}) };
+            client.jmap("HailRelationship/conversationPreferences", &json!({"input":request})).await
         }
-        _ => {
-            client
-                .post(
-                    "/connections/cli-conversation-membership",
-                    &json!({
-                        "creator":args.positionals[0],"conversationId":args.positionals[1],
-                        "action":args.command.split_whitespace().nth(1).unwrap()
-                    }),
-                )
-                .await
-        }
+        _ => client.jmap("HailRelationship/conversationMembership", &json!({"input":{
+            "creator":args.positionals[0],"conversationId":args.positionals[1],
+            "action":args.command.split_whitespace().nth(1).unwrap()
+        }})).await,
     }
 }
 
@@ -145,11 +103,14 @@ async fn submit(client: &Client, args: &Args) -> Result<Value, Error> {
                 let sender = &args.positionals[0];
                 let message = &args.positionals[1];
                 let source = client
-                    .get(&if account["did"] == *sender {
-                        format!("/sent/{message}")
-                    } else {
-                        format!("/inbox/{}/{message}", reads::component(sender))
-                    })
+                    .jmap(
+                        "HailMailbox/view",
+                        &if account["did"] == *sender {
+                            json!({"view":"sentMessage","messageId":message})
+                        } else {
+                            json!({"view":"read","sender":sender,"messageId":message})
+                        },
+                    )
                     .await?;
                 let shared = &source["sharedConversation"];
                 if !shared["creator"].as_str().is_some_and(|s| DID.is_match(s))
@@ -200,7 +161,19 @@ async fn submit(client: &Client, args: &Args) -> Result<Value, Error> {
     if *request != expected {
         return Err(invalid());
     }
-    let result = client.post(path, request).await?;
+    // Retain the original state-file path as part of its retry identity. It is
+    // never sent as a URL or generic operation selector to the provider.
+    let kind = if args.command == "conversation start" {
+        "connections"
+    } else {
+        "replyAll"
+    };
+    let result = client
+        .jmap(
+            "HailSubmission/submit",
+            &json!({"kind":kind,"input":request}),
+        )
+        .await?;
     batch(result, id)
 }
 

@@ -204,6 +204,46 @@
           "a"
         ]
       ]
+    },
+    {
+      "name": "unknown request properties ignored and Core echo preserves arbitrary strings",
+      "request": {
+        "using": [
+          "urn:ietf:params:jmap:core"
+        ],
+        "unknownProperty": true,
+        "createdIds": {
+          "earlier": "record_id"
+        },
+        "methodCalls": [
+          [
+            "Core/echo",
+            {
+              "ids": [
+                "#earlier"
+              ],
+              "body": "#earlier"
+            },
+            "echo"
+          ]
+        ]
+      },
+      "status": 200,
+      "responses": [
+        [
+          "Core/echo",
+          {
+            "ids": [
+              "#earlier"
+            ],
+            "body": "#earlier"
+          },
+          "echo"
+        ]
+      ],
+      "createdIds": {
+        "earlier": "record_id"
+      }
     }
   ]
 }

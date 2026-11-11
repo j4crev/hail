@@ -2,7 +2,7 @@ import {expect,it,vi} from 'vitest';
 import {parseDraftContent} from '@racrproto/client-support/drafts';
 const {request,readDraft,saveDraft}=vi.hoisted(()=>({request:vi.fn(),readDraft:vi.fn(),saveDraft:vi.fn()}));
 vi.mock('$lib/server/jmap-drafts.js',()=>({readDraft,saveDraft}));
-vi.mock('$lib/server/canary.js',()=>({canaryAccount:async()=>({account:{address:'me@example.com'},client:{request}})}));
+vi.mock('$lib/server/canary.js',()=>({canaryAccount:async()=>({account:{address:'me@example.com'},client:{request,jmap:request}})}));
 import {actions,load} from '../routes/compose/+page.server.js';
 const id='019a0000-0000-7000-8000-000000000001';
 const content={audience:'category',category:'',connections:[],title:'',text:'',alt:'',caption:'',allowReply:false,header:null,forward:null};
@@ -16,7 +16,7 @@ it('saves unfinished compose fields and resumes them on a new device',async()=>{
   saveDraft.mockResolvedValueOnce(saved);
   const form=new FormData();for(const [key,value] of Object.entries({publicationId:id,draftRevision:'0',audience:'category',text:'',title:''}))form.set(key,value);
   expect(await actions.save({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never)).toEqual({savedDraft:saved});
-  expect(saveDraft).toHaveBeenCalledWith({request},id,0,content);
+  expect(saveDraft).toHaveBeenCalledWith({request,jmap:request},id,0,content);
   request.mockReset();readDraft.mockResolvedValueOnce(saved);request.mockResolvedValueOnce({maxRecipients:100,categories:[]});
   expect(await load({cookies:{},url:new URL(`https://example.com/compose?draft=${id}`)} as never)).toMatchObject({draft:saved,newPublicationId:id,kind:'category'});
 });
@@ -32,7 +32,7 @@ it('sends a resumed PNG and draft revision without requiring a new file selectio
   const form=new FormData();
   for(const [key,value] of Object.entries({publicationId:id,draftRevision:'3',audience:'category',category:'general',title:'Headline',text:'Updated text',alt:'One pixel',savedHeader:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8_x8AAwMCAO-aQ6kAAAAASUVORK5CYII'}))form.set(key,value);
   expect(await actions.publish({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never)).toMatchObject({status:502,data:{publicationId:id}});
-  expect(request).toHaveBeenCalledWith('/publications',expect.objectContaining({publicationId:id,draftRevision:3,body:expect.objectContaining({profile:'spt-3',assets:expect.objectContaining({assets:[expect.objectContaining({width:1,height:1})]})})}));
+  expect(request).toHaveBeenCalledWith('HailSubmission/submit',{kind:'category',input:expect.objectContaining({publicationId:id,draftRevision:3,body:expect.objectContaining({profile:'spt-3',assets:expect.objectContaining({assets:[expect.objectContaining({width:1,height:1})]})})})});
 });
 
 it('saves and resumes rich drafts without converting them to simple compose text',async()=>{
@@ -42,7 +42,7 @@ it('saves and resumes rich drafts without converting them to simple compose text
   saveDraft.mockResolvedValueOnce(saved);
   const form=new FormData();for(const [key,value] of Object.entries({publicationId:id,draftRevision:'1',audience:'category',builder:JSON.stringify(builder)}))form.set(key,value);
   expect(await actions.save({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never)).toEqual({savedDraft:saved});
-  expect(saveDraft).toHaveBeenCalledWith({request},id,1,{...content,builder});
+  expect(saveDraft).toHaveBeenCalledWith({request,jmap:request},id,1,{...content,builder});
   request.mockReset();readDraft.mockResolvedValueOnce(saved);request.mockResolvedValueOnce({maxRecipients:100,categories:[]});
   expect(await load({cookies:{},url:new URL(`https://example.com/compose?draft=${id}`)} as never)).toMatchObject({draft:saved});
 });
@@ -53,7 +53,7 @@ it('saves and resumes an unfinished builder header but rejects publishing it',as
   const form=new FormData();for(const [key,value] of Object.entries({publicationId:id,draftRevision:'0',audience:'category',category:'general',builder:JSON.stringify(incomplete.builder)}))form.set(key,value);
   request.mockReset();saveDraft.mockResolvedValueOnce(saved);
   expect(await actions.save({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never)).toEqual({savedDraft:saved});
-  expect(saveDraft).toHaveBeenCalledWith({request},id,0,{...incomplete,category:'general'});
+  expect(saveDraft).toHaveBeenCalledWith({request,jmap:request},id,0,{...incomplete,category:'general'});
   request.mockReset();readDraft.mockResolvedValueOnce(saved);request.mockResolvedValueOnce({maxRecipients:100,categories:[]});
   expect(await load({cookies:{},url:new URL(`https://example.com/compose?draft=${id}`)} as never)).toMatchObject({draft:saved});
   request.mockReset();
@@ -67,7 +67,7 @@ it('loads the builder by default and falls back without writing an unconvertible
   const saved={id,revision:3,content:{...content,header:'iVBORw0KGgo',text:'Keep this'},updatedAt:'2026-11-05T00:00:00Z',trashedAt:null};
   request.mockReset();readDraft.mockResolvedValueOnce(saved);request.mockResolvedValueOnce({maxRecipients:100,categories:[]});
   expect(await load({cookies:{},url:new URL(`https://example.com/compose?draft=${id}`)} as never)).toMatchObject({draft:saved,builderInitial:null,builderFallback:true});
-  expect(readDraft).toHaveBeenCalledWith({request},id);expect(request.mock.calls).toEqual([['/publications/audiences']]);
+  expect(readDraft).toHaveBeenCalledWith({request,jmap:request},id);expect(request.mock.calls).toEqual([['HailSubmission/audiences']]);
 });
 
 it('uses the simple composer for new and saved Connections messages',async()=>{
@@ -81,7 +81,7 @@ it('uses the simple composer for new and saved Connections messages',async()=>{
   request.mockReset();saveDraft.mockResolvedValueOnce(saved);
   const form=new FormData();for(const [key,value] of Object.entries({publicationId:id,draftRevision:'0',audience:'connections',text:connectionContent.text}))form.set(key,value);
   expect(await actions.save({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never)).toEqual({savedDraft:saved});
-  expect(saveDraft).toHaveBeenCalledWith({request},id,0,{...connectionContent,text:connectionContent.text.replaceAll('\n','\r\n')});
+  expect(saveDraft).toHaveBeenCalledWith({request,jmap:request},id,0,{...connectionContent,text:connectionContent.text.replaceAll('\n','\r\n')});
 });
 
 it('preserves existing block-based Connection drafts on load and refuses builder saves',async()=>{

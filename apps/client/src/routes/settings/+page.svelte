@@ -16,7 +16,7 @@
   let confirmDisable=$state(false),saving=$state(false),trashError=$state("");
   async function saveTrash(enabled:boolean){
     saving=true;trashError="";
-    try{await mailboxRequest("message-preferences",{trashEnabled:enabled});confirmDisable=false;await invalidateAll();}
+    try{await mailboxRequest("HailMailbox/preferences",{input:{trashEnabled:enabled}});confirmDisable=false;await invalidateAll();}
     catch(e){trashError=e instanceof Error?e.message:"Unable to save Trash preference.";}finally{saving=false;}
   }
   import {onMount} from "svelte";

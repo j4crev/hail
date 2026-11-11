@@ -45,8 +45,8 @@ Historical implementation/rollout notes do not override the current profile belo
 | Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
 | Custody | [Account onboarding](account-onboarding.md), [managed custody](managed-custody.md); [reduced-assurance alpha](alpha-onboarding.md) is an explicitly weaker deployment profile |
 | Reference monitor service | Provider registration, scoped enrollment, management handoff and signed receiver lifecycle v1 in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
-| Client synchronization | Hail JMAP received-message v1 with read/Trash state and deletion; [implemented subset and remaining Core work](jmap.md); [draft reads/writes/sync v1](jmap-drafts.md); web received-message mutations and draft workflows use JMAP; other workflows still use account API v1 |
-| Transfer | Handshake v1, portable snapshot v9, managed snapshot v10, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
+| Client synchronization | [Hail JMAP v1](jmap.md), [drafts](jmap-drafts.md), [account collections](jmap-collections.md) and [typed operations](jmap-operations.md); web/CLI mailbox workflows use JMAP; events are phase 6 |
+| Transfer | Handshake v1, portable snapshot v11, managed snapshot v12, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
 
 Envelope versions select different authority models. V4 is not a replacement for
 Grant delivery. New direct replies use v3 rather than the historical unthreaded
@@ -220,9 +220,9 @@ it introduces no signed protocol version.
 ## Reference-client start screen
 
 The reference provider stores the account's `startScreen` preference through its
-passkey-session-authenticated `/api/v1/account/message-preferences` API. GET returns
+passkey-session-authenticated `HailMailbox/view {view:"settings"}` method. It returns
 `"feed"` (the default, including accounts with no saved preference) or `"inbox"`.
-POST accepts either value as a partial display-preference update, returns the
+`HailMailbox/preferences {input:{startScreen:VALUE}}` accepts either value as a partial display-preference update, returns the
 confirmed display preferences, and preserves omitted fields and Trash policy.
 Other values, including null, are rejected with HTTP 400. As with other display
 preferences, writes require `messages:write`; reads require `messages:read`.
@@ -252,3 +252,5 @@ This does not add federation credentials or make mailbox approval independent-ow
 Unseen connection indicators are reference-provider presentation policy, documented
 with the [account navigation counts and acknowledgment API](provider-mailbox.md#unseen-connections-reference-provider-account-api).
 They do not change federation wire formats or connection authorization.
+
+Full account collection projections: [JSON Schema](schemas/jmap-account-object-v1.json) and [shape vectors](vectors/jmap-account.json). Signed COSE evidence uses the separate protocol vectors.

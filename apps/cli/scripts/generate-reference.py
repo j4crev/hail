@@ -67,7 +67,7 @@ options = {
     'refresh-consent': 'Refresh verified sender consent for a Grant revision that expands permission. No value.',
     'reply-until': 'Optional future Unix timestamp in seconds setting the reply deadline.',
     'label': 'Human-readable connection invitation label.',
-    'after': 'Opaque cursor from the same operation/account/provider. Inbox-wait cursors also require the same sender filter and are incompatible with inbox-list cursors.',
+    'after': 'Opaque cursor from the same operation/account/provider. Inbox wait uses JMAP state; --from filters results locally. Inbox-list cursors are incompatible.',
     'pages': 'Maximum pages to retrieve: integer 1–100, default 1. Applies only to commands listing this option.',
     'trash': 'List recoverable trashed conversations instead of the normal conversation list. No value.',
     'from': 'Filter inbox wait by a sender `did:plc:…`.',

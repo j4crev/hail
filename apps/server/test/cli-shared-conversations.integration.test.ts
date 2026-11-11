@@ -7,7 +7,10 @@ import {ProviderDatabase} from '../src/db/database.js';
 import {sharedConversationFixture} from './support/shared-conversation-fixture.js';
 import {createLocalTlsFixture} from './client-support/tls.js';
 import {registerAccountApiRoutes} from '../src/accounts/routes.js';
-import {registerConnectionRoutes} from '../src/accounts/connection-routes.js';
+import {JmapMessages,JMAP_CORE} from '../src/jmap/messages.js';
+import {HAIL_ACCOUNT} from '../src/jmap/collections.js';
+import {JmapOperations} from '../src/jmap/operations.js';
+import {registerJmapRoutes} from '../src/jmap/routes.js';
 import {ALL_ACCOUNT_SCOPES} from '../src/accounts/repository.js';
 import {OnboardingRepository} from '../src/onboarding/repository.js';
 import {GrantRepository} from '../src/grants/repository.js';
@@ -49,12 +52,15 @@ it.skipIf(!process.env.DATABASE_URL)('native CLI participates in browser and CLI
     await createLocalTlsFixture(directory);
     const app=new Hono();let loseResponse=false;
     server=Bun.serve({hostname:'localhost',port:0,tls:{cert:Bun.file(join(directory,'cert.pem')),key:Bun.file(join(directory,'key.pem'))},async fetch(request){
+      const submission=request.method==='POST'&&new URL(request.url).pathname==='/jmap'&&(await request.clone().json()).methodCalls?.[0]?.[0]==='HailSubmission/submit';
       const result=await app.fetch(request);
-      if(loseResponse&&request.method==='POST'&&result.ok){loseResponse=false;return new Response(null,{status:503});}
+      if(loseResponse&&submission&&result.ok){loseResponse=false;return new Response(null,{status:503});}
       return result;
     }});
     const provider=`https://localhost:${server.port}`;
-    registerConnectionRoutes(app,connections,accounts,origin);
+    const messages=new JmapMessages(db.sql,provider);
+    registerJmapRoutes(app,accounts,messages,provider,origin,undefined,undefined,undefined,
+      new JmapOperations({accounts,grants,service:{} as GrantService,messaging,publications,connections}));
     registerAccountApiRoutes(app,accounts,grants,{} as GrantService,provider,messaging,undefined,undefined,undefined,undefined,undefined,undefined,origin,publications);
     const credentials=await Promise.all([a,b,c].map(user=>accounts.issue(user.address,false,undefined,[...ALL_ACCOUNT_SCOPES])));
     for(const [n,user] of [a,b,c].entries())await writeFile(join(directory,user.id),JSON.stringify({type:'racr.api-credential',version:1,provider,...credentials[n]}),{mode:0o600});
@@ -69,8 +75,11 @@ it.skipIf(!process.env.DATABASE_URL)('native CLI participates in browser and CLI
     const targets=(await authority.targets(a.session)).map(t=>t.connectionId);
     // Browser-created source, replied to by the native CLI between non-connections.
     const browserId=uuidV7();
-    const browser=await app.request(provider+'/api/v1/account/connection-messages',{method:'POST',headers:{Origin:origin,Cookie:'hail_session='+a.token,'Content-Type':'application/json'},body:JSON.stringify({publicationId:browserId,connections:targets,text:'Browser original',delivery:'shared'})});
-    expect(browser.status).toBe(202);await drain();
+    const browser=await app.request(provider+'/jmap',{method:'POST',headers:{Origin:origin,Cookie:'hail_session='+a.token,'Content-Type':'application/json'},
+      body:JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[['HailSubmission/submit',{accountId:messages.accountId(a.session),kind:'connections',
+        input:{publicationId:browserId,connections:targets,text:'Browser original',delivery:'shared'}},'browser']]})});
+    expect(browser.status).toBe(200);
+    expect((await browser.json()).methodResponses[0]).toEqual(['HailSubmission/submit',expect.objectContaining({publicationId:browserId}),'browser']);await drain();
     const root=(await messaging.inboxFeed(b.session,null,'connections')).messages[0]!;
     const replyArgs=['conversation','reply-all',a.did,root.messageId,'--file',file,'--state',join(directory,'reply.state')];
     loseResponse=true;await cli(b,replyArgs,false);
@@ -122,11 +131,14 @@ it.skipIf(!process.env.DATABASE_URL)('native CLI participates in browser and CLI
     await expect(connections.conversationMembership({...limited,scopes:['messages:read','messages:write']},{creator:a.did,conversationId:browserId,action:'leave'})).rejects.toMatchObject({status:403});
     // The new conversation authority must not authorize managed identity consent.
     await expect(connections.prepare((await accounts.authenticate('Bearer '+credentials[0]!.token))!,{requestId:crypto.randomUUID(),action:'create',label:'Forbidden identity consent',personal:false,expiresAt:Math.floor(Date.now()/1000)+3600})).rejects.toMatchObject({status:403});
-    const path='/api/v1/account/connections/cli-conversation-membership';
-    const request={method:'POST',headers:{Authorization:'Bearer '+readonly.token,'Content-Type':'application/json'},body:JSON.stringify({creator:a.did,conversationId:browserId,action:'inspect'})};
-    expect((await app.request(provider+path,request)).status).toBe(200);
-    expect((await app.request(provider+path,{...request,headers:{...request.headers,Origin:origin}})).status).toBe(403);
-    expect((await app.request(provider+path,{...request,body:JSON.stringify({creator:a.did,conversationId:uuidV7(),action:'inspect'})})).status).toBe(404);
+    const membership=(conversationId=browserId)=>JSON.stringify({using:[JMAP_CORE,HAIL_ACCOUNT],methodCalls:[['HailRelationship/conversationMembership',
+      {accountId:messages.accountId(limited),input:{creator:a.did,conversationId,action:'inspect'}},'membership']]});
+    const request={method:'POST',headers:{Authorization:'Bearer '+readonly.token,'Content-Type':'application/json'},body:membership()};
+    const inspected=await app.request(provider+'/jmap',request);expect(inspected.status).toBe(200);
+    expect((await inspected.json()).methodResponses[0][0]).toBe('HailRelationship/conversationMembership');
+    expect((await app.request(provider+'/jmap',{...request,headers:{...request.headers,Origin:'https://evil.example.com'}})).status).toBe(403);
+    const missing=await app.request(provider+'/jmap',{...request,body:membership(uuidV7())});expect(missing.status).toBe(200);
+    expect((await missing.json()).methodResponses[0]).toEqual(['error',expect.objectContaining({type:'notFound'}),'membership']);
     await accounts.revoke(readonly.credentialId);
     await expect(connections.conversationMembership(limited,{creator:a.did,conversationId:browserId,action:'inspect'})).rejects.toMatchObject({status:403});
     const expiring=await accounts.issue(c.address,false,undefined,['messages:read']);

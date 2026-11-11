@@ -5,6 +5,6 @@ export function isJmapReadBatch(body:unknown):boolean{
   try{
     const input=JSON.parse(body);
     return Array.isArray(input?.methodCalls)&&input.methodCalls.every((call:unknown)=>Array.isArray(call)&&call.length===3&&
-      ['Core/echo','HailMessage/get','HailMessage/query','HailMessage/changes','HailMessage/queryChanges','HailDraft/get','HailDraft/query','HailDraft/changes','HailDraft/queryChanges'].includes(call[0]));
+      ['HailMailbox/view','HailSubmission/status','HailSubmission/recent','HailSubmission/audiences','HailSubmission/targets','HailGrant/list','HailGrant/read','HailGrant/approvalStatus','HailRelationship/list','HailRelationship/status',...['HailSent','HailSubmission','HailGrant','HailRelationship'].flatMap(t=>['get','query','changes','queryChanges'].map(m=>t+'/'+m)),'Core/echo','HailMessage/get','HailMessage/query','HailMessage/changes','HailMessage/queryChanges','HailDraft/get','HailDraft/query','HailDraft/changes','HailDraft/queryChanges'].includes(call[0]));
   }catch{return false;}
 }

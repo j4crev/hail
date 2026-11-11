@@ -4,8 +4,8 @@ import type {SQL} from 'bun';
 import {encodeBase64Url} from '@racrproto/codec';
 import type {AccountApiSession} from '../accounts/repository.js';
 
-export {JMAP_CORE,HAIL_MESSAGES,MAX_OBJECTS,canMutateMessages,JmapError,object,argumentsOnly} from './common.js';
-import {MAX_OBJECTS,JmapError,object,argumentsOnly,canMutateMessages} from './common.js';
+export {JMAP_CORE,HAIL_MESSAGES,MAX_OBJECTS,canMutateMessages,canDestroyMessages,JmapError,object,argumentsOnly} from './common.js';
+import {MAX_OBJECTS,JmapError,object,argumentsOnly,canMutateMessages,canDestroyMessages} from './common.js';
 import {JmapChangeLog} from './change-log.js';
 const uuid=(id:unknown)=>typeof id==='string'&&/^m_[0-9a-f]{32}$/.test(id)?`${id.slice(2,10)}-${id.slice(10,14)}-${id.slice(14,18)}-${id.slice(18,22)}-${id.slice(22)}`:null;
 const recordId=(id:string)=>`m_${id.replaceAll('-','')}`;
@@ -108,9 +108,8 @@ export class JmapMessages {
       Object.keys(update).some(id=>! /^[A-Za-z0-9_-]{1,255}$/.test(id))||Object.values(update).some(v=>!object(v))||
       destroy.some(id=>typeof id!=='string'||! /^[A-Za-z0-9_-]{1,255}$/.test(id)))throw new JmapError('invalidArguments');
     if(Object.keys(create).length+Object.keys(update).length+destroy.length>MAX_OBJECTS)throw new JmapError('requestTooLarge');
-    // Match the existing browser read-state policy; an ordinary API token does
-    // not gain mutation authority merely by choosing a new transport.
-    if(!canMutateMessages(session))throw new JmapError('forbidden');
+    // Bearer tokens retain the existing CLI permanent-delete authority only.
+    if(!canDestroyMessages(session)||!canMutateMessages(session)&&(Object.keys(create).length||Object.keys(update).length))throw new JmapError('forbidden');
     return this.sql.begin(async tx=>{
       await lockMessageAccount(tx as SQL,session);
       const before=(await tx<State[]>`SELECT revision::text,retained_from::text FROM jmap_message_states
@@ -130,7 +129,7 @@ export class JmapMessages {
           WHERE j.id=${uuid(id)}::uuid AND j.account_id=${session.account_id} AND j.generation=${session.serving_generation??1} AND NOT j.destroyed`)[0];
         if(destroy.includes(id)){
           if(!row)notDestroyed[id]={type:'notFound'};
-          else if(settings.trashEnabled&&!row.trashed_at)notDestroyed[id]={type:'forbidden'};
+          else if(session.passkey_credential_id&&settings.trashEnabled&&!row.trashed_at)notDestroyed[id]={type:'forbidden'};
           else {await trash.removeInTransaction(tx as SQL,session,row.sender_did,row.message_id,true);destroyed.push(id);}
           if(Object.hasOwn(update,id))notUpdated[id]={type:row?'willDestroy':'notFound'};
           continue;

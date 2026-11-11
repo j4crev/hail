@@ -435,7 +435,7 @@ func managedHistoryDigest(t *testing.T, m map[string]any) string {
 	return b64Hash(t, h)
 }
 func TestAccountHistoryInteroperability(t *testing.T) {
-	schema := interopFile(t, "schemas/account-history-v9-v10.json")
+	schema := interopFile(t, "schemas/account-history-v11-v12.json")
 	for _, kind := range []string{"portable", "managed"} {
 		t.Run(kind, func(t *testing.T) {
 			v := interopFile(t, "vectors/"+kind+"-history.json")
@@ -638,7 +638,7 @@ func TestConnectionWireInteroperability(t *testing.T) {
 }
 
 func TestPublishedHistoryRejections(t *testing.T) {
-	schema := interopFile(t, "schemas/account-history-v9-v10.json")
+	schema := interopFile(t, "schemas/account-history-v11-v12.json")
 	vectors := interopFile(t, "vectors/history-negative.json")
 	for _, item := range vectors["cases"].([]any) {
 		c := item.(map[string]any)

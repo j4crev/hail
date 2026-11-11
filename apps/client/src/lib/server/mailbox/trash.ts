@@ -6,9 +6,9 @@ export async function load({cookies,url}: import("@sveltejs/kit").RequestEvent){
   const {account,client}=await canaryAccount(cookies,url);
   const after=url.searchParams.get('after');
   const [result,preferences,sentResult,draftsResult]=await Promise.all([
-    client.request('/trash'+(after?'?after='+encodeURIComponent(after):''),undefined,'/api/v1/account',2_000_000),
-    client.request('/message-preferences'),
-    client.request('/sent?include=sends&trash=true'+(url.searchParams.get('sentAfter')?'&after='+encodeURIComponent(url.searchParams.get('sentAfter')!):''),undefined,'/api/v1/account',2_000_000),
+    client.jmap('HailMailbox/view',{view:'inboxFeed',after,trash:true},2_000_000),
+    client.jmap('HailMailbox/view',{view:'settings'}),
+    client.jmap('HailMailbox/view',{view:'sentSends',trash:true,after:url.searchParams.get('sentAfter')},2_000_000),
     listDrafts(client,url.searchParams.get('draftAfter'),true),
   ]);
   if(!Array.isArray(result.messages)||!(result.next===null||typeof result.next==='string'))throw new Error('Invalid Trash response');

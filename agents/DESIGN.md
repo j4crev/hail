@@ -903,49 +903,35 @@ Phase 4's account authentication boundary is available; production OIDC and the
 optional shared OAuth client profile are not prerequisites for the first slice.
 Reuse existing session/scope policy without expanding it through JMAP.
 
-The [phase 5 preparation](standards-phase-5.md) separates established direction,
-proposed engineering defaults and the accepted requirement to preserve
-read/unread state and saved drafts when moving between providers. Trash
-portability is planned too; omit it only if a concrete complication justifies that,
-with explicit non-resurrection rules. Begin with the wire/data contract and
-read-only Session/query/get; do not claim complete synchronization or switch the
-reference clients until change tracking and recovery are proven.
+The [phase 5 implementation record](standards-phase-5.md) links the exact profiles,
+replacement policy, portability decisions and verification boundaries.
 
-- [ ] Specify RACR JMAP types/capabilities, immutable-versus-local fields, exact
-  signed-byte carriage, account isolation, identifiers and provider-transfer reset
-  or continuity rules. Reuse current domain services and mailbox storage.
-- [x] Implement authenticated Session discovery and read-only received-message query/get
-  with explicit limits and supported capabilities. See the [initial profile](../spec/jmap.md);
-  complete Core support and other object types remain pending.
-- [ ] Implement durable changes/tombstones and resynchronization; prove two clients
-  converge after create/update/delete, missed events and expired change cursors.
-  Received-message and draft logs now cover their writers and cleanup; other
-  collections and complete client synchronization remain pending.
-- [ ] Implement read/trash state, drafts and required relationship/Grant workflows;
-  prove concurrent edits are detected and owner consent cannot be bypassed.
-  Individual read/unread and received-message Trash/restore/deletion are implemented
-  with state/preference guards; web callers use JMAP and superseded routes are removed.
-  Draft get/query/changes/set cover authoring, retention and send consumption;
-  web draft callers use JMAP and superseded draft routes are removed.
-  Sent, whole-account cleanup and other mutations remain.
-- [ ] Extend managed and portable account transfer to preserve read/unread state,
-  saved drafts with their required content/references. Trash portability is
-  planned; if a concrete complication requires omission, define omission semantics
-  without resurrecting trashed/deleted items.
-  Return imports now allow deleted received copies/cache entries to stay absent,
-  while retaining signed history and shared bodies still needed by surviving copies.
-  Portable v9/managed v10 preserve drafts, required uploads and preferences; Sent-state
-  transfer remains pending. Update transfer schemas and
-  versions together; prove cutover/retry/return behavior without lost state,
-  resurrected mailbox copies or automatically sent drafts. Client synchronization
-  state may reset, but preserved user data must not.
-- [ ] Implement submission with durable idempotency; prove an ambiguous retry sends
-  one logical message and acceptance remains distinct from recipient delivery.
-- [ ] Move reference clients to the supported profile; document interoperability
-  boundaries without claiming generic JMAP Mail client support. Remove superseded
-  account API routes, cursors and compatibility-only tests with each replaced
-  workflow; no legacy API compatibility period is required. See the
-  [replacement policy](standards-phase-5.md#replacement-policy-remove-superseded-account-api-machinery).
+- [x] Specify Hail JMAP capabilities/types, immutable/local fields, exact signed
+  bytes, isolation, opaque IDs and generation reset. See [transport](../spec/jmap.md),
+  [collections](../spec/jmap-collections.md), [operations](../spec/jmap-operations.md)
+  and their schemas/vectors.
+- [x] Implement authenticated Session discovery, bounded query/get/set, result and
+  creation references, binary upload/download and same-account Blob/copy.
+  Push/event streams remain phase 6; no RFC 8621 Mail compatibility is claimed.
+- [x] Implement durable changes/tombstones and resynchronization for received mail,
+  drafts, Sent, submissions, Grants and relationships. PostgreSQL and browser
+  tests cover two readers, pagination, rollback, missed changes, cursor expiry,
+  generation reset and failed-poll recovery.
+- [x] Implement read/Trash state, drafts and relationship/Grant workflows using
+  existing consent services. Concurrent stale edits fail safely; exact approvals,
+  scoped credential policy and migration fences remain enforced.
+- [x] Preserve read state, drafts with required uploads, preferences, Trash,
+  category-send groups and Sent dispositions in portable v11/managed v12 history.
+  Round trips retain original retention deadlines and deletions; drafts are never
+  sent by import and returning completed sends are not resubmitted. Synchronization
+  state resets independently of user data. Schemas and TS/Go/Rust readers match.
+- [x] Implement submission with durable immutable intent and account-scoped IDs.
+  Concurrent and lost-response tests prove one logical send; acceptance and
+  per-recipient delivery remain distinct.
+- [x] Move web and native CLI workflows to typed JMAP. CLI wait uses change states;
+  attachments use binary uploads. Remove superseded account API routes, delivery
+  cursors and compatibility-only tests. Authentication, identity/profile,
+  credentials, transfer, administration and federation retain distinct resources.
 
 ### 6. JMAP events and Web Push
 

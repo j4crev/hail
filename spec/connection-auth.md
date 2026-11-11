@@ -174,12 +174,14 @@ A standing connection Grant may have null expiry even when its invitation expire
 
 ## Provider-Local Implementation
 
-`/api/v1/account/connections` is browser-session-only, same-origin, no-store and
-source/account rate-limited. Bearer credentials cannot use it. `GET` lists owned
-live codes and current connections. `POST /review` checks admission-token possession,
-identity pin, signed invitation, current managed custody, identity key and service.
-`POST /prepare`, `GET /:requestId`, and `POST /commit` implement session-bound exact-action
-passkey reviews for `create`, `replace`, `revoke`, `connect` and `disconnect`.
+[JMAP relationship operations](jmap-operations.md) use the current session,
+same-origin policy, no-store responses and source/account limits. `HailRelationship/list`
+is browser-session-only and lists owned live codes and current connections.
+`review` checks admission-token possession, identity pin, signed invitation,
+current managed custody, identity key and service. `prepare`, `status`, and
+`commit` retain session-bound exact-action reviews for `create`, `replace`,
+`revoke`, `connect` and `disconnect`. The explicitly scoped credential methods
+remain available to bearer clients without granting browser approval authority.
 
 Creation is an explicit standing-consent action, not an automatic login side effect.
 There is at most one live personal code. An additional expiring code needs a label

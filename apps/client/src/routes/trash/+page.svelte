@@ -45,7 +45,8 @@
       }
       for(const item of selectedMessages){
         if(item.type!=='sent')continue;
-        const result=await mailboxRequest('sent/restore',{kind:item.message.kind,messageId:item.message.messageId});
+        const result=await mailboxRequest('HailMailbox/restoreSent',{input:{kind:item.message.kind,messageId:item.message.messageId}});
+        if(typeof result.restored!=='number'||!Number.isSafeInteger(result.restored))throw new Error('Invalid restore result');
         restored+=result.restored;
         selected=selected.filter(id=>id!==item.key);
       }

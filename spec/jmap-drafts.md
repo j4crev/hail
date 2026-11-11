@@ -5,7 +5,7 @@ Status: implemented alpha read/write/synchronization subset of the optional
 Draft creation, editing and Trash mutations are available through HailDraft/set.
 The web editor and draft lists/actions use this capability; send consumption remains atomic
 with publication acceptance.
-Portable v9 and managed v10 [account history](account-history.md) preserve drafts,
+Portable v11 and managed v12 [account history](account-history.md) preserve drafts,
 required attachment uploads and original Trash timestamps.
 This is not RFC 8621 Email draft compatibility.
 

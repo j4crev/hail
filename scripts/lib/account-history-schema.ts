@@ -93,8 +93,8 @@ export async function accountHistorySchema(sql:SQL):Promise<Schema>{
       if(name==='account_message_drafts'){fields.content=ref('draft-content');fields.id={...uuid,pattern:'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'};}
       if(name==='provider_accounts'){fields.onboarding_state={const:'active'};fields.activation_verification_mode={const:'public'};}
       if(name==='account_keys')fields.role={enum:domain==='portable'?['plc-rotation','hail-messaging']:['plc-rotation','hail-identity','hail-messaging']};
-      if(name==='connection_message_targets')fields.state={enum:['submitted','blocked','cancelled','expired','indeterminate']};
-      if(name==='connection_message_batches')fields.sealed={const:true};
+      if(['connection_message_targets','publication_targets'].includes(name))fields.state={enum:['submitted','blocked','cancelled','expired','indeterminate']};
+      if(['connection_message_batches','account_publications'].includes(name))fields.sealed={const:true};
       if(name==='conversation_descriptors')fields.participants={type:'array',items:did,minItems:3,maxItems:101};
       definitions[definition]={...object(fields),
         description:`${name} logical records in the ${domain} history domain. See account-history.md for selection and semantic validation.`,
@@ -107,15 +107,15 @@ export async function accountHistorySchema(sql:SQL):Promise<Schema>{
     tables:records('connections',Object.keys(CONNECTION_HISTORY_COLUMNS),CONNECTION_HISTORY_COLUMNS)})};
   definitions['conversation-history']={...object({type:{const:'hail.conversation-history'},version:{const:1},...common,
     tables:records('conversations',Object.keys(CONVERSATION_COLUMNS),CONVERSATION_COLUMNS)})};
-  for(const [domain,version,tables] of [['portable',9,[...TRANSFER_TABLES,...TRANSFER_AUTHORITY_TABLES]],['managed',10,MANAGED_TRANSFER_TABLES]] as const){
+  for(const [domain,version,tables] of [['portable',11,[...TRANSFER_TABLES,...TRANSFER_AUTHORITY_TABLES]],['managed',12,MANAGED_TRANSFER_TABLES]] as const){
     definitions[domain]=object({version:{const:version},transferId:uuid,...common,destinationServiceBase:text,
       destinationRotationPublicKey:text,destinationMessagingPublicKey:text,custodyProfile:{const:domain},
       ...(domain==='managed'?{ownerRecoveryPublicKey:text,sourceIdentityPublicKey:text,destinationIdentityPublicKey:text,historyCheckpointDigest:digest}:{}),
       connections:ref('connection-history'),connectionCheckpointDigest:digest,conversations:ref('conversation-history'),conversationCheckpointDigest:digest,
       tables:records(domain,tables)});
   }
-  return {$schema:'http://json-schema.org/draft-07/schema#',$id:'https://racrproto.com/schemas/account-history-v9-v10.json',
-    title:'Hail current account history: portable v9 / managed v10',
+  return {$schema:'http://json-schema.org/draft-07/schema#',$id:'https://racrproto.com/schemas/account-history-v11-v12.json',
+    title:'Hail current account history: portable v11 / managed v12',
     description:'Storage-independent logical record contract for the current wire manifests. All records and fields are closed. Cross-record authority and consistency requirements are normative in account-history.md. The x-reference-storage annotations are informative only.',
     oneOf:[ref('portable'),ref('managed')],definitions};
 }

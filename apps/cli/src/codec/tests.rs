@@ -152,12 +152,14 @@ fn deterministic_signatures_match_shared_vectors_and_reject_tampering() {
                 vector["diagnostic"]
             );
             let other = ed25519_dalek::SigningKey::from_bytes(&[99; 32]);
-            assert!(verify(
-                kind,
-                &signed,
-                &crate::crypto::ed_did(&other.verifying_key())
-            )
-            .is_err());
+            assert!(
+                verify(
+                    kind,
+                    &signed,
+                    &crate::crypto::ed_did(&other.verifying_key())
+                )
+                .is_err()
+            );
             let mut corrupted = signed;
             *corrupted.last_mut().unwrap() ^= 1;
             assert!(verify(kind, &corrupted, &public).is_err());
@@ -170,12 +172,12 @@ fn snapshot_hash_profiles_verify_exact_export_bytes() {
     for (kind, version, text) in [
         (
             "portable",
-            9,
+            11,
             include_str!("../../../../spec/vectors/portable-history.json"),
         ),
         (
             "managed",
-            10,
+            12,
             include_str!("../../../../spec/vectors/managed-history.json"),
         ),
     ] {
@@ -194,6 +196,5 @@ fn snapshot_hash_profiles_verify_exact_export_bytes() {
         let mut bad = wire.clone();
         *bad.last_mut().unwrap() ^= 1;
         assert!(verify_hash_envelope(&bad, &preimage, &content_type, &kid, public).is_err());
-
     }
 }

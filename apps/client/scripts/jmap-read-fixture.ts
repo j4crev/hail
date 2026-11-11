@@ -2,16 +2,21 @@ import type {Draft} from '@racrproto/client-support/drafts';
 import {jmapDraftFixture} from './jmap-draft-fixture.js';
 // Fictional read-state provider shared by local preview and browser scenarios.
 // This is not a compatibility implementation or a production provider.
-export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:boolean;trashedAt?:string|null}[],write:(id:string,value:boolean)=>void,trashEnabled=()=>true,trashWrite:(id:string,value:boolean|null)=>void=()=>{},drafts=new Map<string,Draft>()){
+export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:boolean;trashedAt?:string|null}[],write:(id:string,value:boolean)=>void,trashEnabled=()=>true,trashWrite:(id:string,value:boolean|null)=>void=()=>{},drafts=new Map<string,Draft>(),operation?:(name:string,args:Record<string,any>)=>Record<string,unknown>){
   const draftFixture=jmapDraftFixture(drafts,trashEnabled);
+  const accountCapability='https://haili.app/ns/jmap/account';
   const capability='https://haili.app/ns/jmap/messages',accountId='fixture_account';let revision=0;
   return (path:string,method:string,input:Record<string,any>):Response|null=>{
-    if(path==='/api/jmap/session'&&method==='GET')return Response.json({primaryAccounts:{[capability]:accountId,[draftFixture.capability]:accountId},
-      accounts:{[accountId]:{isReadOnly:false,accountCapabilities:{[capability]:{mutableProperties:['isRead','isInTrash'],canDestroy:true}}}}});
+    if(path==='/api/jmap/session'&&method==='GET')return Response.json({capabilities:{'urn:ietf:params:jmap:core':{},[capability]:{},[draftFixture.capability]:{},...(operation?{[accountCapability]:{version:1,types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{})},primaryAccounts:{[capability]:accountId,[draftFixture.capability]:accountId,...(operation?{[accountCapability]:accountId}:{})},
+      accounts:{[accountId]:{isReadOnly:false,accountCapabilities:{...(operation?{[accountCapability]:{types:['HailSent','HailSubmission','HailGrant','HailRelationship']}}:{}),[capability]:{mutableProperties:['isRead','isInTrash'],canDestroy:true}}}}});
     if(path!=='/api/jmap'||method!=='POST')return null;
     const responses=(input.methodCalls??[]).map(([name,args,tag]:[string,Record<string,any>,string])=>{
       const error=(type:string)=>['error',{type},tag];
       if(args.accountId!==accountId)return error('accountNotFound');
+      if(operation&&/^(HailMailbox|HailSubmission|HailGrant|HailRelationship)\//.test(name)){
+        try{return [name,{accountId,...operation(name,args)},tag];}
+        catch(cause){const e=cause as Error&{httpStatus?:number;type?:string};return ['error',{type:e.type??'serverFail',httpStatus:e.httpStatus??500,description:e.message},tag];}
+      }
       if(name.startsWith('HailDraft/')){try{return [name,draftFixture.call(name,args),tag];}catch(cause){return error(cause instanceof Error?cause.message:'serverFail');}}
       if(name==='HailMessage/query')return [name,{accountId,queryState:String(revision),canCalculateChanges:false,position:0,
         ids:rows().filter(row=>row.sender===args.filter?.sender&&row.messageId===args.filter?.messageId&&(args.filter?.inTrash===undefined||!!row.trashedAt===args.filter.inTrash)).map(row=>'m_'+row.messageId.replaceAll('-',''))},tag];

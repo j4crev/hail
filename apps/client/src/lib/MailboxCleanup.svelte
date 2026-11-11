@@ -16,7 +16,7 @@
   async function clear(){
     busy=true;error='';
     try{
-      await mailboxRequest(folder==='Trash'?'trash/empty':'sent/clear',folder==='Trash'?{}:{trashEnabled});
+      await mailboxRequest(folder==='Trash'?'HailMailbox/emptyTrash':'HailMailbox/clearSent',folder==='Trash'?{}:{input:{trashEnabled}});
       confirming=false;
       await goto(folder==='Trash'?'/trash':'/sent',{invalidateAll:true});
     }catch(e){error=e instanceof Error?e.message:'Unable to clear messages. Refresh and try again.';}

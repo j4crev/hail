@@ -1,3 +1,4 @@
+import {importSentHistory} from './sent-history.js';
 import {importAttachmentBlobs} from './attachment-history.js';
 import { createHash, randomUUID } from "node:crypto";
 import { signPayload, inspectSignedPayload, toDiagnosticJson, type HailSenderProfile } from "@racrproto/codec";
@@ -304,6 +305,7 @@ export class PortableMigrationActivation {
           await insertRow(tx, table, resumed);
         }
       }
+      await importSentHistory(tx as SQL,manifest);
       for(const table of ["account_message_preferences","account_message_drafts"] as const)for(const row of manifest.tables[table])await insertRow(tx,table,row);
       const activated = await tx`UPDATE pending_migration_imports SET state = 'active', activated_at = ${this.now()}
         WHERE transfer_id = ${transferId} AND state = 'staged' RETURNING transfer_id`;

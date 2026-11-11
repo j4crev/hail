@@ -1,3 +1,4 @@
+import {CONVERSATION_COLUMNS,conversationHistoryDigest,type ConversationHistory} from '../src/migration/conversation-history.js';
 import {createHash,randomUUID} from "node:crypto";
 import {createWebCryptoSigner,encodeBase64Url,encodeDeterministic,signPayload,type HailValue} from "@racrproto/codec";
 import {base58btc} from "multiformats/bases/base58";
@@ -131,11 +132,15 @@ it("retains referenced historical authority bundles, rejecting missing or altere
 });
 
 it("binds the connection checkpoint to the new snapshot domain without enabling cutover",async()=>{
-  const {h}=await native(),snapshot={version:5,...owner,capturedAt:h.capturedAt,connections:h,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(h)),
+  const {h}=await native();
+  const conversations:ConversationHistory={type:'hail.conversation-history',version:1,...owner,capturedAt:h.capturedAt,
+    tables:Object.fromEntries(Object.keys(CONVERSATION_COLUMNS).map(k=>[k,[]])) as unknown as ConversationHistory['tables']};
+  const snapshot={version:11,...owner,capturedAt:h.capturedAt,connections:h,connectionCheckpointDigest:encodeBase64Url(connectionHistoryDigest(h)),
+    conversations,conversationCheckpointDigest:encodeBase64Url(conversationHistoryDigest(conversations)),
     tables:{sent_envelopes:[],received_envelopes:[]}};
   expect(()=>validateSnapshotConnections(snapshot)).not.toThrow();
   expect(()=>requireConnectionHandoverComplete(snapshot)).toThrow('staged only');
-  expect(()=>validateSnapshotConnections({...snapshot,version:3})).toThrow('Legacy snapshot');
+  expect(()=>validateSnapshotConnections({...snapshot,version:3})).toThrow('Superseded snapshot');
   const {connections:_history,...withoutHistory}=snapshot;
   expect(()=>validateSnapshotConnections(withoutHistory)).toThrow('missing');
   expect(()=>validateSnapshotConnections({...snapshot,connectionCheckpointDigest:encodeBase64Url(new Uint8Array(32))})).toThrow('checkpoint differs');

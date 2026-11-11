@@ -135,7 +135,7 @@ custody checkpoints also include conversation state and require drained work.
 ## Current profile and verification
 
 Apply migrations before deploying the server/client. Providers and transfer CLIs
-must understand envelope v4 and snapshot v9/v10 respectively. Earlier snapshot versions are outside the current alpha contract. Unsupported peers cannot accept shared delivery; recipients remain
+must understand envelope v4 and snapshot v11/v12 respectively. Earlier snapshot versions are outside the current alpha contract. Unsupported peers cannot accept shared delivery; recipients remain
 unconfirmed and the sender sees bounded per-recipient results. Never silently
 broaden connection/subscription permissions or reinterpret historical private
 copies as shared messages. Migration 0107 requires backup restoration for rollback; earlier rollback scripts

@@ -1,6 +1,6 @@
 import {expect,it,vi} from "vitest";
 const {request}=vi.hoisted(()=>({request:vi.fn()}));
-vi.mock("$lib/server/canary.js",()=>({canaryAccount:async()=>({client:{request}})}));
+vi.mock("$lib/server/canary.js",()=>({canaryAccount:async()=>({client:{request,jmap:request}})}));
 import {actions} from "../routes/compose/+page.server.js";
 
 const id="019a15fd-2bd0-7433-8afa-bd0355e0608d";
@@ -21,11 +21,11 @@ for(const kind of ["category","connections"] as const){
     request.mockReset();
     request.mockResolvedValueOnce(accepted());
     await expect(publish()).rejects.toMatchObject({status:303,location:`/compose?${kind==="connections"?"audience=connections&":""}publication=${id}`});
-    expect(request.mock.calls[0]).toMatchObject([kind==="connections"?"/connection-messages":"/publications",{
+    expect(request.mock.calls[0]).toMatchObject(["HailSubmission/submit",{kind,input:{
       body:{version:1,profile:"spt-2",blocks:[{_type:"block",children:[{_type:"span",text:"Hello",marks:[]}]}]},
-    }]);
-    expect(request.mock.calls[0][1]).not.toHaveProperty("text");
-    if(kind==="connections")expect(request.mock.calls[0][1].delivery).toBe("private");
+    }}]);
+    expect(request.mock.calls[0][1].input).not.toHaveProperty("text");
+    if(kind==="connections")expect(request.mock.calls[0][1].input.delivery).toBe("private");
   });
   it(`${kind}: does not acknowledge a lost or mismatched provider response`,async()=>{
     request.mockRejectedValueOnce(new Error("Response lost"));
@@ -44,10 +44,10 @@ it('forwards an authenticated inbox source only through connection sends',async(
   request.mockResolvedValueOnce({sender,messageId:id,recipient:'did:plc:'+'b'.repeat(24),category:'general',deliveredAt:'2026-10-29T00:00:00Z',body:{version:1,profile:'spt-1',blocks:[{_type:'block',style:'normal',children:[{_type:'span',text:'Original message',marks:[]}],markDefs:[]}]}});
   request.mockRejectedValueOnce(new Error('Response lost'));
   expect(await publish()).toMatchObject({status:502,data:{publicationId:id}});
-  expect(request.mock.calls[0][0]).toBe(`/inbox/${encodeURIComponent(sender)}/${id}`);
-  expect(request.mock.calls[1]).toMatchObject(['/connection-messages',{publicationId:id,connections:[targetId],body:{profile:'spt-2'}}]);
-  expect(JSON.stringify(request.mock.calls[1][1])).toContain('Original message');
-  expect(request.mock.calls[1][1]).not.toHaveProperty('replyTo');
+  expect(request.mock.calls[0]).toEqual(['HailMailbox/view',{view:'read',sender,messageId:id}]);
+  expect(request.mock.calls[1]).toMatchObject(['HailSubmission/submit',{kind:'connections',input:{publicationId:id,connections:[targetId],body:{profile:'spt-2'}}}]);
+  expect(JSON.stringify(request.mock.calls[1][1].input)).toContain('Original message');
+  expect(request.mock.calls[1][1].input).not.toHaveProperty('replyTo');
   request.mockClear();
   body.set('audience','category');body.set('category','general');body.delete('connection');
   expect(await publish()).toMatchObject({status:400});
@@ -73,11 +73,11 @@ it('limits new header uploads to subscribers while retaining rich connection tex
   body.set('audience','category');body.set('category','general');body.delete('connection');
   request.mockRejectedValueOnce(new Error('Response lost'));
   await publish();
-  expect(request.mock.calls[0]).toMatchObject(['/publications',{body:{profile:'spt-3'}}]);
+  expect(request.mock.calls[0]).toMatchObject(['HailSubmission/submit',{kind:'category',input:{body:{profile:'spt-3'}}}]);
   body.set('audience','connections');body.set('connection',targetId);body.delete('category');body.delete('header');
   request.mockReset();request.mockRejectedValueOnce(new Error('Response lost'));
   await publish();
-  expect(request.mock.calls[0]).toMatchObject(['/connection-messages',{body:{profile:'spt-2'}}]);
+  expect(request.mock.calls[0]).toMatchObject(['HailSubmission/submit',{kind:'connections',input:{body:{profile:'spt-2'}}}]);
 });
 
 it('hands validated builder content to the existing publication flow without Markdown conversion',async()=>{
@@ -87,7 +87,7 @@ it('hands validated builder content to the existing publication flow without Mar
   request.mockReset();request.mockRejectedValueOnce(new Error('Response lost'));
   const publish=()=>actions.publish({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never);
   expect(await publish()).toMatchObject({status:502,data:{publicationId:id}});
-  expect(request).toHaveBeenCalledWith('/publications',expect.objectContaining({draftRevision:4,body}));
+  expect(request).toHaveBeenCalledWith('HailSubmission/submit',{kind:'category',input:expect.objectContaining({draftRevision:4,body})});
   request.mockReset();form.set('text','Competing text');expect(await publish()).toMatchObject({status:400});expect(request).not.toHaveBeenCalled();
   form.delete('text');form.set('builder',JSON.stringify({version:1,body:{...body,blocks:[{...body.blocks[0],html:'<img src="https://tracker.invalid">'}]}}));
   expect(await publish()).toMatchObject({status:400});expect(request).not.toHaveBeenCalled();
@@ -104,7 +104,7 @@ it('publishes ordered inline images and rejects any unfinished image description
   const publish=()=>actions.publish({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never);
   request.mockReset();request.mockRejectedValueOnce(new Error('Response lost'));
   expect(await publish()).toMatchObject({status:502});
-  expect(request).toHaveBeenCalledWith('/publications',expect.objectContaining({body}));
+  expect(request).toHaveBeenCalledWith('HailSubmission/submit',{kind:'category',input:expect.objectContaining({body})});
   const last=body.blocks[3]!;if(!('alt' in last))throw Error('Expected image');last.alt='';form.set('builder',JSON.stringify({version:1,body}));request.mockReset();
   expect(await publish()).toMatchObject({status:400});expect(request).not.toHaveBeenCalled();
 });
@@ -116,7 +116,7 @@ it('hands off aligned CTA content unchanged and keeps unfinished destinations in
   const publish=()=>actions.publish({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never);
   request.mockReset();request.mockRejectedValueOnce(new Error('Response lost'));
   expect(await publish()).toMatchObject({status:502});
-  expect(request).toHaveBeenCalledWith('/publications',expect.objectContaining({body}));
+  expect(request).toHaveBeenCalledWith('HailSubmission/submit',{kind:'category',input:expect.objectContaining({body})});
   for(const href of ['','http://example.invalid','javascript:alert(1)']){
     body.blocks[0].markDefs[0].href=href;form.set('builder',JSON.stringify({version:1,body}));request.mockReset();
     expect(await publish()).toMatchObject({status:400});expect(request).not.toHaveBeenCalled();
@@ -131,7 +131,7 @@ it('rejects Connection builder payloads while keeping basic formatting on ordina
   request.mockReset();expect(await publish()).toMatchObject({status:400,data:{error:'The block builder is available for subscriber publications only.'}});expect(request).not.toHaveBeenCalled();
   form.delete('builder');form.set('text','**Bold** and *italic* [Link](https://example.invalid)\n\n- Item');
   request.mockRejectedValueOnce(new Error('Response lost'));await publish();
-  const submitted=request.mock.calls[0][1].body;
+  const submitted=request.mock.calls[0][1].input.body;
   expect(submitted.blocks[0].children).toEqual(expect.arrayContaining([expect.objectContaining({text:'Bold',marks:['strong']}),expect.objectContaining({text:'italic',marks:['em']})]));
   expect(submitted.blocks[0].markDefs[0].href).toBe('https://example.invalid/');
   expect(submitted.blocks[1].listItem).toBe('bullet');

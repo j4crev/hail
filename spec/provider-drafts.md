@@ -89,7 +89,7 @@ An empty draft array is permitted; omit it in a published body. The 25 MiB
 aggregate limit applies to drafts too. File bytes are separately uploaded by the
 owning account; draft metadata protects those editable upload references from
 expiry until the draft is deleted. Full ownership and file validation is required
-before send acceptance. Portable v9 and managed v10 migration exports preserve
+before send acceptance. Portable v11 and managed v12 migration exports preserve
 the draft and required upload bytes together; missing required bytes reject the
 export rather than silently losing part of the draft.
 
@@ -139,5 +139,5 @@ its host's device-local store; it has no account Drafts folder.
 The [JMAP draft capability](jmap-drafts.md) exposes get/query/changes/set over
 this storage. Successful changes and consumption produce transactional change
 events. The web editor, Drafts list and draft Trash actions use this capability.
-Portable v9 and managed v10 account-history exports/imports preserve this data
+Portable v11 and managed v12 account-history exports/imports preserve this data
 and required attachment uploads; JMAP synchronization identities reset at cutover.

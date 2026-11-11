@@ -1,7 +1,6 @@
 import {AccountAttachments} from './attachments.js';
 import {participantAddresses} from "./participant-addresses.js";
 import {connectionInbox,connectionThread} from "./connection-threads.js";
-import {inboxUpdates} from "./inbox-updates.js";
 import {conversations} from "./conversations.js";
 import {messageThread} from "./message-threads.js";
 import {sentSends} from "./sent-sends.js";
@@ -151,7 +150,6 @@ export class AccountMessaging {
     return result;
   }
 
-  updates(session:AccountApiSession,after:string|null,from:string|null){return inboxUpdates(this.sql,session,after,from);}
   conversations(session:AccountApiSession,peer:string|null,action:string,after:string|null,trash=false){return conversations(this.sql,session,this,peer,action,after,trash);}
 
   connectionInbox(session:AccountApiSession,after:string|null){return connectionInbox(this.sql,session,this,after);}

@@ -101,8 +101,14 @@
       if(pendingId){addOpen=true;void run(recover);}
     }
     window.addEventListener("hashchange",readRequest);
-    const timer=setInterval(()=>{now=Date.now();},1000);
-    return()=>{clearInterval(timer);window.removeEventListener("hashchange",readRequest);};
+    let dirty=false,refreshing=false;
+    const changed=()=>{dirty=true;};window.addEventListener('hail:mailbox-changed',changed);
+    const timer=setInterval(()=>{now=Date.now();
+      if(dirty&&!refreshing&&!selectionLocked&&!addOpen&&!categoryEditor&&!selectedSubscriptions.length&&document.visibilityState==='visible'){
+        refreshing=true;dirty=false;void invalidateAll().catch(()=>{dirty=true;}).finally(()=>{refreshing=false;});
+      }
+    },1000);
+    return()=>{clearInterval(timer);window.removeEventListener("hashchange",readRequest);window.removeEventListener('hail:mailbox-changed',changed);};
   });
   async function run(action:()=>Promise<void>){if(busy)return;busy=true;message="";try{await action();}
     catch(error){message=error instanceof Error?error.message:"Unable to update your subscriptions. Please try again.";}finally{busy=false;}}

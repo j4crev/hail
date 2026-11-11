@@ -1,3 +1,4 @@
+import {JmapMessages} from '../src/jmap/messages.js';
 import {expect,it,vi} from 'vitest';
 import {createApp} from '../src/app.js';
 import type {AppConfig} from '../src/config.js';
@@ -15,18 +16,22 @@ it('requires authenticated scoped same-origin web access for Trash mutations',as
   const empty=vi.fn(async()=>({deleted:1})),clearSent=vi.fn(async()=>({affected:1,state:"trashed"})),restoreSent=vi.fn(async()=>({restored:1}));
   const messaging={trash:{empty,clearSent,restoreSent,remove,saveSettings,saveDisplaySettings,settings:async()=>({trashEnabled:true})},inboxFeed:async()=>({messages:[],next:null})} as unknown as AccountMessaging;
   const origin='https://example.com',app=createApp({publicOrigin:origin,providerId:'test',passkeys:{origin}} as AppConfig,
-    {accountApi:{accounts,grants:{} as GrantRepository,service:{} as GrantService,messaging},async checkReadiness(){return {ready:true};}});
+    {jmap:new JmapMessages({} as never,origin),accountApi:{accounts,grants:{} as GrantRepository,service:{} as GrantService,messaging},async checkReadiness(){return {ready:true};}});
   const path='/api/v1/account/inbox/did:plc:'+ 'b'.repeat(24)+'/019a0000-0000-7000-8000-000000000001/permanent-delete';
   const headers={Cookie:'hail_session=fixture',Origin:origin,'Content-Type':'application/json'};
-  const post=(url=path,body:unknown={},extra={})=>app.request(url,{method:'POST',headers:{...headers,...extra},body:JSON.stringify(body)});
-  expect((await post('/api/v1/account/message-preferences',{trashEnabled:false})).status).toBe(200);
+  const post=async(name:string,args:unknown={},extra={})=>{
+    const response=await app.request('/jmap',{method:'POST',headers:{...headers,...extra},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/account'],methodCalls:[[name,{accountId:new JmapMessages({} as never,origin).accountId(session as never),...(args as object)},'test']]})});
+    if(!response.ok)return response;const data=await response.json() as any;const [method,result]=data.methodResponses[0];
+    return Response.json(result,{status:method==='error'?(result.httpStatus??(result.type==='forbidden'?403:400)):200});
+  };
+  expect((await post('HailMailbox/preferences',{input:{trashEnabled:false}})).status).toBe(200);
   expect(saveSettings).toHaveBeenCalledWith(session,false);
-  expect((await post('/api/v1/account/message-preferences',{theme:'dark'})).status).toBe(200);
+  expect((await post('HailMailbox/preferences',{input:{theme:'dark'}})).status).toBe(200);
   expect(saveDisplaySettings).toHaveBeenCalledWith(session,{theme:'dark'});
-  expect((await post('/api/v1/account/message-preferences',{theme:'dark',trashEnabled:false})).status).toBe(400);
+  expect((await post('HailMailbox/preferences',{input:{theme:'dark',trashEnabled:false}})).status).toBe(400);
   expect(saveSettings).toHaveBeenCalledTimes(1);
-  expect((await app.request('/api/v1/account/trash?unknown=1',{headers})).status).toBe(400);
-  for(const [url,body] of [['/api/v1/account/trash/empty',{}],['/api/v1/account/sent/clear',{trashEnabled:true}],['/api/v1/account/sent/restore',{kind:'message',messageId:'019a0000-0000-7000-8000-000000000001'}]] as const){
+  expect((await post('HailMailbox/view',{view:'inboxFeed',trash:true,unknown:1})).status).toBe(400);
+  for(const [url,body] of [['HailMailbox/emptyTrash',{}],['HailMailbox/clearSent',{input:{trashEnabled:true}}],['HailMailbox/restoreSent',{input:{kind:'message',messageId:'019a0000-0000-7000-8000-000000000001'}}]] as const){
     authenticated=false;expect((await post(url,body)).status).toBe(401);authenticated=true;
     expect((await post(url,body,{Origin:'https://evil.example'})).status).toBe(403);
     session.scopes=['messages:read'];expect((await post(url,body)).status).toBe(403);
@@ -37,10 +42,8 @@ it('requires authenticated scoped same-origin web access for Trash mutations',as
   }
   expect(empty).toHaveBeenCalledTimes(1);expect(clearSent).toHaveBeenCalledWith(session,true,undefined);
   const selected=[{kind:'message',messageId:'019a0000-0000-7000-8000-000000000001'}];
-  expect((await post('/api/v1/account/sent/clear',{trashEnabled:true,messages:selected})).status).toBe(200);
+  expect((await post('HailMailbox/clearSent',{input:{trashEnabled:true,messages:selected}})).status).toBe(200);
   expect(clearSent).toHaveBeenLastCalledWith(session,true,selected);
-  session.passkey_credential_id=null;
-  session.scopes=['messages:read'];expect((await post(path)).status).toBe(403);
-  session.scopes=['messages:write'];expect((await post(path)).status).toBe(200);
-  expect(remove.mock.calls.at(-1)?.at(-1)).toBe(true);
+  expect((await app.request(path,{method:"POST",headers})).status).toBe(404);
+  expect(remove).not.toHaveBeenCalled();
 });

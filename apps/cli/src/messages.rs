@@ -84,7 +84,9 @@ pub async fn send(client: &Client, args: &Args) -> Result<Value, Error> {
                 s["request"]["recipientDid"].clone(),
             )
         } else {
-            let list = client.get("/connections/cli-list").await?;
+            let list = client
+                .jmap("HailRelationship/credentialList", &json!({}))
+                .await?;
             let rows = list["connections"]
                 .as_array()
                 .ok_or_else(invalid)?
@@ -150,7 +152,12 @@ pub async fn send(client: &Client, args: &Args) -> Result<Value, Error> {
     {
         return Err(invalid());
     }
-    client.post("/messages", &state["request"]).await
+    client
+        .jmap(
+            "HailSubmission/submit",
+            &json!({"kind":"message","input":state["request"]}),
+        )
+        .await
 }
 
 pub fn read_text(path: &str) -> Result<String, Error> {
@@ -198,7 +205,6 @@ pub fn new_id() -> Result<String, Error> {
 }
 
 pub async fn upload_attachments(client: &Client, paths: &[String]) -> Result<Vec<Value>, Error> {
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     if paths.len() > 20 {
         return Err(Error::client("Attach at most 20 files"));
     }
@@ -241,14 +247,7 @@ pub async fn upload_attachments(client: &Client, paths: &[String]) -> Result<Vec
         if bytes.len() as u64 != size {
             return Err(Error::client("Attachment changed while reading"));
         }
-        result.push(
-            client
-                .post(
-                    "/attachments",
-                    &json!({"filename":name,"data":URL_SAFE_NO_PAD.encode(bytes)}),
-                )
-                .await?,
-        );
+        result.push(client.upload_attachment(&name, bytes).await?);
     }
     Ok(result)
 }

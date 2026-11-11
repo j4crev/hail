@@ -67,9 +67,9 @@ pub async fn submit(client: &Client, bytes: &[u8]) -> Result<Value, Error> {
     }
     let p = codec::inspect("hail.grant", bytes)?;
     let result = client
-        .put(
-            &format!("/grants/{}", p["grant_id"].as_str().ok_or_else(invalid)?),
-            bytes,
+        .jmap(
+            "HailGrant/submit",
+            &json!({"grantId":p["grant_id"],"cose":URL_SAFE_NO_PAD.encode(bytes)}),
         )
         .await?;
     let digest = codec::digest(bytes);
@@ -132,7 +132,9 @@ pub async fn create(client: &Client, args: &Args) -> Result<Value, Error> {
         } else {
             input
         };
-        let result = client.post("/grants/managed", &body).await?;
+        let result = client
+            .jmap("HailGrant/managedCreate", &json!({"input":body}))
+            .await?;
         let (_, bytes, _) =
             signed_reads::grant_record(client, result["grantId"].as_str().ok_or_else(invalid)?)
                 .await?;
@@ -161,9 +163,9 @@ pub async fn create(client: &Client, args: &Args) -> Result<Value, Error> {
         p
     } else {
         let r = client
-            .post(
-                "/grants/proposals",
-                &json!({"sender":sender,"scope":selected,"expiresAt":expiry}),
+            .jmap(
+                "HailGrant/propose",
+                &json!({"input":{"sender":sender,"scope":selected,"expiresAt":expiry}}),
             )
             .await?;
         if r["type"] != "racr.grant-proposal" || r["version"].as_f64() != Some(1.0) {
@@ -217,7 +219,7 @@ pub async fn revoke(client: &Client, args: &Args) -> Result<Value, Error> {
             return Err(invalid());
         }
         return client
-            .post(&format!("/grants/{id}/revoke"), &json!({}))
+            .jmap("HailGrant/managedRevoke", &json!({"grantId":id}))
             .await;
     }
     let vp = args.options.get("vault").ok_or_else(invalid)?;
@@ -327,7 +329,10 @@ pub async fn update(client: &Client, args: &Args) -> Result<Value, Error> {
             body["sender"] = sender.clone().into();
         }
         let response = client
-            .post(&format!("/grants/{id}/proposals"), &body)
+            .jmap(
+                "HailGrant/proposeUpdate",
+                &json!({"grantId":id,"input":body}),
+            )
             .await?;
         if response["type"] != "racr.grant-proposal" || response["version"].as_f64() != Some(1.0) {
             return Err(invalid());
@@ -398,9 +403,9 @@ pub async fn update(client: &Client, args: &Args) -> Result<Value, Error> {
         return submit(client, signed.as_ref().unwrap()).await;
     }
     let result = client
-        .post(
-            &format!("/grants/{id}/update"),
-            &json!({"payload":p,"signingKey":public}),
+        .jmap(
+            "HailGrant/managedUpdate",
+            &json!({"grantId":id,"input":{"payload":p,"signingKey":public}}),
         )
         .await?;
     let encoded = result["cose"]

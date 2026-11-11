@@ -169,6 +169,10 @@ impl Client {
         self.request_at(path, "/api/v1/account", None).await
     }
 
+    pub async fn jmap(&self, method: &str, args: &Value) -> Result<Value, Error> {
+        crate::jmap::operation(self, method, args).await
+    }
+
     pub async fn capabilities(&self) -> Result<Value, Error> {
         self.request_at("/capabilities", "/api/v1", None).await
     }
@@ -182,16 +186,10 @@ impl Client {
         namespace: &str,
         body: Option<&Value>,
     ) -> Result<Value, Error> {
-        let maximum = if namespace == "/api/v1/auth/authorization" {
+        let maximum = if path == "/jmap" {
+            192 * 1024 * 1024
+        } else if namespace == "/api/v1/auth/authorization" {
             65536
-        } else if namespace == "/api/v1/account" && path.starts_with("/connection-threads/") {
-            192 * 1024 * 1024 // Up to 30 titles drawn from 1 MiB bodies, including JSON escaping.
-        } else if namespace == "/api/v1/account"
-            && (path.starts_with("/inbox/")
-                || path.starts_with("/sent/")
-                || path.starts_with("/conversations/"))
-        {
-            40 * 1024 * 1024 // Up to five 1 MiB bodies with JSON escaping and metadata.
         } else {
             MAX_RESPONSE
         };
@@ -204,11 +202,6 @@ impl Client {
         } else {
             self.http.get(url)
         };
-        let request = if path == "/attachments" {
-            request.timeout(Duration::from_secs(60))
-        } else {
-            request
-        };
         self.send(request, maximum).await
     }
     pub async fn post_limit(&self, path: &str, body: &Value, maximum: u64) -> Result<Value, Error> {
@@ -219,13 +212,35 @@ impl Client {
             .body(body.to_string());
         self.send(request, maximum).await
     }
-    pub async fn put(&self, path: &str, bytes: &[u8]) -> Result<Value, Error> {
+    pub async fn upload_attachment(&self, filename: &str, bytes: Vec<u8>) -> Result<Value, Error> {
+        let session = self.request_at("/.well-known/jmap", "", None).await?;
+        let account = session["primaryAccounts"]["https://haili.app/ns/jmap/account"]
+            .as_str()
+            .filter(|s| {
+                !s.is_empty()
+                    && s.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+            })
+            .ok_or_else(|| Error::response("Invalid JMAP account discovery"))?;
+        let size = bytes.len();
         let request = self
             .http
-            .put(format!("{}/api/v1/account{path}", self.origin))
-            .header("Content-Type", "application/cose; cose-type=\"cose-sign1\"")
-            .body(bytes.to_vec());
-        self.send(request, MAX_RESPONSE).await
+            .post(format!("{}/jmap/upload/{account}", self.origin))
+            .header("Content-Type", "application/octet-stream")
+            .timeout(Duration::from_secs(60))
+            .body(bytes);
+        let uploaded = self.send(request, 16384).await?;
+        if uploaded["accountId"] != account
+            || uploaded["size"].as_u64() != Some(size as u64)
+            || !uploaded["blobId"].is_string()
+        {
+            return Err(Error::response("Invalid JMAP upload response"));
+        }
+        self.jmap(
+            "HailAttachment/import",
+            &serde_json::json!({"filename":filename,"blobId":uploaded["blobId"]}),
+        )
+        .await
     }
     async fn send(
         &self,

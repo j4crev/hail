@@ -1,3 +1,4 @@
+import {accountOperation,JmapRequestError} from './jmap.js';
 import type {startAuthentication} from "@simplewebauthn/browser";
 import {decodeDeterministic,encodeDeterministic} from "@racrproto/codec/cbor";
 import {encodeBase64Url} from "@racrproto/codec/base64url";
@@ -72,16 +73,9 @@ export async function recoverConnection(requestId:string):Promise<ConnectApprova
   if(!next.result&&Date.parse(next.expiresAt)<=Date.now())throw new ConnectionRequestError(410,"This review expired. Start again when you’re ready.");
   return next;
 }
-export async function connectionRequest(step="",body?:unknown){
-  if(!["","prepare","commit","review","seen","conversation-preferences","conversation-membership"].includes(step)&&!UUID.test(step))throw new Error("Invalid connection action.");
-  const response=await fetch("/api/v1/account/connections"+(step?"/"+step:""),{method:body===undefined?"GET":"POST",
-    credentials:"same-origin",cache:"no-store",redirect:"error",signal:AbortSignal.timeout(45_000),
-    headers:body===undefined?{}:{"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  const reader=response.body?.getReader();if(!reader)throw new Error("Connection response unavailable.");
-  const chunks:Uint8Array[]=[];let size=0;
-  while(true){const next=await reader.read();if(next.done)break;size+=next.value.length;if(size>131072){await reader.cancel();throw new Error("Connection response too large.");}chunks.push(next.value);}
-  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-  let value;try{value=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));}catch{throw new ConnectionRequestError(response.status,"Connection preview is unavailable on this provider.");}
-  if(!response.ok)throw new ConnectionRequestError(response.status,typeof value?.error==="string"?value.error:"Connection request failed. Please try again.");
-  return value;
+export async function connectionRequest(step="",body?:unknown):Promise<any>{
+  const methods:Record<string,string>={'':'list',review:'review',prepare:'prepare',commit:'commit',seen:'seen','conversation-preferences':'conversationPreferences','conversation-membership':'conversationMembership'};
+  const method=methods[step]??(UUID.test(step)?'status':null);if(!method)throw new Error('Invalid connection action.');
+  try{return await accountOperation('HailRelationship/'+method,method==='status'?{requestId:step}:body===undefined?{}:{input:body});}
+  catch(error){if(error instanceof JmapRequestError)throw new ConnectionRequestError(error.status,error.message);throw error;}
 }

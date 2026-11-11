@@ -1,3 +1,4 @@
+import {JmapMessages} from '../src/jmap/messages.js';
 import {expect,it,vi} from 'vitest';
 import {createApp} from '../src/app.js';
 import type {AppConfig} from '../src/config.js';
@@ -10,7 +11,7 @@ function setup(){
  const session={account_id:crypto.randomUUID(),did,scopes:['messages:read','messages:write'],migration_state:null as string|null,serving_generation:1};
  const authenticate=vi.fn(async()=>session as typeof session|null),upload=vi.fn(),attachment=vi.fn();
  const app=createApp({publicOrigin:'https://example.com',hailServiceBase:'https://example.com/hail',providerId:'test'} as AppConfig,
-  {accountApi:{accounts:{authenticate} as unknown as AccountApiRepository,grants:{} as GrantRepository,service:{} as GrantService,
+  {jmap:new JmapMessages({} as never,'https://example.com'),jmapBlobs:{get:async()=>({bytes:new Uint8Array([120]),type:'application/octet-stream'})} as never,accountApi:{accounts:{authenticate} as unknown as AccountApiRepository,grants:{} as GrantRepository,service:{} as GrantService,
    messaging:{attachments:{upload},attachment} as unknown as AccountMessaging},async checkReadiness(){return {ready:true};}});
  return {app,session,authenticate,upload,attachment};
 }
@@ -26,7 +27,10 @@ it('forces downloads and authorizes against the requesting account and exact mes
  f.authenticate.mockResolvedValue(null);expect((await f.app.request(path)).status).toBe(401);
 });
 it('requires write authority and an unfenced account for bounded uploads',async()=>{
- const f=setup(),request=()=>f.app.request('/api/v1/account/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:'test.log',data:'eA'})});
+ const f=setup(),request=async()=>{
+  const response=await f.app.request('/jmap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({using:['urn:ietf:params:jmap:core','https://haili.app/ns/jmap/account'],methodCalls:[['HailAttachment/import',{accountId:new JmapMessages({} as never,'https://example.com').accountId(f.session as never),filename:'test.log',blobId:'u_fixture'},'upload']]})});
+  const [method,result]=(await response.json() as any).methodResponses[0];return {status:method==='error'?(result.httpStatus??400):200};
+ };
  f.upload.mockResolvedValue({filename:'test.log'});expect((await request()).status).toBe(200);
  f.session.migration_state='fenced';expect((await request()).status).toBe(409);
  f.session.migration_state=null;f.session.scopes=['messages:read'];expect((await request()).status).toBe(403);

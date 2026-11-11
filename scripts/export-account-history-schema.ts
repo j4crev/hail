@@ -10,7 +10,7 @@ try{
   await admin.unsafe(`CREATE DATABASE "${name}"`);
   const url=new URL(adminUrl);url.pathname='/'+name;db=new ProviderDatabase(url.toString());await db.migrate();
   const schema=await accountHistorySchema(db.sql),text=JSON.stringify(schema,null,2)+'\n';
-  const target=new URL('../spec/schemas/account-history-v9-v10.json',import.meta.url);
+  const target=new URL('../spec/schemas/account-history-v11-v12.json',import.meta.url);
   if(process.argv.includes('--check')){if(await Bun.file(target).text()!==text)throw Error('Account-history schema drift: review the protocol and regenerate');}
   else await Bun.write(target,text);
   console.info('Account-history schema '+(process.argv.includes('--check')?'matches migrated export projections':'written'));

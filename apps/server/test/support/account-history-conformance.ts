@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {readFile,writeFile} from 'node:fs/promises';
 import {validateTransferManifest} from '../../src/migration/transfer.js';
 import {validateManagedTransferManifest} from '../../src/migration/managed-snapshot.js';
-const schema=JSON.parse(await readFile(new URL('../../../../spec/schemas/account-history-v9-v10.json',import.meta.url),'utf8'));
+const schema=JSON.parse(await readFile(new URL('../../../../spec/schemas/account-history-v11-v12.json',import.meta.url),'utf8'));
 const validate=new Ajv({allErrors:true}).compile(schema);
 export function validateHistorySchema(value:unknown):void{
   if(!validate(value))throw Error('History schema: '+JSON.stringify(validate.errors));

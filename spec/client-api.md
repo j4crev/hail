@@ -6,9 +6,11 @@ federate without implementing this API. `racr.*` names designate shared client
 formats here, not a particular provider implementation or database schema.
 The CLI's terminal output contract v2 is separately versioned.
 
-The [Hail JMAP profile](jmap.md) now provides a separate received-message
-API and state-conditional read/unread, Trash/restore and deletion. The web client uses JMAP for
-received-message mutations; other web/CLI workflows still use this account API.
+The [Hail JMAP profile](jmap.md), [account collections](jmap-collections.md)
+and [typed operations](jmap-operations.md) are the current mailbox, submission,
+Grant and relationship transport. The reference web client and CLI use them;
+superseded mailbox HTTP routes are removed. Authentication, profile, credentials,
+media downloads, account recovery and transfer retain their distinct HTTP resources.
 
 ## Authentication boundary
 
@@ -108,8 +110,8 @@ express actual authority; providers MUST NOT invent a managed custody attestatio
 to satisfy a client. Nullable metadata remains null when inapplicable. The
 [account result contract](../apps/cli/docs/cli-contract.md#reference-account-api-v1)
 and [endpoint inventory](../apps/server/README.md#racr-account-api) define the
-current field shapes, scope requirements and requests for mailbox, submission,
-credential, Grant and profile operations. These shared wire shapes are retained;
+current account, credential and profile shapes. Mailbox, submission, Grant and
+relationship requests are defined by the JMAP documents above;
 implementers do not need reference-provider SQL tables or migration numbers.
 
 Implement the operations needed by the workflows offered to users. Missing
@@ -149,7 +151,8 @@ action, avoiding duplicate blockers. These are diagnostic hints, not authority
 or permission to start login automatically. Omission is not proof that an action
 will succeed; the actual operation MUST enforce authorization.
 
-Authenticated failures use Problem Details; clients rely on HTTP status and
+HTTP resource failures use Problem Details; JMAP method failures are in-band
+errors with the operation profile’s public status/code fields. For HTTP resources, clients rely on HTTP status and
 known `Hail-Error-Code` values, not untrusted prose. In addition to existing
 `CREDENTIAL_EXPIRED`/`CREDENTIAL_REVOKED` (401), `MISSING_SCOPE`/`PASSKEY_REQUIRED`
 (403) and `APPROVAL_EXPIRED` (410), providers may return `INTERACTION_REQUIRED`

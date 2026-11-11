@@ -3,7 +3,7 @@ import {canaryAccount,ORIGIN,senderAvatars} from "$lib/server/canary.js";
 export async function load({url,cookies,setHeaders}){
   setHeaders({"cache-control":"no-store","referrer-policy":"no-referrer"});
   const {account,client}=await canaryAccount(cookies,url),after=url.searchParams.get("after");
-  const page=await client.request(`/grants${after?`?after=${encodeURIComponent(after)}`:""}`);
+  const page=await client.jmap("HailGrant/list",{after});
   if(!Array.isArray(page.grants)||page.next!==null&&typeof page.next!=="string")throw new Error("Invalid allowed-sender list");
   const loaded=await Promise.all(page.grants.filter((row:any)=>row?.localRole==="grantor").map(async(row:any)=>{
     const grant=await client.grant(row.grantId);

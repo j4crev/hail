@@ -1,3 +1,5 @@
+import {JmapCollections} from './jmap/collections.js';
+import {JmapBlobs} from './jmap/blobs.js';
 import {JmapDrafts} from './jmap/drafts.js';
 import {JmapMessages} from "./jmap/messages.js";
 import {BodyRequestSigner, BodyRequestVerifier} from "./bodies/request-proof.js";
@@ -384,7 +386,9 @@ const app = createApp(config, schemaRehearsal ? {
   bodyStore: new BodyRepository(database.sql),
   bodyProof: new BodyRequestVerifier(database.sql,resolver,config.publicOrigin),
   jmap: new JmapMessages(database.sql,config.publicOrigin),
+  jmapCollections: new JmapCollections(database.sql,config.publicOrigin),
   jmapDrafts: new JmapDrafts(database.sql,config.publicOrigin),
+  jmapBlobs: new JmapBlobs(database.sql,config.publicOrigin,new JmapMessages(database.sql,config.publicOrigin),new JmapCollections(database.sql,config.publicOrigin)),
   envelopeReceiver: new EnvelopeReceiver(
     onboardingRepository, new EnvelopeRepository(database.sql), resolver, config.hailServiceBase,undefined,connectionAuthority,
   ),

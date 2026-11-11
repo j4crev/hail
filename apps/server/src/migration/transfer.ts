@@ -1,3 +1,4 @@
+import {SENT_TABLES,collectSentHistory,validateSentHistory} from './sent-history.js';
 import {DRAFT_TABLES,collectDraftHistory,validateDraftHistory} from './draft-history.js';
 import {signSnapshot,inspectSnapshotSignature,verifySnapshotSignature} from './snapshot-signature.js';
 import {ATTACHMENT_TABLES,collectAttachmentHistory,validateAttachmentHistory} from './attachment-history.js';
@@ -29,7 +30,7 @@ import {encodeBase64Url} from "@racrproto/codec";
 
 
 export const TRANSFER_TABLES = [
-  ...ATTACHMENT_TABLES,...DRAFT_TABLES,
+  ...ATTACHMENT_TABLES,...DRAFT_TABLES,...SENT_TABLES,
   "provider_accounts", "account_keys", "portable_custody_evidence", "plc_operation_evidence", "address_bindings",
   "sender_profiles", "grant_lineages", "grant_revisions", "grant_consent_evidence",
   "grant_publications", "detached_bodies", "body_authorizations", "sent_envelopes",
@@ -47,7 +48,7 @@ type TransferTables = Record<TransferTable, Record<string, unknown>[]> &
   Partial<Record<AuthorityTable, Record<string, unknown>[]>>;
 
 export interface TransferManifest {
-  version: 2 | 3 | 5 | 9;
+  version: 11;
   sourceGeneration?:number;
   conversations?:ConversationHistory;conversationCheckpointDigest?:string;
   connections?:ConnectionHistory;
@@ -158,8 +159,8 @@ export function validateTransferManifest(bytes: Uint8Array): TransferManifest {
   const value = parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid transfer manifest");
   const manifest = value as TransferManifest;
-  const tables = manifest.version !== 2 ? [...TRANSFER_TABLES, ...TRANSFER_AUTHORITY_TABLES] : TRANSFER_TABLES;
-  if (![2, 3, 5, 9].includes(manifest.version) ||
+  const tables = [...TRANSFER_TABLES, ...TRANSFER_AUTHORITY_TABLES];
+  if (manifest.version !== 11 ||
     !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(manifest.transferId) ||
     !/^did:plc:[a-z2-7]{24}$/.test(manifest.did) ||
     !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(manifest.accountId) ||
@@ -337,10 +338,11 @@ export function validateTransferManifest(bytes: Uint8Array): TransferManifest {
       throw new Error("Transfer reply claim conflicts with its signed permission or accepted reply");
     }
   }
-  if (manifest.version !== 2) validateAuthorityHistory(manifest);
+  validateAuthorityHistory(manifest);
   validateSnapshotConnections(manifest);
   validateAttachmentHistory(manifest);
   validateDraftHistory(manifest);
+  validateSentHistory(manifest);
   return manifest;
 }
 
@@ -393,7 +395,7 @@ export class MigrationTransferService {
       const sourceGeneration=Number((await tx<{generation:number|string}[]>`SELECT generation FROM account_serving_generations WHERE account_id=${fence.accountId}`)[0]?.generation);
       const connections=await collectConnectionHistory(tx as SQL,{accountId:fence.accountId,did:fence.did,sourceGeneration,sourceServiceBase:this.serviceBase},capturedAt);
       const conversations=await collectConversationHistory(tx as SQL,{accountId:fence.accountId,did:fence.did,sourceGeneration,sourceServiceBase:this.serviceBase},capturedAt);
-      const manifest: TransferManifest = { version: 9, did: fence.did, accountId: fence.accountId,
+      const manifest: TransferManifest = { version: 11, did: fence.did, accountId: fence.accountId,
         transferId: fence.transferId, sourceServiceBase: this.serviceBase,
         destinationServiceBase: fence.destinationServiceBase,
         destinationRotationPublicKey: fence.destinationRotationPublicKey,
@@ -642,7 +644,7 @@ export class MigrationTransferService {
         UNION SELECT evidence_digest FROM public_signing_authority_evidence WHERE local_account_id = ${accountId}
       ) ORDER BY evidence_digest`);
     return {
-      ...await collectAttachmentHistory(tx as SQL,accountId,did),...await collectDraftHistory(tx as SQL,accountId),
+      ...await collectAttachmentHistory(tx as SQL,accountId,did),...await collectDraftHistory(tx as SQL,accountId),...await collectSentHistory(tx as SQL,accountId),
       provider_accounts: account, account_keys: keys, portable_custody_evidence: custody,
       plc_operation_evidence: plc,
       address_bindings: bindings, sender_profiles: profiles,

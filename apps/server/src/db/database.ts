@@ -255,6 +255,10 @@ const migrations: readonly Migration[] = [
   {version:111,name:"body-request-nonces",url:new URL("../../migrations/0111_body_request_nonces.sql",import.meta.url)},
   {version:112,name:"jmap-messages",url:new URL("../../migrations/0112_jmap_messages.sql",import.meta.url)},
   {version:113,name:"jmap-drafts",url:new URL("../../migrations/0113_jmap_drafts.sql",import.meta.url)},
+  {version:114,name:"sent-history",url:new URL("../../migrations/0114_sent_history.sql",import.meta.url)},
+  {version:115,name:"jmap-blobs",url:new URL("../../migrations/0115_jmap_blobs.sql",import.meta.url)},
+  {version:116,name:"jmap-collections",url:new URL("../../migrations/0116_jmap_collections.sql",import.meta.url)},
+  {version:117,name:"remove-inbox-cursor",url:new URL("../../migrations/0117_remove_inbox_cursor.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

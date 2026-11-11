@@ -51,9 +51,9 @@ func verifySnapshotHash(wire, preimage, key []byte, kind, kid string) bool {
 	if !bytes.Equal(canonical, p) {
 		return false
 	}
-	version := 9
+	version := 11
 	if kind == "managed" {
-		version = 10
+		version = 12
 	}
 	expected := fmt.Sprintf("application/hail-%s-snapshot+json;version=%d", kind, version)
 	k, ok := h[int64(4)].([]byte)

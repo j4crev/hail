@@ -7,7 +7,7 @@ changes signed protocol evidence.
 
 ## Unread totals
 
-`GET /api/v1/account/unread-counts` requires the authenticated account's
+`HailMailbox/view {view:"unreadCounts"}` requires the authenticated account's
 `messages:read` scope and accepts no query parameters. It returns JSON
 `{ "subscriptions": 0, "connections": 0, "unseenConnections": 0 }`, with nonnegative integer counts
 independent of pagination. For `subscriptions` and `connections`, count only received,
@@ -37,13 +37,13 @@ failed and expired attempts do not count. Replaying or reconciling an already
 applied activation cannot recreate a marker. Disconnecting hides its marker from
 totals immediately; reconnecting through a fresh admission can create a new one.
 
-`GET /api/v1/account/connections` includes boolean `isNew` and positive integer
+`HailRelationship/list` includes boolean `isNew` and positive integer
 `epoch` on each connection. The bounded list (at most 100) puts unseen connections
 first, then orders each group by latest connection state update descending, with
 pair ID as a stable tie-breaker. Reading the list does not acknowledge anything.
 Counts cover all active unseen connections, including entries outside that list.
 
-`POST /api/v1/account/connections/seen` takes exactly:
+`HailRelationship/seen` takes the following exact `input`:
 
 ```json
 {"connections":[{"id":"01900000-0000-7000-8000-000000000001","epoch":1}]}
@@ -83,8 +83,10 @@ The web client uses `HailMessage/set` with read/Trash patches or destruction,
 [the JMAP profile](jmap.md). The old per-message mark-read/mark-unread provider
 routes, per-message delete and received-message bulk restore are removed. Existing passkey, scope and migration-fence policy still
 applies. Reads alone never mark a message read. Trash timestamps remain server-set, retries
-never extend retention, and expired copies cannot be restored. The CLI permanent-delete
-endpoint and whole-account Empty Trash remain separate existing workflows.
+never extend retention, and expired copies cannot be restored. CLI permanent deletion also uses JMAP query/set with state checks and both
+message scopes. Its old endpoint is removed; bearer credentials retain only
+permanent deletion, not browser read/Trash edits. Whole-account Empty Trash
+remains a separate existing workflow.
 
 ## Folder actions
 
@@ -94,15 +96,15 @@ for every mutation below. Requests use `Content-Type: application/json`, no
 content encoding, and exactly the members shown. Mutations serialize on the
 owning account and never affect another account's mail.
 
-| POST path under `/api/v1/account` | Body | Result |
+| JMAP method | `input` (plus authenticated `accountId`) | Result |
 | --- | --- | --- |
-| `/trash/empty` | `{}` | `{deleted: number}`; permanently removes all received copies and saved drafts in Trash, and makes all sent Trash copies non-restorable |
-| `/sent/clear` | `{trashEnabled: boolean, messages?: [{kind: "category" \| "connections" \| "message", messageId: UUIDv7}]}` | `{affected: number, state: "trashed" \| "deleted"}`; clears eligible selected Sent items, or all eligible Sent items across every page when `messages` is omitted |
-| `/sent/restore` | `{kind: "category" \| "connections" \| "message", messageId: UUIDv7}` | `{restored: number}`; restores one live sent Trash item to Sent |
+| `HailMailbox/emptyTrash` | no `input` argument | `{deleted: number}`; permanently removes all received copies and saved drafts in Trash, and makes all sent Trash copies non-restorable |
+| `HailMailbox/clearSent` | `{trashEnabled: boolean, messages?: [{kind: "category" \| "connections" \| "message", messageId: UUIDv7}]}` | `{affected: number, state: "trashed" \| "deleted"}`; clears eligible selected Sent items, or all eligible Sent items across every page when `messages` is omitted |
+| `HailMailbox/restoreSent` | `{kind: "category" \| "connections" \| "message", messageId: UUIDv7}` | `{restored: number}`; restores one live sent Trash item to Sent |
 
 `trashEnabled` is the setting the user saw, not permission to override it. A
-mismatch with the transaction's current account preference returns `409` without
-changing mail. Invalid bodies return `400`; ordinary authentication, scope,
+mismatch with the transaction's current account preference returns `stateMismatch` (409) without
+changing mail. Invalid arguments return `invalidArguments` (400); ordinary authentication, scope,
 method, media-type and migration errors follow the other mailbox mutations.
 Emptying or clearing an already-cleared folder succeeds with a zero count.
 
@@ -130,10 +132,9 @@ received, sent and draft Trash non-restorable; future Sent cleanup deletes the m
 copy permanently. Sent copies removed from the mailbox also disappear from its
 normal conversation views. Restoring a batch restores its constituent copies.
 
-`GET /sent?include=sends&trash=true` lists live sent Trash using the existing Sent
-pagination cursor. `GET /sent/:id?kind=K&trash=true` reads one live sent Trash
-item; expired or permanently deleted copies return `404`. Duplicate/unknown
-query parameters and `trash` values other than `true` are rejected. The normal
+`HailMailbox/view {view:"sentSends",trash:true}` lists live sent Trash using the existing Sent
+pagination cursor. `HailMailbox/view {view:"sentSend",messageId:ID,kind:K,trash:true}` reads one live sent Trash
+item; expired or permanently deleted copies return `404`. Unknown selection arguments and non-Boolean `trash` values are rejected. The normal
 Sent list and message readers omit removed copies. Protocol delivery-status and
 submission-retry APIs remain separate from mailbox visibility.
 

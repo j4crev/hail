@@ -29,7 +29,7 @@ export const GET: import('./$types').RequestHandler = async event => {
     const data = await loader({...event, url, params});
     let counts = null;
     if ('account' in data) {
-      try {const {client} = await canaryAccount(event.cookies,url); counts = await client.request('/unread-counts');} catch { /* Counts are optional presentation data. */ }
+      try {const {client} = await canaryAccount(event.cookies,url); counts = await client.jmap('HailMailbox/view',{view:'unreadCounts'});} catch { /* Counts are optional presentation data. */ }
     }
     return json({data, counts, scope:mailboxScope(event.cookies)}, {headers:{'cache-control':'no-store'}});
   } catch (cause) {

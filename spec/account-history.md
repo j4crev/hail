@@ -1,14 +1,14 @@
-# Logical account history: portable v9 and managed v10
+# Logical account history: portable v11 and managed v12
 
 Status: Current alpha record schema, derived from the implemented collectors and
-validated against synthetic exports. Versions 9/10 replace 7/8 and add saved
-drafts and mailbox preferences. [Transfer formats](transfer-formats.md) defines its carrier,
+validated against synthetic exports. Versions 11/12 replace 9/10 and add logical Sent groups and dispositions,
+alongside saved drafts and mailbox preferences. [Transfer formats](transfer-formats.md) defines its carrier,
 signatures and ceremony; this document defines the history inside it.
 
 ## Storage independence
 
 The normative machine-readable shape is
-[account-history-v9-v10.json](schemas/account-history-v9-v10.json), JSON Schema draft 7.
+[account-history-v11-v12.json](schemas/account-history-v11-v12.json), JSON Schema draft 7.
 It defines both manifests, both checkpoint domains, every exported record field,
 field presence, scalar/array/object types and nullability. The schema is self-contained;
 no database, ORM, TypeScript module or external schema fetch is required to use it.
@@ -91,6 +91,8 @@ schema enumerates the complete table domain; missing empty collections are inval
 | `verified_body_provenance` | Verified recipient-and-sender scoped body bytes; exports reconstruct the bytes even when local storage deduplicates blobs |
 | `delivered_messages` | This DID's durably delivered message references, read markers and original Trash timestamps |
 | `account_message_drafts` | All saved drafts, including Trash, with exact editable content, revisions and original timestamps |
+| `account_publications`, `publication_targets` | Sealed category-send intents and complete terminal recipient audiences; retain original generation, body bytes and retry identity |
+| `account_sent_dispositions` | Logical Sent Trash timestamps and permanent-deletion tombstones, including category, connection and individual sends |
 | `account_message_preferences` | Zero or one owner-scoped Trash and display preferences record |
 | `delivery_status_payloads`, `delivery_status_wrappers` | Immutable status revisions and signed wrappers for received deliveries |
 | `terminal_status_publications` | Retained terminal-status publication obligations |
@@ -114,12 +116,50 @@ credentials, passkey secrets, source operational private keys or reusable invita
 bearer secrets. They are outside the declared collection/field domains.
 
 Received read/Trash state, saved drafts and mailbox preferences are explicit
-parts of this profile. Sent dispositions and category-publication batch controls
-remain outside it; complete Sent-state portability remains a phase 5 item.
+parts of this profile, together with logical Sent groups and dispositions.
 Shared-conversation introduction policy, leave state and replay evidence remain
 included because they affect delivery authority.
 
-## Draft preservation in portable v9 and managed v10
+## Sent preservation in portable v11 and managed v12
+
+Both profiles require `account_publications`, `publication_targets` and
+`account_sent_dispositions`, including explicit empty arrays. Category publication
+IDs remain distinct from their per-recipient message IDs. Connection-send groups
+continue to travel in their connection/conversation checkpoints. Do not flatten
+either group into individual Sent entries.
+
+A category publication MUST belong to the migrating account and DID, be sealed,
+and contain between 1 and 100 distinct recipient targets. Its original serving
+generation MUST be positive. Generations belong to their original serving provider;
+do not compare a retained generation with another provider's local epoch. Retain
+original body bytes, request digest, reply deadline, creation/expiry/cancellation
+timestamps and every recipient message ID. Verify the request digest as SHA-256
+of deterministic CBOR `{category, body: body_bytes, allowReplies: reply_until != null}`.
+Targets MUST be terminal (`submitted`, `blocked`, `cancelled`, `expired` or
+`indeterminate`); pending work prevents cutover. Each target's retained Grant
+must name the migrating DID as grantee and that recipient as grantor. A submitted
+target requires its exact sent envelope; any existing envelope must agree with
+the target's recipient, Grant, category, reply permission/deadline and body digest. Preserve required body
+attachments using the existing attachment-history rules.
+
+A disposition references exactly one logical send of its declared kind. An
+individual-message disposition cannot reference a member of a group. Preserve
+its original `trashed_at` timestamp and `deleted` flag; migration does not renew
+retention. On return, the current snapshot replaces mutable Sent dispositions,
+but MUST retain earlier permanent-deletion tombstones unchanged. Restoring an
+ordinary trashed send is allowed. Never resurrect a deleted group through its
+retained per-recipient envelopes.
+
+Import is atomic with Grant/envelope/checkpoint restoration and generation change.
+Original publication intents and audiences are immutable; a retained copy on a
+returning provider must agree exactly. Sent timestamp comparisons use the same
+instant to microsecond precision, allowing equivalent RFC 3339 timezone spellings;
+signature verification still uses the untouched manifest bytes. Imported terminal targets MUST NOT be
+requeued. Retrying a category publication ID with the same intent from the active
+new generation returns its retained status; different intent fails. History does
+not provide fresh consent or permission to send to the old audience again.
+
+## Draft preservation in portable v11 and managed v12
 
 Both profiles require `account_message_drafts` and `account_message_preferences`,
 including explicit empty arrays. Draft records are closed and owner-scoped; IDs
@@ -329,7 +369,7 @@ format evidence, not a claim of a second independently deployed Hail provider.
 
 ## Detached attachment records (current alpha)
 
-The current v9/v10 manifests additionally require `attachment_blobs`,
+The current v11/v12 manifests additionally require `attachment_blobs`,
 `attachment_uploads`, `body_attachment_refs`, and `received_attachment_refs`.
 Empty collections are explicit. See the regenerated closed JSON schema for
 fields. Blob bytes and digests use the existing PostgreSQL hex-byte diagnostic

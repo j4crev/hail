@@ -4,6 +4,7 @@ export const JMAP_CORE='urn:ietf:params:jmap:core';
 export const HAIL_MESSAGES='https://haili.app/ns/jmap/messages';
 export const MAX_OBJECTS=50;
 export const canMutateMessages=(session:AccountApiSession)=>session.scopes.includes('messages:read')&&session.scopes.includes('messages:write')&&!!session.passkey_credential_id&&!session.migration_state;
+export const canDestroyMessages=(session:AccountApiSession)=>session.scopes.includes('messages:read')&&session.scopes.includes('messages:write')&&!session.migration_state;
 export class JmapError extends Error {constructor(readonly type:string){super(type);}}
 export const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 export function argumentsOnly(args:Record<string,unknown>,allowed:string[]){

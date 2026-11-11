@@ -27,7 +27,7 @@ export async function createGrant(client: AccountApiClient, sender: string, cate
       input={sender,category,expiresAt:expiresAt===undefined?Math.floor(Date.now()/1000)+7*86400:expiresAt};
       await savePrivateBytes(path,new TextEncoder().encode(JSON.stringify(input)));}
     if(input.sender!==sender||!isDeepStrictEqual(selectedScope(input.category),scope)||(expiresAt!==undefined&&input.expiresAt!==expiresAt))throw new Error("Managed Grant retry changed requested permission");
-    const result=await client.request("/grants/managed",Array.isArray(input.category)?{sender:input.sender,scope,expiresAt:input.expiresAt}:input);
+    const result=await client.jmap("HailGrant/managedCreate",{input:Array.isArray(input.category)?{sender:input.sender,scope,expiresAt:input.expiresAt}:input});
     const grant=await client.grant(result.grantId as string);
     try{await savePrivateBytes(output,grant.representation);}catch(error){if(!(error instanceof Error&&"code" in error&&error.code==="EEXIST"))throw error;
       if(!Buffer.from(await privateFile(output,262144)).equals(Buffer.from(grant.representation)))throw new Error("Managed Grant output conflicts");}

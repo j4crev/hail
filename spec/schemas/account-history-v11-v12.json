@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://racrproto.com/schemas/account-history-v9-v10.json",
-  "title": "Hail current account history: portable v9 / managed v10",
+  "$id": "https://racrproto.com/schemas/account-history-v11-v12.json",
+  "title": "Hail current account history: portable v11 / managed v12",
   "description": "Storage-independent logical record contract for the current wire manifests. All records and fields are closed. Cross-record authority and consistency requirements are normative in account-history.md. The x-reference-storage annotations are informative only.",
   "oneOf": [
     {
@@ -3667,6 +3667,199 @@
         "id"
       ]
     },
+    "portable-account_publications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "id",
+        "sender_did",
+        "serving_generation",
+        "category",
+        "body_bytes",
+        "request_digest",
+        "reply_until",
+        "created_at",
+        "expires_at",
+        "cancelled_at",
+        "sealed"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "sender_did": {
+          "type": "string"
+        },
+        "serving_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "category": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "body_bytes": {
+          "type": "string",
+          "pattern": "^\\\\x(?:[0-9a-f]{2})*$"
+        },
+        "request_digest": {
+          "type": "string",
+          "pattern": "^\\\\x(?:[0-9a-f]{2})*$",
+          "minLength": 66,
+          "maxLength": 66
+        },
+        "reply_until": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "cancelled_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sealed": {
+          "const": true
+        }
+      },
+      "description": "account_publications logical records in the portable history domain. See account-history.md for selection and semantic validation.",
+      "x-reference-storage": "account_publications",
+      "x-record-key": [
+        "account_id",
+        "id"
+      ]
+    },
+    "portable-publication_targets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "publication_id",
+        "grant_id",
+        "recipient_did",
+        "message_id",
+        "state",
+        "attempts",
+        "next_attempt_at"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "publication_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "grant_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "recipient_did": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "state": {
+          "enum": [
+            "submitted",
+            "blocked",
+            "cancelled",
+            "expired",
+            "indeterminate"
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "next_attempt_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "publication_targets logical records in the portable history domain. See account-history.md for selection and semantic validation.",
+      "x-reference-storage": "publication_targets",
+      "x-record-key": [
+        "account_id",
+        "publication_id",
+        "recipient_did"
+      ]
+    },
+    "portable-account_sent_dispositions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "kind",
+        "send_id",
+        "trashed_at",
+        "deleted"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "category",
+            "connections",
+            "message"
+          ]
+        },
+        "send_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "trashed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "description": "account_sent_dispositions logical records in the portable history domain. See account-history.md for selection and semantic validation.",
+      "x-reference-storage": "account_sent_dispositions",
+      "x-record-key": [
+        "account_id",
+        "kind",
+        "send_id"
+      ]
+    },
     "portable-provider_accounts": {
       "type": "object",
       "additionalProperties": false,
@@ -5389,8 +5582,7 @@
         "profile",
         "delivered_at",
         "trashed_at",
-        "is_read",
-        "delivery_sequence"
+        "is_read"
       ],
       "properties": {
         "recipient_did": {
@@ -5438,11 +5630,6 @@
         },
         "is_read": {
           "type": "boolean"
-        },
-        "delivery_sequence": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
         }
       },
       "description": "delivered_messages logical records in the portable history domain. See account-history.md for selection and semantic validation.",
@@ -6000,7 +6187,7 @@
       ],
       "properties": {
         "version": {
-          "const": 9
+          "const": 11
         },
         "transferId": {
           "type": "string",
@@ -6062,6 +6249,9 @@
             "received_attachment_refs",
             "account_message_preferences",
             "account_message_drafts",
+            "account_publications",
+            "publication_targets",
+            "account_sent_dispositions",
             "provider_accounts",
             "account_keys",
             "portable_custody_evidence",
@@ -6124,6 +6314,24 @@
               "type": "array",
               "items": {
                 "$ref": "#/definitions/portable-account_message_drafts"
+              }
+            },
+            "account_publications": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/portable-account_publications"
+              }
+            },
+            "publication_targets": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/portable-publication_targets"
+              }
+            },
+            "account_sent_dispositions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/portable-account_sent_dispositions"
               }
             },
             "provider_accounts": {
@@ -6530,6 +6738,199 @@
       "x-record-key": [
         "account_id",
         "id"
+      ]
+    },
+    "managed-account_publications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "id",
+        "sender_did",
+        "serving_generation",
+        "category",
+        "body_bytes",
+        "request_digest",
+        "reply_until",
+        "created_at",
+        "expires_at",
+        "cancelled_at",
+        "sealed"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "sender_did": {
+          "type": "string"
+        },
+        "serving_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "category": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "body_bytes": {
+          "type": "string",
+          "pattern": "^\\\\x(?:[0-9a-f]{2})*$"
+        },
+        "request_digest": {
+          "type": "string",
+          "pattern": "^\\\\x(?:[0-9a-f]{2})*$",
+          "minLength": 66,
+          "maxLength": 66
+        },
+        "reply_until": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "cancelled_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sealed": {
+          "const": true
+        }
+      },
+      "description": "account_publications logical records in the managed history domain. See account-history.md for selection and semantic validation.",
+      "x-reference-storage": "account_publications",
+      "x-record-key": [
+        "account_id",
+        "id"
+      ]
+    },
+    "managed-publication_targets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "publication_id",
+        "grant_id",
+        "recipient_did",
+        "message_id",
+        "state",
+        "attempts",
+        "next_attempt_at"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "publication_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "grant_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "recipient_did": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "state": {
+          "enum": [
+            "submitted",
+            "blocked",
+            "cancelled",
+            "expired",
+            "indeterminate"
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "next_attempt_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "publication_targets logical records in the managed history domain. See account-history.md for selection and semantic validation.",
+      "x-reference-storage": "publication_targets",
+      "x-record-key": [
+        "account_id",
+        "publication_id",
+        "recipient_did"
+      ]
+    },
+    "managed-account_sent_dispositions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_id",
+        "kind",
+        "send_id",
+        "trashed_at",
+        "deleted"
+      ],
+      "properties": {
+        "account_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "category",
+            "connections",
+            "message"
+          ]
+        },
+        "send_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "trashed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "description": "account_sent_dispositions logical records in the managed history domain. See account-history.md for selection and semantic validation.",
+      "x-reference-storage": "account_sent_dispositions",
+      "x-record-key": [
+        "account_id",
+        "kind",
+        "send_id"
       ]
     },
     "managed-provider_accounts": {
@@ -8181,8 +8582,7 @@
         "profile",
         "delivered_at",
         "trashed_at",
-        "is_read",
-        "delivery_sequence"
+        "is_read"
       ],
       "properties": {
         "recipient_did": {
@@ -8230,11 +8630,6 @@
         },
         "is_read": {
           "type": "boolean"
-        },
-        "delivery_sequence": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
         }
       },
       "description": "delivered_messages logical records in the managed history domain. See account-history.md for selection and semantic validation.",
@@ -8772,7 +9167,7 @@
       ],
       "properties": {
         "version": {
-          "const": 10
+          "const": 12
         },
         "transferId": {
           "type": "string",
@@ -8847,6 +9242,9 @@
             "received_attachment_refs",
             "account_message_preferences",
             "account_message_drafts",
+            "account_publications",
+            "publication_targets",
+            "account_sent_dispositions",
             "provider_accounts",
             "account_keys",
             "managed_custody_evidence",
@@ -8909,6 +9307,24 @@
               "type": "array",
               "items": {
                 "$ref": "#/definitions/managed-account_message_drafts"
+              }
+            },
+            "account_publications": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/managed-account_publications"
+              }
+            },
+            "publication_targets": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/managed-publication_targets"
+              }
+            },
+            "account_sent_dispositions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/managed-account_sent_dispositions"
               }
             },
             "provider_accounts": {

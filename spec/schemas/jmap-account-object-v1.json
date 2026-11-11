@@ -1,0 +1,523 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hail JMAP account objects v1 (full get projections)",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/HailSent"
+    },
+    {
+      "$ref": "#/definitions/HailSubmission"
+    },
+    {
+      "$ref": "#/definitions/HailGrant"
+    },
+    {
+      "$ref": "#/definitions/HailRelationship"
+    }
+  ],
+  "definitions": {
+    "HailSent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sendId",
+        "kind",
+        "category",
+        "createdAt",
+        "bodyDigest",
+        "isInTrash",
+        "trashedAt",
+        "bodyBlobId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^o_[0-9a-f]{32}$"
+        },
+        "sendId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "kind": {
+          "enum": [
+            "message",
+            "category",
+            "connections"
+          ]
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "bodyDigest": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "isInTrash": {
+          "type": "boolean"
+        },
+        "trashedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bodyBlobId": {
+          "type": "string",
+          "pattern": "^s_[0-9a-f]{32}$"
+        }
+      }
+    },
+    "HailSubmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sendId",
+        "kind",
+        "category",
+        "createdAt",
+        "bodyDigest",
+        "targets"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^o_[0-9a-f]{32}$"
+        },
+        "sendId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "kind": {
+          "enum": [
+            "message",
+            "category",
+            "connections"
+          ]
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "bodyDigest": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "messageId",
+              "submitted",
+              "completed",
+              "deliveryState",
+              "deliveryRevision",
+              "submissionState",
+              "recipientDid",
+              "envelope"
+            ],
+            "properties": {
+              "messageId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+              },
+              "submitted": {
+                "type": "boolean"
+              },
+              "completed": {
+                "type": "boolean"
+              },
+              "deliveryState": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deliveryRevision": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "submissionState": {
+                "type": "string"
+              },
+              "recipientDid": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "envelope": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "HailGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "grantId",
+        "localRole",
+        "grantor",
+        "grantee",
+        "revision",
+        "status",
+        "digest",
+        "cose"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^o_[0-9a-f]{32}$"
+        },
+        "grantId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+        },
+        "localRole": {
+          "enum": [
+            "grantor",
+            "grantee"
+          ]
+        },
+        "grantor": {
+          "type": "string"
+        },
+        "grantee": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "active",
+            "revoked"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "cose": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "HailRelationship": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "pairId",
+            "connectionId",
+            "peerDid",
+            "peerAddress",
+            "state",
+            "epoch",
+            "updatedAt",
+            "unseen"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^o_[0-9a-f]{32}$"
+            },
+            "kind": {
+              "const": "connection"
+            },
+            "pairId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "connectionId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "peerDid": {
+              "type": "string"
+            },
+            "peerAddress": {
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "active",
+                "disconnected"
+              ]
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "updatedAt": {
+              "type": "string"
+            },
+            "unseen": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "invitationId",
+            "personal",
+            "label",
+            "expiresAt",
+            "revokedAt"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^o_[0-9a-f]{32}$"
+            },
+            "kind": {
+              "const": "invitation"
+            },
+            "invitationId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "personal": {
+              "type": "boolean"
+            },
+            "label": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revokedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "attemptId",
+            "pairId",
+            "direction",
+            "state",
+            "expiresAt"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^o_[0-9a-f]{32}$"
+            },
+            "kind": {
+              "const": "attempt"
+            },
+            "attemptId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "pairId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "direction": {
+              "enum": [
+                "outbound",
+                "admitted"
+              ]
+            },
+            "state": {
+              "type": "string"
+            },
+            "expiresAt": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "allowIntroductions",
+            "updatedAt"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^o_[0-9a-f]{32}$"
+            },
+            "kind": {
+              "const": "preferences"
+            },
+            "allowIntroductions": {
+              "type": "boolean"
+            },
+            "updatedAt": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "connectionId",
+            "epoch",
+            "allowIntroductions",
+            "updatedAt"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^o_[0-9a-f]{32}$"
+            },
+            "kind": {
+              "const": "connectionPreferences"
+            },
+            "connectionId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "allowIntroductions": {
+              "type": "boolean"
+            },
+            "updatedAt": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "creatorDid",
+            "conversationId",
+            "state",
+            "expiresAt",
+            "leftAt"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^o_[0-9a-f]{32}$"
+            },
+            "kind": {
+              "const": "membership"
+            },
+            "creatorDid": {
+              "type": "string"
+            },
+            "conversationId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$"
+            },
+            "state": {
+              "enum": [
+                "active",
+                "left"
+              ]
+            },
+            "expiresAt": {
+              "type": "string"
+            },
+            "leftAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

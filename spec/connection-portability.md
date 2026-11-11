@@ -8,7 +8,7 @@ backup format, automatic link forwarding, or new connection permission.
 
 `apps/server/src/migration/connection-history.ts` implements the shared
 `hail.connection-history` version-3 checkpoint domain. New exports embed it in
-portable snapshot **v9** and managed snapshot **v10**, with a deterministic
+portable snapshot **v11** and managed snapshot **v12**, with a deterministic
 `connectionCheckpointDigest`. Both carry the source serving generation. Snapshot
 signatures use RFC 9995 COSE with distinct protected portable-v7 / managed-v8
 preimage content types; managed

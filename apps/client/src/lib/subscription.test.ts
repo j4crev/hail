@@ -5,14 +5,14 @@ const payload = {grant_id: "current", grantor: "owner", grantee: "sender", statu
   expires_at: null, scope: [{type: "categories", values: ["general", "news"]}], consent_context: {grantee_address: "sender@example.com"}};
 function client(pages: unknown[], override = {}) {
   const request = vi.fn(); for (const page of pages) request.mockResolvedValueOnce(page);
-  return {request, grant: vi.fn().mockResolvedValue({localRole: "grantor", digest: "digest", payload: {...payload, ...override}})};
+  return {request,jmap:request, grant: vi.fn().mockResolvedValue({localRole: "grantor", digest: "digest", payload: {...payload, ...override}})};
 }
 it("finds the current sender subscription across pages, ignoring unrelated and received Grants", async () => {
   const api = client([{grants: [{grantId: "unrelated", localRole: "grantor", grantee: "other", status: "active"},
     {grantId: "received", localRole: "grantee", grantee: "sender", status: "active"}], next: "cursor"},
     {grants: [{grantId: "current", localRole: "grantor", grantee: "sender", status: "active"}], next: null}]);
   expect(await senderSubscription(api as never, "owner", "sender")).toMatchObject({grantId: "current", revision: 3, scope: payload.scope[0]});
-  expect(api.request).toHaveBeenLastCalledWith("/grants?sender=sender&after=cursor");
+  expect(api.request).toHaveBeenLastCalledWith("HailGrant/list",{sender:"sender",after:"cursor"});
   expect(api.grant).toHaveBeenCalledExactlyOnceWith("current");
 });
 it("does not offer expired or unsubscribed permissions", async () => {

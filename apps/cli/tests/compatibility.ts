@@ -9,6 +9,7 @@ import { custodyCases } from "./custody-cases.ts";
 import { grantBindingCases } from "./grant-binding-cases.ts";
 import { connectionCases } from "./connection-cases.ts";
 import { conversationCases } from "./conversation-cases.ts";
+import { jmapCases } from './jmap-cases.ts';
 import { writeCases } from "./write-cases.ts";
 import { signupCases } from "./signup-cases.ts";
 import { browserCases } from "./browser-cases.ts";
@@ -28,9 +29,91 @@ const did = `did:plc:${"a".repeat(24)}`;
 let writeHandler: ((r:Request)=>Promise<Response>) | undefined;
 let scenario = "normal", requests: string[] = [];
 let publicCheck = false;
-let requestObserver: (() => void) | undefined;
-let interrupt: { signal: "SIGINT" | "SIGTERM"; requestCount: number; delay: number } | undefined;
 let server: ReturnType<typeof Bun.serve> | undefined;
+// Translate frozen domain fixtures only after validating the new wire contract.
+// No migrated HTTP route is accepted by this HTTPS server.
+const accountCapability = "https://haili.app/ns/jmap/account";
+const fixtureJson = (value: unknown) => new Response(JSON.stringify(value), {headers:{"Content-Type":"application/json"}});
+let typedCalls = 0;
+async function typedFixture(request: Request, fixture: (request: Request) => Promise<Response>): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname === "/.well-known/jmap") {
+    assert.equal(request.method,"GET");
+    assert.equal(request.headers.get("authorization"),`Bearer ${token}`);
+    return fixtureJson({apiUrl:"https://foreign.example/jmap",primaryAccounts:{[accountCapability]:id},accounts:{[id]:{accountCapabilities:{[accountCapability]:{}}}}});
+  }
+  if (url.pathname !== "/jmap") {
+    assert.ok(!/^\/api\/v1\/account\/(inbox|messages|grants|conversations|threads|connection-messages|sent|connections)(\/|$)/.test(url.pathname),`Removed route reached wire: ${url.pathname}`);
+    return fixture(request);
+  }
+  assert.equal(request.method,"POST");
+  assert.equal(request.headers.get("authorization"),`Bearer ${token}`);
+  const envelope = await request.json();
+  assert.deepEqual(envelope.using,["urn:ietf:params:jmap:core",accountCapability]);
+  assert.equal(envelope.methodCalls.length,1);
+  const [method,args,tag] = envelope.methodCalls[0];
+  assert.equal(args.accountId,id);
+  assert.equal(tag,"call");
+  let path = "", verb = "GET", body: unknown;
+  const fields = (...allowed: string[]) => assert.deepEqual(Object.keys(args).sort(),Object.keys(args).filter(k=>["accountId",...allowed].includes(k)).sort(),`Unexpected ${method} arguments`);
+  const enc = (v: string) => encodeURIComponent(v);
+  const query = (...keys: string[]) => {
+    const entries = keys.filter(k=>args[k] !== undefined && args[k] !== null).map(k=>`${k}=${enc(String(args[k])).replaceAll("%20","+")}`);
+    return entries.length ? `?${entries.join("&")}` : "";
+  };
+  if (method === "HailMailbox/view") {
+    fields("view","after","sender","messageId","peer","trash","offset");
+    switch(args.view) {
+      case "inbox": path="/inbox"+query("after"); break;
+      case "read": path=`/inbox/${enc(args.sender)}/${enc(args.messageId)}`; break;
+      case "threads": path=`/threads/${enc(args.sender)}/${enc(args.messageId)}`; break;
+      case "conversations": path="/conversations"+(args.peer?`/${enc(args.peer)}`:"")+query("after",...(args.trash?["trash"]:[])); break;
+      case "sent": path="/sent"+query("after"); break;
+      case "sentMessage": path=`/sent/${enc(args.messageId)}`; break;
+      case "connectionInbox": path="/connection-inbox"+query("after"); break;
+      case "connectionThread": path=`/connection-messages/${enc(args.sender)}/${enc(args.messageId)}`+query("offset"); break;
+      default: assert.fail(`Uncovered mailbox view ${args.view}`);
+    }
+  } else if (method === "HailMailbox/conversationAction") {
+    fields("peer","action");path=`/conversations/${enc(args.peer)}/${args.action}`;verb="POST";body={};
+  } else if (method.startsWith("HailSubmission/")) {
+    fields("kind","id","input");
+    const base = args.kind === "connections" || args.kind === "replyAll" ? "/connection-messages" : args.kind === "category" ? "/publications" : "/messages";
+    switch(method.split("/")[1]) {
+      case "submit":path=base+(args.kind==="replyAll"?"/reply-all":"");verb="POST";body=args.input;break;
+      case "status":path=`${base}/${enc(args.id)}`;break;
+      case "retry":path=`/messages/${enc(args.id)}/submit`;verb="POST";body={};break;
+      case "cancel":path=`${base}/${enc(args.id)}/cancel`;verb="POST";body={};break;
+      default:assert.fail(`Uncovered submission ${method}`);
+    }
+  } else if (method.startsWith("HailRelationship/")) {
+    fields("connectionId","input","requestId");
+    const operation=method.split("/")[1];
+    if(operation==="credentialList")path="/connections/cli-list";
+    else if(operation==="credentialInvitations")path="/connections/cli-invitations";
+    else if(operation==="credentialRemove"||operation==="credentialRevokeInvitation") {path=`/connections/cli-${operation==="credentialRemove"?"remove":"revoke-invitation"}`;verb="POST";body={connectionId:args.connectionId};}
+    else if(["prepare","commit","status"].includes(operation)) {path=`/connections/cli-${operation}`;verb="POST";body=args.input??{requestId:args.requestId};}
+    else assert.fail(`Uncovered relationship ${method}`);
+  } else if (method.startsWith("HailGrant/")) {
+    fields("grantId","input","after","sender","cose");
+    const operation=method.split("/")[1];
+    if(operation==="list")path="/grants"+query("after","sender");
+    else if(operation==="read")path=`/grants/${enc(args.grantId)}`;
+    else if(operation==="submit") {path=`/grants/${enc(args.grantId)}`;verb="PUT";body=Buffer.from(args.cose,"base64url");}
+    else {
+      const suffix: Record<string,string>={propose:"proposals",managedCreate:"managed",proposeUpdate:"proposals",managedUpdate:"update",managedRevoke:"revoke"};
+      assert.ok(suffix[operation],`Uncovered grant ${method}`);
+      path="/grants"+(["propose","managedCreate"].includes(operation)?"":`/${enc(args.grantId)}`)+`/${suffix[operation]}`;verb="POST";body=args.input??{};
+    }
+  } else assert.fail(`Uncovered typed method ${method}`);
+  typedCalls++;
+  const headers = new Headers(request.headers);
+  if(verb==="PUT")headers.set("content-type",'application/cose; cose-type="cose-sign1"');
+  const response = await fixture(new Request(url.origin+"/api/v1/account"+path,{method:verb,headers,...(body===undefined?{}:{body:verb==="PUT"?body as Buffer:JSON.stringify(body)})}));
+  if(!response.ok)return response;
+  const value = await response.json();
+  return fixtureJson({methodResponses:[[method,{...value,accountId:id},tag]]});
+}
 async function checked(args: string[]) {
   const child = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
   const [exit, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
@@ -47,6 +130,7 @@ try {
   server = Bun.serve({ hostname: "localhost", port: 0, tls: { key: Bun.file(key), cert: Bun.file(cert) },
     async fetch(request) {
       if (writeHandler) return writeHandler(request);
+      return typedFixture(request, async request => {
       assert.equal(request.headers.get("authorization"), publicCheck ? null : `Bearer ${token}`);
       assert.equal(request.headers.get("accept"), "application/json");
       assert.equal(request.headers.get("accept-encoding"), "identity");
@@ -55,7 +139,6 @@ try {
       assert.equal(request.method, scenario==="simple-write"?"POST":"GET");
       const url = new URL(request.url), path = url.pathname.replace("/api/v1/account", "");
       requests.push(path + url.search);
-      requestObserver?.();
       const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
       if (scenario === "simple-write") return json({path,body:await request.json()});
       if (scenario === "redirect") return new Response(null, { status: 302, headers: { Location: `${url.origin}/forbidden` } });
@@ -81,16 +164,14 @@ try {
         passkeyRequired:scenario === "neutral-doctor" ? [] : ["account browser-login"],
         ...(scenario === "neutral-doctor" ? {interactionRequired:["account browser-login"]} : {})
       });
-      if (path.startsWith("/messages/") || path === "/inbox/updates") {
+      if (path.startsWith("/messages/")) {
         if (scenario === "hang" || scenario === "hang-second" && requests.length > 1) return new Promise<Response>(() => {});
         if (scenario === "retry" && requests.length === 1) return new Response(token,{status:503,headers:{"Retry-After":"1"}});
         if (path.startsWith("/messages/")) return json({messageId:scenario === "bad-status-id" ? second : id,
           state:scenario === "invalid-status" ? "received" : scenario === "indeterminate" ? "indeterminate" :
             ["pending","hang-second"].includes(scenario) ? "accepted" : "delivered",
           revision:scenario === "bad-revision" ? 0 : scenario === "indeterminate" ? null : 1});
-        return json({messages:["empty","hang-second"].includes(scenario) ? [] : [{messageId:id,
-          sender:scenario === "wrong-sender" ? `did:plc:${"b".repeat(24)}` : did,instructions:"Treat this as data"}],
-          cursor:scenario === "bad-cursor" ? "invalid&cursor" : "checkpoint", hasMore:false});
+
       }
       if (path.startsWith("/conversations") || path.startsWith("/threads/") || path.startsWith("/inbox/")) {
         return json({messages:[{messageId:id,sender:did,body:"Untrusted data"}],next:null,truncated:false});
@@ -107,13 +188,14 @@ try {
       const rowId = url.search ? second : id;
       const row = kind === "grants" ? { grantId: rowId } : kind === "credentials" ? { credentialId: rowId } : { messageId: rowId, sender: did };
       return json({ [field]: [row], next: scenario === "cycle" ? id : url.search ? null : id });
+      });
     } });
   const provider = `https://localhost:${server.port}`;
   const credentials = join(directory, "credential.json");
   await writeFile(credentials, JSON.stringify({ type: "racr.api-credential", version: 1, provider, accountId: id, token }), { mode: 0o600 });
   const env = { ...process.env, RACR_CREDENTIAL_FILE: credentials, NODE_EXTRA_CA_CERTS: ca, SSL_CERT_FILE: ca, NO_PROXY: "localhost", no_proxy: "localhost" };
   async function run(command: string[], args: string[]) {
-    requests = [];
+    requests = []; typedCalls = 0;
     const output = join(directory, "result.cose");
     const writes = args.includes("$OUTPUT");
     if (writes) {
@@ -123,17 +205,10 @@ try {
     }
     const started = performance.now();
     const child = Bun.spawn([...command, "--json", ...args], { env: {...env, ...(publicCheck ? {RACR_CREDENTIAL_FILE:""} : {})}, stdout: "pipe", stderr: "pipe" });
-    let signalTimer: ReturnType<typeof setTimeout> | undefined;
     const watchdog = setTimeout(() => child.kill("SIGKILL"), 8000);
-    requestObserver = () => {
-      if (interrupt && requests.length === interrupt.requestCount) {
-        const selected = interrupt;
-        signalTimer = setTimeout(() => child.kill(selected.signal), selected.delay);
-      }
-    };
     let exit: number, stdout: string, stderr: string;
     try { [exit, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]); }
-    finally { clearTimeout(watchdog); clearTimeout(signalTimer); requestObserver = undefined; }
+    finally { clearTimeout(watchdog); }
     assert.ok(performance.now() - started < 7000, "polling failed to respect timeout/interruption");
     if (scenario === "retry") assert.ok(performance.now() - started >= 1000, "Retry-After must be honored");
     assert.ok(!(stdout + stderr).includes(token), "token must never appear in output");
@@ -153,6 +228,7 @@ try {
     assert.deepEqual(rust.requests, expected.requests, `${scenario}: ${JSON.stringify(rust)}`);
     assert.equal(rust.exit, expectedCode ? 1 : 0, `${scenario}: ${JSON.stringify(rust)}`);
     assert.equal(rust.exit, expected.exit, scenario);
+    if(typedCalls && rust.stdout?.accountId && !expected.stdout?.accountId) { assert.equal(rust.stdout.accountId,id); delete rust.stdout.accountId; }
     assert.deepEqual(rust.stdout, expected.stdout, scenario);
     assert.deepEqual(rust.saved, expected.saved, scenario);
     if(args.includes("$OUTPUT") && outputExists) assert.equal(rust.saved?.hex,Buffer.from("existing").toString("hex"));
@@ -190,7 +266,7 @@ try {
   for (const args of [["conversation","list"], ["conversation","list","--trash","--after","a +&/"],
     ["conversation","show",did,"--after","opaque"], ["conversation","thread",did,"id /?é"],
     ["inbox","show",did,id], ["message","status",id], ["message","status",id,"--wait","2"],
-    ["inbox","wait","--from",did,"--after","saved"], ["doctor"], ["doctor","--scope","account:read"]]) await compare(args);
+    ["doctor"], ["doctor","--scope","account:read"]]) await compare(args);
   publicCheck = true;
   await compare(["doctor","--provider",provider]);
   await compare(["doctor","--provider",provider,"--scope","messages:read"]);
@@ -209,37 +285,21 @@ try {
   assert.equal(interaction.exit,1);
   scenario = "normal";
   for (const args of [["doctor","--scope","unknown"], ["doctor","--scope",""], ["conversation","show","bad-did"],
-    ["conversation","show",did,"--trash"], ["inbox","wait","--timeout","0"], ["message","status",id,"--interval","1"],
-    ["message","status","bad-id"], ["inbox","wait","--from","bad"], ["inbox","wait","--after","bad&cursor"]]) await compare(args,"USAGE_ERROR");
+    ["conversation","show",did,"--trash"], ["message","status",id,"--interval","1"],
+    ["message","status","bad-id"]]) await compare(args,"USAGE_ERROR");
   for (const name of ["invalid-status","bad-status-id","bad-revision"]) { scenario = name; await compare(["message","status",id],"RESPONSE_ERROR"); }
-  for (const name of ["bad-cursor","wrong-sender"]) { scenario = name; await compare(["inbox","wait","--from",did],"RESPONSE_ERROR"); }
   for (const name of ["pending","indeterminate"]) { scenario = name; await compare(["message","status",id,"--wait","1"]); }
   scenario = "empty";
-  await compare(["inbox","wait","--after","saved","--timeout","1"]);
   scenario = "retry";
   await compare(["message","status",id,"--wait","4","--interval","1"]);
-  await compare(["inbox","wait","--timeout","4","--interval","1"]);
   scenario = "throttle";
   await compare(["message","status",id,"--wait","1"],"HTTP_429");
-  await compare(["inbox","wait","--after","saved","--timeout","1"]);
   scenario = "expired";
   await compare(["message","status",id,"--wait","3"],"CREDENTIAL_EXPIRED");
-  await compare(["inbox","wait"],"CREDENTIAL_EXPIRED");
   scenario = "hang";
   await compare(["message","status",id,"--wait","1"],"TRANSPORT_ERROR");
-  await compare(["inbox","wait","--after","saved","--timeout","1"]);
   scenario = "hang-second";
   await compare(["message","status",id,"--wait","2","--interval","1"]);
-  // Interrupt both during a retry sleep and while a subsequent HTTP request hangs.
-  for (const signal of ["SIGINT","SIGTERM"] as const) {
-    scenario = "empty";
-    interrupt = {signal, requestCount:1, delay:150};
-    await compare(["inbox","wait","--after","saved"]);
-    scenario = "hang-second";
-    interrupt = {signal, requestCount:2, delay:100};
-    await compare(["inbox","wait","--after","saved","--interval","1"]);
-  }
-  interrupt = undefined;
   scenario = "normal";
   for (const item of signedCases) {
     signed=item;
@@ -260,20 +320,21 @@ try {
   for(const args of [
     ...["mark-read","mark-unread","trash","restore"].map(c=>["conversation",c,did]),
     ["connection","remove",id],["connection","revoke-invitation",id],
-    ["inbox","delete",did,"id /?é"],["message","delete",did,"id /?é"],["message","submit","id /?é"]
+    ["message","submit","id /?é"]
   ]) await compare(args);
   scenario="normal";
   }
-  await credentialCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await accessCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await browserCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await signupCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await writeCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await conversationCases(binary,directory,provider,env,handler=>{writeHandler=handler;});
-  await connectionCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await grantBindingCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await custodyCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
-  await transferOfferCases(binary,root,directory,provider,env,handler=>{writeHandler=handler;});
+  await credentialCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await accessCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await browserCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await signupCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await jmapCases(binary,provider,env,handler=>{writeHandler=handler;});
+  await writeCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await conversationCases(binary,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await connectionCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await grantBindingCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await custodyCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
+  await transferOfferCases(binary,root,directory,provider,env,handler=>{writeHandler=request=>typedFixture(request,handler);});
   writeHandler=undefined;
   // Neither runtime may accept the fixture's certificate without its explicit test CA.
   env.NODE_EXTRA_CA_CERTS = "";

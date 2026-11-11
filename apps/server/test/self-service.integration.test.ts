@@ -21,6 +21,7 @@ import {ActivationService} from "../src/onboarding/activation.js";
 import {AccountApiRepository,tokenHash} from "../src/accounts/repository.js";
 import {GrantRepository} from "../src/grants/repository.js";
 import {GrantService} from "../src/grants/service.js";
+import {JmapMessages} from "../src/jmap/messages.js";
 import {createApp} from "../src/app.js";
 import {PlcHailDidResolver} from "../src/plc/resolver.js";
 import type {PlcDirectoryClient} from "../src/plc/client.js";
@@ -81,7 +82,7 @@ integration("self-service custody profiles and credentials",()=>{
         plcEvidence:resolved.evidence,verifiedAt:new Date(),binding:inspectSignedPayload("hail.address-binding",binding.cose).payload,representation:binding.cose,digest:binding.digest};}},
       {async verify(){return verifiedProfile!;}},base);
     const binding=new AccountBinding(db.sql,resolver,encryptor,origin,addressVerifier,async()=>{throw new Error("Native publication must not query delegation DNS");});
-    const app=createApp({publicOrigin:origin,hailServiceBase:base,providerId:"test"} as AppConfig,{accountApi:{accounts,grants,service,binding},discoveryStore:repository,
+    const app=createApp({publicOrigin:origin,hailServiceBase:base,providerId:"test"} as AppConfig,{jmap:new JmapMessages(db.sql,origin),accountApi:{accounts,grants,service,binding},discoveryStore:repository,
       selfServiceOnboarding:{sql:db.sql,onboarding,activation,provider:origin,invitationKey},async checkReadiness(){return {ready:true};}});
     vi.stubGlobal("fetch",(input:RequestInfo|URL,init?:RequestInit)=>app.fetch(input instanceof Request?input:new Request(String(input),init)));
     const paths={vault:join(directory,"vault.json"),state:join(directory,"state.json"),credential:join(directory,"credential.json"),
@@ -118,9 +119,9 @@ integration("self-service custody profiles and credentials",()=>{
         const request={sender:peerAccount.canonicalAddress,category:"updates",expiresAt:null};
         const grant=await createGrant(client,request.sender,request.category,"",join(directory,"managed.cose"),null);
         expect((await createGrant(client,request.sender,request.category,"",join(directory,"managed.cose"),null)).grantId).toBe(grant.grantId);
-        expect((await client.request("/grants/managed",request)).grantId).toBe(grant.grantId);
-        expect((await client.request(`/grants/${grant.grantId}/revoke`,{})).status).toBe("revoked");
-        expect((await client.request(`/grants/${grant.grantId}/revoke`,{})).revision).toBe(2);
+        expect((await client.jmap("HailGrant/managedCreate",{input:request})).grantId).toBe(grant.grantId);
+        expect((await client.jmap("HailGrant/managedRevoke",{grantId:grant.grantId})).status).toBe("revoked");
+        expect((await client.jmap("HailGrant/managedRevoke",{grantId:grant.grantId})).revision).toBe(2);
         expect(await db.sql`SELECT revision FROM grant_revisions WHERE grant_id=${grant.grantId as string}`).toHaveLength(2);
       }
       const state=JSON.parse(await readFile(paths.state,"utf8"));

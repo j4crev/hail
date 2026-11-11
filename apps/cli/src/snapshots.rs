@@ -1,7 +1,7 @@
 use crate::contract::Error;
 use crate::{api::Client, cli::Args, codec, crypto, private, transfers as t};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use serde_json::{json, Value};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde_json::{Value, json};
 pub fn signed(tag: &str, payload: &[u8], signature: &[u8], key: &str) -> Result<(), Error> {
     crypto::ed_public(key)?;
     let mut input = format!("{tag}\0").into_bytes();
@@ -23,7 +23,7 @@ pub fn verify(snapshot: &Value, managed: bool) -> Result<Value, Error> {
             "version",
         ],
     )?;
-    let versions = if managed { vec![10] } else { vec![9] };
+    let versions = if managed { vec![12] } else { vec![11] };
     if snapshot["type"]
         != if managed {
             "hail.managed-migration-transfer"
@@ -135,8 +135,7 @@ pub fn matches(s: &Value, m: &Value, o: &Value, managed: bool) -> Result<(), Err
                 || m["sourceIdentityPublicKey"] != s["sourceIdentityKey"]
                 || m["destinationIdentityPublicKey"] != o["destination_identity_key"]
         } else {
-            m["custodyProfile"] != "portable"
-                || !matches!(m["version"].as_i64(), Some(9))
+            m["custodyProfile"] != "portable" || !matches!(m["version"].as_i64(), Some(11))
         }
     {
         return Err(t::invalid());

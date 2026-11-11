@@ -10,37 +10,30 @@ export interface ConnectionSnapshot {
   tables:{sent_envelopes:Row[];received_envelopes:Row[]};
 }
 export function validateSnapshotConnections(manifest:ConnectionSnapshot):void {
-  const extended=[5,6,9,10].includes(manifest.version);
-  if(!extended){
-    if(Object.hasOwn(manifest,"connections")||Object.hasOwn(manifest,"connectionCheckpointDigest"))throw new Error("Legacy snapshot cannot carry connection history");
-  }else{
+  if(![11,12].includes(manifest.version))throw new Error("Superseded snapshot version");
     if(!manifest.connections||typeof manifest.sourceGeneration!=="number"||!Number.isSafeInteger(manifest.sourceGeneration)||manifest.sourceGeneration<1)throw new Error("Snapshot connection history or generation is missing");
     const history=validateConnectionHistory(new TextEncoder().encode(JSON.stringify(manifest.connections)),{
       accountId:manifest.accountId,did:manifest.did,sourceGeneration:manifest.sourceGeneration,sourceServiceBase:manifest.sourceServiceBase,
     });
     if(history.capturedAt!==manifest.capturedAt||encodeBase64Url(connectionHistoryDigest(history))!==manifest.connectionCheckpointDigest)
       throw new Error("Snapshot connection checkpoint differs from retained history");
-  }
-  const shared=manifest.version===9||manifest.version===10;
-  if(shared){
+
     if(!manifest.conversations)throw Error('Conversation checkpoint is missing');
     validateConversationHistory(manifest.conversations,{accountId:manifest.accountId,did:manifest.did,sourceGeneration:manifest.sourceGeneration!,sourceServiceBase:manifest.sourceServiceBase},manifest.capturedAt);
     if(encodeBase64Url(conversationHistoryDigest(manifest.conversations))!==manifest.conversationCheckpointDigest)throw Error('Conversation checkpoint differs');
-  }else if(Object.hasOwn(manifest,'conversations')||Object.hasOwn(manifest,'conversationCheckpointDigest'))throw Error('Legacy snapshot cannot carry conversation state');
   const sent=new Map(manifest.tables.sent_envelopes.map(r=>[r.message_id,r]));
   for(const row of [...manifest.tables.sent_envelopes,...manifest.tables.received_envelopes]){
     if(typeof row.envelope_cose!=="string"||!/^\\x(?:[0-9a-f]{2})+$/i.test(row.envelope_cose))throw new Error("Snapshot envelope bytes are invalid");
     const payload=inspectSignedPayload("hail.envelope",new Uint8Array(Buffer.from(row.envelope_cose.slice(2),"hex"))).payload;
     if(payload.authorization.type==='conversation'){
       const a=payload.authorization;
-      if(!shared||row.authorization_type!=='conversation'||row.conversation_creator!==a.creator||row.conversation_id!==a.conversation_id||
+      if(row.authorization_type!=='conversation'||row.conversation_creator!==a.creator||row.conversation_id!==a.conversation_id||
         row.conversation_message_id!==payload.conversation_message_id||row.conversation_descriptor_hash!=='\\x'+Buffer.from(a.descriptor_hash.value).toString('hex')||
         !manifest.conversations?.tables.conversation_descriptors.some(d=>d.creator_did===a.creator&&d.conversation_id===a.conversation_id&&d.descriptor_hash===row.conversation_descriptor_hash))throw Error('Snapshot conversation envelope lost its authority binding');
       continue;
     }
     if(row.authorization_type==='conversation')throw Error('Conversation metadata differs from signed envelope');
     if(payload.authorization.type!=="connection")continue;
-    if(!extended)throw new Error("Connection envelopes require a connection-history snapshot version");
     if(row.authorization_type!=="connection"||row.connection_id!==payload.authorization.connection_id||Number(row.connection_epoch)!==payload.authorization.epoch)
       throw new Error("Snapshot envelope connection metadata differs from signed authorization");
   }

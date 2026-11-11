@@ -17,7 +17,7 @@
   const name=(draft:Draft)=>draft.content.audience==='category'?draft.content.category||'Subscribers':draft.content.connections.length?`${draft.content.connections.length} connection(s)`:'No recipients yet';
   async function act(){
     busy=true;status='';
-    try{if(!trash){const settings=await mailboxRequest('message-preferences');trashEnabled=settings.trashEnabled!==false;if(!trashEnabled&&!confirm('Permanently delete the selected drafts? Trash is disabled.'))return;}
+    try{if(!trash){const settings=await mailboxRequest('HailMailbox/view',{view:'settings'});trashEnabled=settings.trashEnabled!==false;if(!trashEnabled&&!confirm('Permanently delete the selected drafts? Trash is disabled.'))return;}
       for(const id of selected)await mutateDraft(id,trash,trashEnabled);selected=[];await invalidateAll();status=trash?'Restored to Drafts.':trashEnabled?'Moved to Trash.':'Drafts deleted.';}
     catch(e){status=e instanceof Error?e.message:'Unable to update drafts.';}finally{busy=false;}
   }
