@@ -208,6 +208,14 @@ address, it is the address the converter read, and a DKIM signature verifies
 for that address's domain or its registrable domain. A lookup failure or any
 other outcome is `none`.
 
+The reference converter resolves DKIM TXT records over TCP using the system's
+configured recursive DNS servers. This avoids Bun's TXT lookup flattening the
+character strings of one record into separate records. Strings are concatenated
+only within a record, never across distinct records. Lookups follow at most eight
+names in a CNAME chain, share a ten-second deadline, and try up to three configured
+servers with at most two seconds per exchange. This is reference-provider lookup
+policy; it does not change the protocol's authentication requirements.
+
 ### Delivery
 
 The provider delivers each converted body as an ordinary Grant-authorized hail
