@@ -388,15 +388,18 @@ limits and new formats become a change to that one object.
   and cap remote fetches per message. A repeated image is fetched once.
 - [x] Tests for unsupported, oversized, malformed, unavailable and failing
   images, and for each budget.
-- [ ] Implement the fetcher the converter container injects, on the existing
-  safe-fetch path (`apps/server/src/discovery/safe-fetch.ts`): HTTPS only, no
-  private addresses, no credentials, bounded size, time and redirects.
-- [ ] Tests for slow, redirecting and private-address image URLs against that
-  fetcher.
-- [ ] Bound total fetch time per message.
+- [x] Implement the fetcher the converter injects
+  (`apps/server/src/bridge/image-fetcher.ts`) on a new image mode of the safe
+  transport: HTTPS on port 443, public addresses only, no credentials, bounded
+  size, at most three redirects and 15 seconds per image.
+- [x] Tests for redirects, non-HTTPS redirects, redirect loops, oversized and
+  mis-declared responses, and transport refusals.
+- [ ] Bound total fetch time per message. Today it is bounded only by 48
+  fetches of 15 seconds each.
 - [x] Admit JPEG, validated by the codec.
-- [ ] The fetcher must send a browser-style `User-Agent` and an `Accept` header
-  naming only PNG and JPEG (see D4).
+- [x] The fetcher sends a `User-Agent` naming the bridge and an `Accept`
+  header naming only PNG and JPEG (see D4). Not re-measured against the corpus
+  with that exact `User-Agent`.
 
 ### Phase 4: aliases and intake
 
@@ -427,12 +430,14 @@ enabling intake would accept mail that is never delivered.
 - [ ] Enforce a per-account storage ceiling for delivered bridged content.
 - [ ] Make the intake and alias limits configurable; they are constants today.
 - [ ] Clean up content-free intake records after a retention period.
-- [ ] Verify DKIM from the raw message and record the result in `origin`.
+- [x] Verify DKIM from the raw message and record the result in `origin`
+  (`mailauth` 8.0.4, in the converter only). Tested with locally signed
+  messages; the corpus cannot test it because its export altered every body.
 - [ ] Never generate a bounce or any outbound email. Refusal happens only as an
   SMTP-time rejection by the ingress adapter.
-- [ ] Worker for the durable queue between intake and conversion, with bounded
-  retries and a dead-letter state visible to the operator. The queue table and
-  its states exist; nothing consumes it yet. The queue is the only interface
+- [x] Converter worker for the queue (`apps/server/src/bridge/converter.ts`),
+  with leases, bounded retries and a `dead` state carrying a failure reason.
+- [ ] Make `dead` records and their reasons visible to the operator. The queue is the only interface
   between the provider and the converter container (D7).
 - [ ] Provider revalidates every converted body with the codec and the D4
   limits before signing; a rejected result goes to dead-letter.
@@ -441,17 +446,21 @@ enabling intake would accept mail that is never delivered.
 
 ### Phase 5: bridge identity and delivery
 
-- [ ] Create the bridge account, DID, address binding and Sender Profile with a
-  single category.
-- [ ] Add a single-recipient, Grant-authorized send path for the bridge account.
-  `AccountPublications` currently fans one body out to category subscribers;
-  the bridge sends a different body to exactly one grantee.
-- [ ] Deliver only when the recipient has an active Grant to the bridge; hold or
-  drop otherwise, without revealing Grant state to the email sender.
-- [ ] Confirm collocated delivery (bridge and recipient on the same provider)
-  takes the normal acceptance path and writes normal evidence.
-- [ ] End-to-end integration test: raw message in, Feed item out, with exact
-  envelope and body bytes retrievable through JMAP.
+The bridge account is an ordinary local account the operator creates and
+names in `EMAIL_BRIDGE_SENDER`; see the operator setup in
+[spec/email-bridge.md](../spec/email-bridge.md#operator-setup).
+
+- [x] Add a single-recipient, Grant-authorized send path for relay services
+  (`AccountMessaging.sendRelayed`). Unlike the account API it accepts a body
+  with an origin; nothing outside the provider can reach it.
+- [x] Deliver only when the recipient has an active Grant to the bridge for its
+  category; otherwise abandon. The email sender learns nothing either way.
+- [x] Revalidate the converter's output before signing.
+- [x] Integration tests from queued message to signed envelope, including
+  missing Grants, other categories, paused aliases, forged bodies, lost
+  submissions and a missing bridge account.
+- [ ] Integration test through collocated acceptance to a Feed item readable
+  over JMAP. The delivery tests stop at submission.
 
 ### Phase 6: account API and web client
 
@@ -490,15 +499,16 @@ enabling intake would accept mail that is never delivered.
   unavailable; neither accepts mail it cannot hand over or sends a bounce.
 - [ ] No Cloudflare-specific name, header or format appears in `apps/server/src`
   or `packages/hail-email-bridge`; check this in review.
-- [ ] Converter entry point in `apps/server` that works the conversion queue
-  and exits cleanly on shutdown; it loads no messaging or identity keys.
-- [ ] Add the converter service to the public and standalone Compose files,
-  using the same provider image reference, with a memory limit, read-only
-  filesystem, no published ports, and outbound network access for image fetches
-  only.
-- [ ] Dedicated database role for the converter, granted only the conversion
-  queue and result tables; integration test proves it cannot read messages,
-  keys or account tables.
+- [x] Converter entry point (`src/cli/email-bridge-converter.ts`) that works the
+  queue and stops on SIGTERM. It loads no keys and refuses the provider's role.
+- [x] Converter service in the standalone Compose file, behind the
+  `email-bridge` profile: same image, 512 MiB limit, read-only, no ports, on the
+  storage network plus an outbound-only network.
+- [ ] The same for the public Compose file, after checking the installed
+  `hail-provider-ops` wrapper (next item).
+- [x] Database role script (`deploy/email-bridge/converter-role.sql`);
+  integration test proves the role can convert but cannot read accounts, keys,
+  aliases or messages, or insert or delete queue rows.
 - [ ] Confirm the installed `hail-provider-ops` wrapper restarts and verifies
   the converter with the provider image. If the wrapper needs changing, that is
   a separate reviewed installation, per the release rules.
