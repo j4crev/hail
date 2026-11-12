@@ -585,3 +585,30 @@ empty-Feed prompt.
   raises the cost of running any conforming provider, not only this one.
 - **Image fetching is observable.** Fetching at ingest tells the sender that the
   alias is live and when mail arrived. It does not reveal opens.
+
+## First production run (2026-11-12)
+
+The bridge received its first real newsletter on haili.app. Fixes from that run:
+
+- The Cloudflare Worker used `fetch` with `redirect: "error"`, which the Workers
+  runtime rejects with a `TypeError`, so nothing reached the provider; mail was
+  held in R2 meanwhile. It now uses `"manual"`, and its tests reject `"error"`
+  the way the runtime does. Workers Logs is enabled and hand-off failures log a
+  reason.
+- A `crew@syntax.fm` newsletter showed as unverified although the domain's DMARC
+  policy (`p=quarantine`) requires aligned DKIM. The cause is not yet known; the
+  converter now records each signature's domain and result in the intake
+  record's `diagnostics.dkim`, and logs check failures, to find it.
+- The Inbound email setting reflects the user's own Grant, so it shows on as
+  soon as the passkey confirmation completes.
+- An open message kept showing "Updates available": its own read-marking, any
+  cache change and the layout's 30-second count reload all looked like changes.
+  Deferred mailbox views now compare only their own content, adopt their own
+  read-marking, and ignore layout-only reloads. The message view no longer has a
+  manual refresh button.
+- The alias list shows only name and address, with an `@` icon avatar.
+
+- [ ] Find why `syntax.fm` mail was not verified, using `diagnostics.dkim`.
+- [ ] Log the underlying reason when provider signup preparation fails; it
+  currently returns a bare 409 and logs nothing.
+
