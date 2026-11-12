@@ -1,3 +1,4 @@
+import { EmailBridgeDelivery } from "./bridge/delivery.js";
 import { EmailBridgeIntake } from "./bridge/intake.js";
 import {JmapPush} from './jmap/push.js';
 import {EVENT_TYPES} from './jmap/events.js';
@@ -225,6 +226,17 @@ setInterval(async () => {
     publicationRunning = false;
   }
 }, 5_000);
+
+if(config.emailBridge){
+  const bridgeDelivery=new EmailBridgeDelivery(database.sql,messaging,{address:config.emailBridge.senderAddress,category:config.emailBridge.category});
+  let bridgeRunning=false;
+  setInterval(async()=>{
+    if(bridgeRunning)return;bridgeRunning=true;
+    try{await withFreshServingGenerations(database.sql,async()=>{for(let i=0;i<10&&await bridgeDelivery.workOne();i++);});}
+    catch(error){console.error(JSON.stringify({level:"error",message:"email bridge delivery failed",error:error instanceof Error?error.message:"unknown error"}));}
+    finally{bridgeRunning=false;}
+  },5_000);
+}
 
 let fanoutRunning=false;
 setInterval(async()=>{

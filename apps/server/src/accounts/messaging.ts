@@ -125,6 +125,29 @@ export class AccountMessaging {
     return this.submit(session.did,input.messageId);
   }
 
+  /**
+   * Grant delivery of an already-encoded body for a relay service that this
+   * provider operates, such as the email bridge. Unlike send(), it accepts a
+   * body stating a relayed origin; it is not reachable from the account API.
+   */
+  async sendRelayed(sender:string,input:{messageId:string;grantId:string;category:string;body:Uint8Array}){
+    if(!ID.test(input.messageId)||!ID.test(input.grantId)||!DID.test(sender))throw new UserGrantError(400,"Invalid relayed send");
+    validateBodyBytes(input.body);
+    const digest=new Uint8Array(createHash("sha256").update(input.body).digest());
+    let stored=await this.envelopes.sent(sender,input.messageId);
+    if(!stored){
+      await this.bodies.publish(sender,input.body);
+      try{await this.service.create(sender,input.grantId,encodeBase64Url(digest),input.category,null,input.messageId);}
+      catch(error){stored=await this.envelopes.sent(sender,input.messageId);if(!stored){
+        if(error instanceof EnvelopeAuthorizationError)throw new UserGrantError(409,error.message);throw error;}}
+      stored=await this.envelopes.sent(sender,input.messageId);
+    }
+    const payload=inspectSignedPayload("hail.envelope",stored!).payload;
+    if(payload.authorization.type!=="grant"||payload.authorization.grant_id!==input.grantId||payload.category!==input.category||payload.reply.allowed||
+      !Buffer.from(payload.body.digest.value).equals(Buffer.from(digest)))throw new UserGrantError(409,"Message ID has another request");
+    return this.submit(sender,input.messageId);
+  }
+
   ensureConversation(sender:string,id:string,participants:string[],transaction?:SQL){return this.service.ensureConversation(sender,id,participants,transaction);}
 
   async sendConversation(sender:string,input:{messageId:string;recipient:string;creator:string;conversationId:string;logicalId:string;body:Uint8Array;

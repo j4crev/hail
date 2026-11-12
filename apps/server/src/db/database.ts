@@ -263,6 +263,7 @@ const migrations: readonly Migration[] = [
   {version:119,name:"push-verification-feedback",url:new URL("../../migrations/0119_push_verification_feedback.sql",import.meta.url)},
   {version:120,name:"email-bridge",url:new URL("../../migrations/0120_email_bridge.sql",import.meta.url)},
   {version:121,name:"draft-content-limit",url:new URL("../../migrations/0121_draft_content_limit.sql",import.meta.url)},
+  {version:122,name:"email-bridge-delivery",url:new URL("../../migrations/0122_email_bridge_delivery.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

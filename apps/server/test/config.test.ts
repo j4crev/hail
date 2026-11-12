@@ -114,12 +114,15 @@ describe("loadConfig", () => {
 
   it("enables the email bridge only with a dedicated alias domain and an independent intake secret",()=>{
     expect(loadConfig(validEnvironment).emailBridge).toBeUndefined();
-    const bridge={EMAIL_BRIDGE_DOMAIN:"in.bridge.example",EMAIL_BRIDGE_INTAKE_TOKEN:"B".repeat(42)+"A"};
-    expect(loadConfig({...validEnvironment,...bridge}).emailBridge).toEqual({domain:bridge.EMAIL_BRIDGE_DOMAIN,intakeToken:bridge.EMAIL_BRIDGE_INTAKE_TOKEN});
+    const bridge={EMAIL_BRIDGE_DOMAIN:"in.bridge.example",EMAIL_BRIDGE_INTAKE_TOKEN:"B".repeat(42)+"A",EMAIL_BRIDGE_SENDER:"email@haili.example"};
+    expect(loadConfig({...validEnvironment,...bridge}).emailBridge).toEqual({domain:bridge.EMAIL_BRIDGE_DOMAIN,intakeToken:bridge.EMAIL_BRIDGE_INTAKE_TOKEN,
+      senderAddress:"email@haili.example",category:"email"});
+    expect(loadConfig({...validEnvironment,...bridge,EMAIL_BRIDGE_CATEGORY:"newsletters"}).emailBridge?.category).toBe("newsletters");
     const nativeDomain=loadConfig(validEnvironment).nativeAddressDomain!;
     for(const override of [{EMAIL_BRIDGE_DOMAIN:undefined},{EMAIL_BRIDGE_INTAKE_TOKEN:undefined},{EMAIL_BRIDGE_INTAKE_TOKEN:"short"},
       {EMAIL_BRIDGE_DOMAIN:"In.Bridge.Example"},{EMAIL_BRIDGE_DOMAIN:"localhost"},{EMAIL_BRIDGE_DOMAIN:"https://in.bridge.example"},
-      {EMAIL_BRIDGE_DOMAIN:nativeDomain},{EMAIL_BRIDGE_INTAKE_TOKEN:validEnvironment.KEY_ENCRYPTION_KEY}])
+      {EMAIL_BRIDGE_DOMAIN:nativeDomain},{EMAIL_BRIDGE_INTAKE_TOKEN:validEnvironment.KEY_ENCRYPTION_KEY},{EMAIL_BRIDGE_SENDER:undefined},
+      {EMAIL_BRIDGE_SENDER:"Email@haili.example"},{EMAIL_BRIDGE_SENDER:"alias@in.bridge.example"},{EMAIL_BRIDGE_CATEGORY:"Not A Category"}])
       expect(()=>loadConfig({...validEnvironment,...bridge,...override})).toThrow();
   });
 

@@ -4,9 +4,9 @@ Status: reference-provider policy, partly implemented. This is not a federation
 operation and no provider is required to offer it. The only protocol element it
 uses is the signed [relayed-origin](bodies.md#relayed-origin) body member.
 
-Implemented: aliases, the ingress contract below, and email-to-body conversion.
-Not yet implemented: the converter worker, the bridge's sender identity and
-delivery, the account API and client screens, and any ingress adapter. See the
+Implemented: aliases, the ingress contract, conversion, the converter worker,
+and delivery as the bridge's account. Not yet implemented: the account API and
+client screens for managing aliases, and any ingress adapter. See the
 [implementation plan](../agents/email-bridge-plan.md).
 
 ## Model
@@ -118,22 +118,87 @@ policy.
 
 ## Handling of accepted mail
 
-The original message is kept only until it has been converted or abandoned, and
-is then deleted. The record that remains holds no message content: it exists to
-recognize resends and to count against the limits above.
+Each accepted message moves through these states:
 
-Parsing and image fetching run in a separate converter process that holds no
-keys. The provider revalidates the converted body with the ordinary codec
-before the bridge account signs it. The provider process itself reads a message
-only far enough to find its `Message-ID`.
+| State | Holds | Next |
+| --- | --- | --- |
+| `queued` | The original message | Claimed by the converter |
+| `converting` | The original message | `converted`, back to `queued` to retry, or `dead` |
+| `converted` | The converted body | `delivered` or `dead` |
+| `delivered` | Neither | Final: handed to ordinary Hail delivery |
+| `dead` | Neither, plus a short failure reason | Final |
+
+The original message is deleted as soon as it is converted or abandoned. The
+record that remains holds no message content: it exists to recognize resends,
+count against the limits above, and give the operator a failure reason.
+
+Deleting an alias moves every message of that alias still in the first three
+states to `dead`. A worker that finishes later finds its claim gone and writes
+nothing.
+
+### Conversion
+
+The converter is a separate process. It parses untrusted mail and fetches
+sender-chosen image URLs, so it holds no keys and uses a database role that can
+read and update only the intake queue's processing columns
+([role script](../apps/server/deploy/email-bridge/converter-role.sql)). The
+provider process itself reads a message only far enough to find its
+`Message-ID`.
+
+A converter claims one message at a time with a lease of five minutes; a worker
+that stops is replaced when the lease lapses. A message that cannot be
+converted at all, such as one with no usable `From` address, is abandoned at
+once. Other failures are retried with backoff, up to five attempts.
 
 Conversion rules, including what is dropped and how images are bundled or
 linked, are described with the
-[conversion package](../packages/hail-email-bridge/README.md).
+[conversion package](../packages/hail-email-bridge/README.md). Remote images are
+fetched over HTTPS on port 443 from public addresses only, following at most
+three redirects, within 15 seconds each and at most 48 per message. Requests ask
+for PNG or JPEG and identify the bridge in `User-Agent`.
+
+`authentication` is `dkim-aligned` only when the message has exactly one `From`
+address, it is the address the converter read, and a DKIM signature verifies
+for that address's domain or its registrable domain. A lookup failure or any
+other outcome is `none`.
+
+### Delivery
+
+The provider delivers each converted body as an ordinary Grant-authorized hail
+from the bridge's account, with replies disallowed. Before signing it
+revalidates the body with the codec and requires an `email` origin, because the
+converter's output is untrusted. The hail's message ID is assigned once, so a
+retried delivery reuses the same envelope.
+
+| Condition | Outcome |
+| --- | --- |
+| The alias is paused or deleted, or its account is closed, inactive or transferring | `dead` |
+| The recipient holds no active Grant to the bridge for its category | `dead`: there is no consent to deliver |
+| The body fails revalidation or has no `email` origin | `dead` |
+| The receiving side refuses the envelope | `dead` |
+| A transient failure | Retried with backoff, up to eight attempts |
+| The bridge account is missing or inactive | Kept, and retried; this is the operator's to fix |
+
+## Operator setup
+
+1. Create an ordinary local account for the bridge, give it a Sender Profile
+   with a category for bridged mail (`email` by default), and publish its
+   address binding. This is the sender users grant.
+2. Set `EMAIL_BRIDGE_DOMAIN`, `EMAIL_BRIDGE_INTAKE_TOKEN`, `EMAIL_BRIDGE_SENDER`
+   (that account's address) and, if not `email`, `EMAIL_BRIDGE_CATEGORY`. The
+   provider refuses to start with only some of them.
+3. After the provider has migrated, run the role script as the database owner
+   and create the converter's login role in it. Start the converter, which in the
+   standalone deployment is the `email-bridge` Compose profile.
+4. Point the alias domain's mail at an ingress adapter that calls the contract
+   above.
+
+A user receives bridged mail after granting the bridge account its category,
+through the same sender approval as any other publisher.
 
 ## Open items
 
-- Retention period for the content-free intake record.
+- Retention period for the content-free intake record, and for `dead` records.
 - A storage ceiling for delivered bridged content. Current storage accounting
   measures usage and does not limit it.
 - Whether aliases can continue after a provider transfer; see plan decision D8.
