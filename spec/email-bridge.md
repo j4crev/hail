@@ -224,15 +224,19 @@ turn inbound email off for every alias; the view links to Aliases instead.
 
 ## Operator setup
 
-1. Create an ordinary local account for the bridge, give it a Sender Profile
-   with a category for bridged mail (`email` by default), and publish its
-   address binding. This is the sender users grant.
+1. Create a local account for the bridge, give it a Sender Profile with a
+   category for bridged mail (`email` by default), and publish its address
+   binding. This is the sender users grant. The reference provider reserves the
+   name `email`, so it is claimed as a provider role rather than registered.
 2. Set `EMAIL_BRIDGE_DOMAIN`, `EMAIL_BRIDGE_INTAKE_TOKEN`, `EMAIL_BRIDGE_SENDER`
    (that account's address) and, if not `email`, `EMAIL_BRIDGE_CATEGORY`. The
    provider refuses to start with only some of them.
-3. After the provider has migrated, run the role script as the database owner
-   and create the converter's login role in it. Start the converter, which in the
-   standalone deployment is the `email-bridge` Compose profile.
+3. After the provider has migrated, create the converter's database role as the
+   database owner: [converter-role.sql](../apps/server/deploy/email-bridge/converter-role.sql)
+   then [converter-login.sql](../apps/server/deploy/email-bridge/converter-login.sql),
+   with the password set first. Start the converter with that password: the
+   `email-bridge` Compose profile in the standalone deployment, or
+   `EMAIL_CONVERTER_DB_PASSWORD` and `hail-provider-ops email-converter-role` on Haili.
 4. Point the alias domain's mail at an ingress adapter that calls the contract
    above.
 

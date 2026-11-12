@@ -122,6 +122,32 @@ services:
       start_period: 20s
     networks: [edge]
 
+  # Optional email bridge converter (spec/email-bridge.md). It parses untrusted
+  # mail and fetches image URLs, so it runs apart from the provider: the same
+  # image, no keys, a database role limited to the intake queue, and an
+  # outbound-only network. hail-provider-ops pins it to the provider's release
+  # digest and starts it only when EMAIL_CONVERTER_DB_PASSWORD is set.
+  email-converter:
+    profiles: [email-bridge]
+    image: ${HAIL_PROVIDER_IMAGE:-hail-server-ts:public}
+    command: [bun, src/cli/email-bridge-converter.ts]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 64
+    environment:
+      NODE_ENV: production
+      EMAIL_BRIDGE_CONVERTER_DATABASE_URL: postgresql://email_converter:${EMAIL_CONVERTER_DB_PASSWORD:-}@db:5432/hail
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [storage, bridge_egress]
+
   db:
     image: postgres:14.24-alpine
     restart: unless-stopped
@@ -142,6 +168,8 @@ networks:
   edge:
   storage:
     internal: true
+  # Outbound only, for the email converter's image fetches and DKIM lookups.
+  bridge_egress:
 
 volumes:
   provider_db:
