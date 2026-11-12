@@ -54,7 +54,7 @@ COPY --from=dependencies /workspace/hail/apps/server/node_modules ./node_modules
 COPY --from=dependencies /workspace/hail/vendor /workspace/hail/vendor
 COPY apps/server/src ./src
 COPY apps/server/migrations ./migrations
-RUN test -f src/cli/authorize-provider-role.ts && test -f src/cli/provider-operator.ts && test -f src/cli/compact-plc-evidence.ts
+RUN test -f src/cli/service-account.ts && test -f src/cli/provider-operator.ts && test -f src/cli/compact-plc-evidence.ts
 USER bun
 EXPOSE 3000
 CMD ["bun", "src/index.ts"]
