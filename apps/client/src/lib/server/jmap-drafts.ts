@@ -7,7 +7,7 @@ async function connection(client:AccountApiClient){
   const accountId=object(session.primaryAccounts)?session.primaryAccounts[DRAFTS]:null;
   if(typeof accountId!=='string')throw new AccountApiError(403);
   return async(name:string,args:Record<string,unknown>)=>{
-    const response=await client.request('/jmap',{using:[CORE,DRAFTS],methodCalls:[[name,{accountId,...args},'draft']]},'',2_100_000);
+    const response=await client.request('/jmap',{using:[CORE,DRAFTS],methodCalls:[[name,{accountId,...args},'draft']]},'',6_300_000);
     const calls=response.methodResponses;
     if(!Array.isArray(calls)||calls.length!==1||!Array.isArray(calls[0])||calls[0][2]!=='draft'||!object(calls[0][1]))throw new Error('Invalid JMAP draft response');
     if(calls[0][0]==='error')throw new AccountApiError(calls[0][1].type==='stateMismatch'?409:400);
@@ -45,7 +45,7 @@ export async function listDrafts(client:AccountApiClient,anchor:string|null,tras
   const call=await connection(client);
   const query=await call('HailDraft/query',{filter:{inTrash:trash},limit:50,calculateTotal:true,...(anchor?{anchor,anchorOffset:1}:{})});
   if(!Array.isArray(query.ids)||query.ids.some(id=>typeof id!=='string')||typeof query.queryState!=='string'||typeof query.position!=='number'||typeof query.total!=='number')throw new Error('Invalid JMAP draft query');
-  // Four maximum-size drafts fit below the advertised 2 MiB get limit.
+  // Four maximum-size drafts fit below the advertised 6 MiB get limit.
   const drafts=[];
   for(let offset=0;offset<query.ids.length;offset+=4){
     const ids=query.ids.slice(offset,offset+4),result=await call('HailDraft/get',{ids});

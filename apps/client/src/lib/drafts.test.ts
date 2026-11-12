@@ -30,7 +30,7 @@ it('conforms to the provider draft content vectors',()=>{
 it('sends a resumed PNG and draft revision without requiring a new file selection',async()=>{
   request.mockReset();request.mockRejectedValueOnce(new Error('Response lost'));
   const form=new FormData();
-  for(const [key,value] of Object.entries({publicationId:id,draftRevision:'3',audience:'category',category:'general',title:'Headline',text:'Updated text',alt:'One pixel',savedHeader:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8_x8AAwMCAO-aQ6kAAAAASUVORK5CYII'}))form.set(key,value);
+  for(const [key,value] of Object.entries({publicationId:id,draftRevision:'3',audience:'category',category:'general',title:'Headline',text:'Updated text',alt:'One pixel',savedHeader:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk-A8AAQUBAScY42YAAAAASUVORK5CYII'}))form.set(key,value);
   expect(await actions.publish({request:new Request('https://example.com/compose',{method:'POST',body:form}),cookies:{},url:new URL('https://example.com/compose')} as never)).toMatchObject({status:502,data:{publicationId:id}});
   expect(request).toHaveBeenCalledWith('HailSubmission/submit',{kind:'category',input:expect.objectContaining({publicationId:id,draftRevision:3,body:expect.objectContaining({profile:'spt-3',assets:expect.objectContaining({assets:[expect.objectContaining({width:1,height:1})]})})})});
 });

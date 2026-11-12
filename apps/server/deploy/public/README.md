@@ -278,7 +278,7 @@ Follow [first administrator ceremony](../standalone/README.md#first-administrato
 4. Start CLI onboarding, enroll the exact public state with the monitor, and retrieve its attestation.
 5. Complete onboarding, enroll/test a passkey, and grant explicit operator permission.
 
-Reserved names (`admin`, `ops`, `alerts`, `abuse`, `security`, `support`) are not
+Reserved names (`admin`, `ops`, `alerts`, `abuse`, `security`, `support`, `email`) are not
 accounts and confer no privilege automatically. They remain reserved on custom
 domains too. The reserved native-domain administrator uses CLI signup;
 the browser address picker intentionally excludes reserved names.
@@ -337,6 +337,32 @@ Public transfers are optional. Enable `PUBLIC_MANAGED_TRANSFER` only with the pi
 providers' [readiness requirements](../../../cli/docs/custody-transitions.md#production-enablement-required-versus-deferrable).
 Custody transitions and Connections are separate switches. Supported settled
 connections survive moves; pending work and unsupported history remain blocked.
+
+## Inbound email bridge (optional)
+
+The bridge receives newsletters for per-subscription aliases and delivers them
+as hails; see [spec/email-bridge.md](../../../../spec/email-bridge.md). It needs
+four settings in `.env`, a reserved `email` account claimed like the
+administrator, an ingress adapter such as the
+[Cloudflare Worker](../cloudflare-email-worker/README.md), and the converter.
+
+The converter is the `email-converter` service. It runs from the provider image,
+holds no keys, and connects to the database as `email_converter`, a role limited
+to the intake queue. `provider-ops.sh` manages it only when the deployed release
+defines it and `EMAIL_CONVERTER_DB_PASSWORD` holds 43 base64url characters: it is
+then pinned to the provider's digest, recreated on every deploy and rolled back
+with the provider. A rollback to a release without it stops it.
+
+After the first release that includes it is deployed, with the password in
+`.env`, create the role and start the converter:
+
+```sh
+sudo -n /usr/local/sbin/hail-provider-ops email-converter-role
+sudo -n /usr/local/sbin/hail-provider-ops logs email-converter 50
+```
+
+The command reads the password from `.env` and sends it to PostgreSQL on
+standard input. Running it again updates the password.
 
 ## Deploy prebuilt application images
 

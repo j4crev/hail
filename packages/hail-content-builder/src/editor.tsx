@@ -4,7 +4,8 @@ import {createRoot} from 'react-dom/client';
 import {EditorProvider, PortableTextEditable, defineSchema, defineTextBlock, defineBlockObject, defineDecorator, defineAnnotation, useEditor, useEditorSelector, type PortableTextBlock, type EditorEvent} from '@portabletext/editor';
 import {EventListenerPlugin, NodePlugin} from '@portabletext/editor/plugins';
 import {getValue, getFocusBlock, getActiveStyle, isActiveDecorator, getActiveListItem} from '@portabletext/editor/selectors';
-import {pngAsset,type PortableBlock,type HeaderAsset} from './core.js';
+import {BUNDLED_IMAGE_LIMITS} from '@racrproto/codec/content';
+import {imageAsset,type PortableBlock,type HeaderAsset} from './core.js';
 
 export const schemaDefinition=defineSchema({
   block:{fields:[{name:'alignment',type:'string'}]},
@@ -64,7 +65,7 @@ function ImageContent({node,settings=false}:{node:PortableBlock;settings?:boolea
     else editor.send({type:'block.set',at:[{_key:node._key}],props:{[field]:value.normalize('NFC')}});
   };
   if(!settings)return <div className="builder-image" contentEditable={false}>
-    {asset&&<img src={'data:image/png;base64,'+asset.data.replaceAll('-','+').replaceAll('_','/')} alt={String(node.alt??'')} width={asset.width} height={asset.height}/>}
+    {asset&&<img src={'data:'+asset.media_type+';base64,'+asset.data.replaceAll('-','+').replaceAll('_','/')} alt={String(node.alt??'')} width={asset.width} height={asset.height}/>}
     {!!node.caption&&<div className="builder-image-caption">{String(node.caption)}</div>}
   </div>;
   return <div className="builder-image-fields" onMouseDown={e=>e.stopPropagation()}>
@@ -179,9 +180,9 @@ function Toolbar({images,issue}:{images:boolean;issue:(message:string,kind?:Noti
   async function addImage(file:File){
     setUploading(true);
     try{
-      if(file.size>196608)throw Error(`This image is ${Math.ceil(file.size/1024).toLocaleString()} KiB. The limit is 192 KiB per PNG. Compress it or choose a smaller file.`);
-      if(getValue(editor.getSnapshot()).filter(block=>block._type==='hailImage').length>=8)throw Error('Use up to eight images per message.');
-      const asset=await pngAsset(new Uint8Array(await file.arrayBuffer()),true);
+      if(file.size>BUNDLED_IMAGE_LIMITS.message.bytes)throw Error(`This image is ${Math.ceil(file.size/1024).toLocaleString()} KiB. The limit is ${BUNDLED_IMAGE_LIMITS.message.bytes/1024} KiB per image. Compress it or choose a smaller file.`);
+      if(getValue(editor.getSnapshot()).filter(block=>block._type==='hailImage').length>=BUNDLED_IMAGE_LIMITS.maximumImageBlocks)throw Error(`Use up to ${BUNDLED_IMAGE_LIMITS.maximumImageBlocks} images per message.`);
+      const asset=await imageAsset(new Uint8Array(await file.arrayBuffer()),true);
       const bitmap=await createImageBitmap(file);bitmap.close();
       assets.set(asset.id,asset);
       send({type:'insert.blocks',blocks:[{_type:'hailImage',_key:crypto.randomUUID(),asset:asset.id,alt:''}],placement:'after',select:'start'});
@@ -216,7 +217,7 @@ function Toolbar({images,issue}:{images:boolean;issue:(message:string,kind?:Noti
     <div className="builder-tool-group builder-insert">
       {button('Add paragraph',{type:'insert.blocks',blocks:[{_type:'block',style:'normal',children:[{_type:'span',text:'',marks:[]}],markDefs:[]}],placement:'after',select:'start'},'＋ Text')}
       {button('Add call to action',{type:'insert.blocks',blocks:[{_type:'hailCta',_key:crypto.randomUUID(),label:'Learn more',href:''}],placement:'after',select:'start'},'＋ Button')}
-      {images&&<label className="builder-add-image" title="Add a PNG up to 192 KiB (8 images per message)">{uploading?'Adding…':'＋ Image'}<input aria-label="Add image" type="file" accept="image/png" disabled={uploading} onChange={event=>{const file=event.target.files?.[0];if(file)void addImage(file);event.target.value='';}}/></label>}
+      {images&&<label className="builder-add-image" title={`Add a PNG or JPEG up to ${BUNDLED_IMAGE_LIMITS.message.bytes/1024} KiB (${BUNDLED_IMAGE_LIMITS.maximumImageBlocks} images per message)`}>{uploading?'Adding…':'＋ Image'}<input aria-label="Add image" type="file" accept="image/png,image/jpeg" disabled={uploading} onChange={event=>{const file=event.target.files?.[0];if(file)void addImage(file);event.target.value='';}}/></label>}
     </div>
     <details className="builder-more" ref={menu} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.open=false;}} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.currentTarget.open=false;e.currentTarget.querySelector('summary')?.focus();}}}>
       <summary aria-label="Block actions" title="Block actions"><ToolbarIcon name="more"/></summary>

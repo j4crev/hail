@@ -406,7 +406,8 @@ hail-body-spt-2 = {
   "version": 1,
   "profile": "spt-2",
   "blocks": [* spt-2-text-block],
-  ? "attachments": [1*20 hail-attachment]
+  ? "attachments": [1*20 hail-attachment],
+  ? "origin": body-origin
 }
 
 spt-2-text-block = {
@@ -432,13 +433,15 @@ spt-link = {
   ? "title": tstr
 }
 
-; spt-3 interleaves bounded, digest-bound PNG images and rich text.
+; spt-3 interleaves bounded, digest-bound PNG or JPEG images and rich text.
+; Role-specific formats and sizes (avatar: PNG, 32768 bytes) are semantic checks.
 hail-body-spt-3 = {
   "version": 1,
   "profile": "spt-3",
   "assets": asset-manifest-v1,
   "blocks": [1* (spt-image-block / spt-2-text-block)],
-  ? "attachments": [1*20 hail-attachment]
+  ? "attachments": [1*20 hail-attachment],
+  ? "origin": body-origin
 }
 
 spt-image-block = {
@@ -448,18 +451,31 @@ spt-image-block = {
   ? "caption": tstr
 }
 
+; The sender's statement that it relayed the content from an external source.
+; Address, name and list-identifier syntax are semantic checks; see bodies.md.
+body-origin = body-origin-email
+
+body-origin-email = {
+  "type": "email",
+  "from_address": tstr,
+  ? "from_name": tstr,
+  ? "list_id": tstr,
+  "authentication": "dkim-aligned" / "none",
+  "received_at": timestamp
+}
+
 ; Reusable bundled-image manifest for future body and profile versions.
 asset-manifest-v1 = {
   "version": 1,
-  "assets": [1*8 bundled-image-asset-v1]
+  "assets": [1*24 bundled-image-asset-v1]
 }
 
 bundled-image-asset-v1 = {
   "id": tstr,
   "role": "avatar" / "header" / "image",
-  "media_type": "image/png",
+  "media_type": "image/png" / "image/jpeg",
   "loading": "bundled",
-  "size": 1..196608,
+  "size": 1..524288,
   "digest": digest,
   "width": 1..2400,
   "height": 1..2400,

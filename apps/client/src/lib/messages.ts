@@ -59,7 +59,24 @@ export function parseSent(value: unknown): SentItem[] {
   });
 }
 
+/**
+ * The sender's signed statement that it relayed this message from email
+ * (spec/bodies.md#relayed-origin). It names who the email came from; it is not
+ * a verified Hail identity, and the Hail sender remains the relay itself.
+ */
+export interface RelayedOrigin {fromAddress:string;fromName:string|null;authenticated:boolean}
+
+export function relayedOrigin(body:Record<string,unknown>):RelayedOrigin|null {
+  if(body.origin===undefined)return null;
+  const origin=object(body.origin,'relayed origin');
+  if(origin.type!=='email'||typeof origin.from_address!=='string'||origin.from_address.length>254||!/^[^\s@]+@[^\s@]+$/.test(origin.from_address)||
+    origin.from_name!==undefined&&(typeof origin.from_name!=='string'||!origin.from_name.trim())||
+    origin.authentication!=='dkim-aligned'&&origin.authentication!=='none')throw new Error('Unsupported relayed origin');
+  return {fromAddress:origin.from_address,fromName:typeof origin.from_name==='string'?origin.from_name:null,authenticated:origin.authentication==='dkim-aligned'};
+}
+
 export interface MessageView extends InboxItem {
+  relayed?:RelayedOrigin;
   sharedConversation?:{creator:string;conversationId:string;messageId:string;state:'active'|'expired'|'left';expiresAt:string;participants:string[];participantAddresses?:Record<string,string>};
   conversation?:{unreadCount:number;lastActivity:string;messages:{sender:string;messageId:string;isRead:boolean}[]};
   inReplyTo?:{sender:string;messageId:string}|null;
@@ -114,7 +131,7 @@ export function parseMessage(value: unknown): MessageView {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(parent.messageId))throw new Error("Invalid reply parent");
     inReplyTo={sender:parent.sender,messageId:parent.messageId};
   }
-  const content=parseBody(body);
+  const content=parseBody(body),relayed=relayedOrigin(body);
   let conversation:MessageView["conversation"];
   if(message.conversation!==undefined){
     const c=object(message.conversation,"conversation summary");
@@ -149,6 +166,7 @@ export function parseMessage(value: unknown): MessageView {
   }
   return {
     ...(conversation?{conversation}:{}),
+    ...(relayed?{relayed}:{}),
     ...(inReplyTo?{inReplyTo}:{}),
     ...(message.kind==="connection"?{kind:"connection" as const}:{}),...(connection?{connection}:{}),...(sharedConversation?{sharedConversation}:{}),
     trashedAt: message.trashedAt == null ? null : text(message.trashedAt, "trash time"),

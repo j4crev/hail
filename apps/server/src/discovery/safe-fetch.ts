@@ -44,8 +44,10 @@ export class SafeHttpsTransport {
   readonly fetch: DiscoveryFetch = (request) => this.send(request, false);
   readonly fetchPush: DiscoveryFetch = (request) => this.send(request, false, true);
   readonly fetchBody: DiscoveryFetch = (request) => this.send(request, true);
+  /** A single GET of a public image for the email bridge. Redirects are returned, never followed. */
+  readonly fetchImage: DiscoveryFetch = (request) => this.send(request, false, false, true);
 
-  private async send(request: Request, bodyRetrieval: boolean, push=false): Promise<Response> {
+  private async send(request: Request, bodyRetrieval: boolean, push=false, image=false): Promise<Response> {
     if (request.method !== "GET" && request.method !== "PUT" && request.method !== "POST") {
       throw new Error("Safe HTTPS transport only permits GET, PUT and POST");
     }
@@ -55,11 +57,14 @@ export class SafeHttpsTransport {
       !/^\/(?:[A-Za-z0-9._~-]+\/)*bodies\/[A-Za-z0-9_-]{43}(?:\/attachments\/[A-Za-z0-9_-]{43})?$/.test(url.pathname) || url.search)) {
       throw new Error("Body retrieval requires the canonical body GET operation");
     }
+    if (image && (request.method !== "GET" || (url.port && url.port !== "443"))) {
+      throw new Error("Image retrieval requires GET on the default HTTPS port");
+    }
     if(push&&((url.port&&url.port!=="443")||request.method!=="POST"||request.headers.get("content-encoding")!=="aes128gcm"||!/^vapid t=[A-Za-z0-9_.-]+, k=[A-Za-z0-9_-]+$/.test(request.headers.get("authorization")??"")))throw new Error("Invalid encrypted push request");
     for (const name of ["cookie", "referer", ...(bodyRetrieval||push ? [] : ["authorization"])]) {
       if (request.headers.has(name)) throw new Error(`Discovery request must not send ${name}`);
     }
-    const allowedHeaders = push?new Set(["authorization","content-encoding","content-type","ttl","urgency"]):bodyRetrieval
+    const allowedHeaders = image?new Set(["accept","user-agent"]):push?new Set(["authorization","content-encoding","content-type","ttl","urgency"]):bodyRetrieval
       ? new Set(["accept", "accept-encoding", "authorization", "signature-input", "signature"])
       :
       request.method === "GET"

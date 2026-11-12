@@ -1,8 +1,10 @@
 import {expect,it} from 'vitest';
+import {BUNDLED_IMAGE_LIMITS} from '@racrproto/codec/content';
+import vectors from '../../../spec/vectors/attachment-images.json';
 import {Schema} from '@sanity/schema';
 import {toHTML} from '@portabletext/to-html';
 import {contentSchema} from '../src/schema.js';
-import {fromPortable,toPortable,validateBody,semantics,pngAsset,parseBuilderDraft,assertCapabilities} from '../src/core.js';
+import {fromPortable,toPortable,validateBody,semantics,imageAsset,parseBuilderDraft,assertCapabilities} from '../src/core.js';
 import fixture from '../fixtures/text.json';
 const text=validateBody(fixture);
 const png=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),c=>c.charCodeAt(0));
@@ -13,7 +15,7 @@ it('compiles the published Sanity schema and renders the supported text vocabula
   expect(html).toContain('<strong>');expect(html).toContain('&lt;example&gt;');expect(html).toContain('<ul>');expect(html).toContain('<ol>');expect(html).toContain('https://example.invalid/path?private=1');
 });
 it('round trips text and a bundled asset while permitting editor key and span changes',async()=>{
-  const asset=await pngAsset(png);
+  const asset=await imageAsset(png);
   const body=validateBody({version:1,profile:'spt-3',assets:{version:1,assets:[asset]},blocks:[{_type:'spt.image',asset:asset.id,alt:'One pixel',caption:'Bundled, never fetched'},...text.blocks]});
   const bundle=toPortable(body);
   bundle.blocks.forEach((b,i)=>b._key=`editor${i}`);
@@ -34,15 +36,15 @@ it('rejects unsupported or hostile Portable Text with location-aware errors',()=
     (v:any)=>v.blocks[3].level=4,
     (v:any)=>v.blocks[0]._key=v.blocks[1]._key,
     (v:any)=>v.blocks[0].children[0]._type='remoteEmbed',
-    (v:any)=>v.blocks[0].children[0].text='a'.repeat(360001),
+    (v:any)=>v.blocks[0].children[0].text='a'.repeat(1_450_001),
     (v:any)=>v.assets=[{url:'https://example.invalid/tracker.png'}],
   ];
   for(const mutate of cases){const bundle=toPortable(text);mutate(bundle);expect(()=>fromPortable(bundle)).toThrow();}
 });
 it('rejects damaged PNGs, digest mismatch, remote references and decomposed image descriptions',async()=>{
-  const broken=png.slice();broken[40]^=1;await expect(pngAsset(broken)).rejects.toThrow();
-  await expect(pngAsset(new Uint8Array(196609))).rejects.toThrow();
-  const asset=await pngAsset(png);
+  const broken=png.slice();broken[40]^=1;await expect(imageAsset(broken)).rejects.toThrow();
+  await expect(imageAsset(new Uint8Array(524289))).rejects.toThrow();
+  const asset=await imageAsset(png);
   const body:any={version:1,profile:'spt-3',assets:{version:1,assets:[asset]},blocks:[{_type:'spt.image',asset:asset.id,alt:'One pixel'},...text.blocks]};
   expect(()=>validateBody(body)).not.toThrow();body.blocks[0].alt='e\u0301';expect(()=>validateBody(body)).toThrow();body.blocks[0].alt='One pixel';
   body.assets.assets[0].digest.value='A'.repeat(43);expect(()=>validateBody(body)).toThrow();
@@ -50,7 +52,7 @@ it('rejects damaged PNGs, digest mismatch, remote references and decomposed imag
 it('reimports near-limit bodies even when Portable Text editor keys exceed the body JSON budget',()=>{
   const body=validateBody({version:1,profile:'spt-2',blocks:[{_type:'block',style:'normal',markDefs:[],children:Array.from({length:1000},()=>({_type:'span',text:'x'.repeat(315),marks:[]}))}]});
   const bundle=toPortable(body);
-  expect(new TextEncoder().encode(JSON.stringify(bundle)).length).toBeGreaterThan(360000);
+  expect(JSON.stringify(bundle).length).toBeGreaterThan(JSON.stringify(body).length);
   expect(semantics(fromPortable(bundle))).toEqual(semantics(body));
 });
 
@@ -62,7 +64,7 @@ it('defines semantic equivalence for consistent annotation renaming, mark order 
 });
 
 it('saves unfinished header descriptions without weakening publication or asset validation',async()=>{
-  const body:any={version:1,profile:'spt-3',assets:{version:1,assets:[await pngAsset(png)]},blocks:[{_type:'spt.image',asset:'header',alt:''},...text.blocks]};
+  const body:any={version:1,profile:'spt-3',assets:{version:1,assets:[await imageAsset(png)]},blocks:[{_type:'spt.image',asset:'header',alt:''},...text.blocks]};
   expect(parseBuilderDraft({version:1,body}).body).toEqual(body);
   expect(fromPortable(toPortable(body),{draft:true})).toEqual(body);
   expect(()=>validateBody(body)).toThrow();
@@ -72,7 +74,7 @@ it('saves unfinished header descriptions without weakening publication or asset 
 });
 
 it('round trips interleaved images, preserves reading order and validates every description',async()=>{
-  const assets=[await pngAsset(png,true),await pngAsset(png,true)];
+  const assets=[await imageAsset(png,true),await imageAsset(png,true)];
   const body=validateBody({version:1,profile:'spt-3',assets:{version:1,assets},blocks:[text.blocks[0],{_type:'spt.image',asset:assets[0].id,alt:'First image'},text.blocks[1],{_type:'spt.image',asset:assets[1].id,alt:'Second image',caption:'Second caption'}]});
   expect(semantics(fromPortable(toPortable(body)))).toEqual(semantics(body));
   const {renderBody}=await import('../src/rendering.js');
@@ -112,4 +114,28 @@ it('retains unfinished CTA fields only in drafts and never permits unsafe public
   for(const mutate of [(b:any)=>b.alignment='justify',(b:any)=>b.listItem='bullet',(b:any)=>b.children[0].marks.push('strong'),(b:any)=>b.children[0].text='x'.repeat(129),(b:any)=>b.children[0].text='Two\nlines']){
     const invalid=structuredClone(body);mutate(invalid.blocks[0]);expect(()=>validateBody(invalid)).toThrow();
   }
+});
+
+/** Pads a PNG to a chosen size with an ancillary text chunk, leaving its pixels untouched. */
+function padded(source:Uint8Array,size:number):Uint8Array {
+  const data=new Uint8Array(size-source.length-12).fill(0x61),chunk=new Uint8Array(data.length+12),view=new DataView(chunk.buffer);
+  view.setUint32(0,data.length);chunk.set([0x74,0x45,0x58,0x74],4);chunk.set(data,8);
+  let crc=0xffffffff;for(const byte of chunk.subarray(4,8+data.length)){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+  view.setUint32(8+data.length,(crc^0xffffffff)>>>0);
+  // The text chunk goes after the 8-byte signature and the 25-byte header chunk.
+  return Uint8Array.from([...source.subarray(0,33),...chunk,...source.subarray(33)]);
+}
+it('authors JPEG images and bodies up to the protocol image budget',async()=>{
+  const jpeg=Uint8Array.from(vectors.records.find(record=>record.id==='baseline.jpg')!.fileHex.match(/../g)!,byte=>parseInt(byte,16));
+  const photo=await imageAsset(jpeg,true);
+  expect(photo).toMatchObject({role:'image',media_type:'image/jpeg',size:jpeg.length});
+  const large=await imageAsset(padded(png,BUNDLED_IMAGE_LIMITS.message.bytes),true),second={...await imageAsset(padded(png,450_000),true)};
+  expect(large.size).toBe(524288);
+  const body:any={version:1,profile:'spt-3',assets:{version:1,assets:[photo,large,second]},
+    blocks:[...[photo,large,second].map(asset=>({_type:'spt.image',asset:asset.id,alt:'Described'})),...text.blocks]};
+  // Two images near the per-image limit would not have fitted the former 360,000-byte budget.
+  expect(JSON.stringify(body).length).toBeGreaterThan(1_300_000);
+  expect(()=>validateBody(body)).not.toThrow();
+  expect(semantics(fromPortable(toPortable(validateBody(body))))).toEqual(semantics(body));
+  await expect(imageAsset(padded(png,BUNDLED_IMAGE_LIMITS.message.bytes+1),true)).rejects.toThrow('512 KiB');
 });

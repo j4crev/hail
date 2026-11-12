@@ -12,6 +12,8 @@
 !packages/hail-codec-ts/**
 !packages/hail-client-support/**
 !packages/hail-content-builder/**
+!packages/hail-email-bridge/package.json
+!packages/hail-email-bridge/src/**
 !apps/content-builder/package.json
 !vendor/did-method-plc/package.json
 !vendor/did-method-plc/pnpm-lock.yaml

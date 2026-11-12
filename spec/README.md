@@ -39,7 +39,7 @@ Historical implementation/rollout notes do not override the current profile belo
 | Identity and address discovery | `did:plc`, Address Binding v2; [DID profile](did-profile.md), [address binding](address-binding.md), [PLC evidence](plc-read-evidence.md) |
 | Sender discovery and consent | Sender Profile v2, Grant v1; [sender profile](sender-profile.md), [grants](grants.md) |
 | Message delivery | Envelope v1 for Grant delivery; v2 for unthreaded connection delivery; v3 for threaded direct/reply-capability delivery; v4 for shared conversations; [envelopes](envelopes.md) |
-| Bodies and assets | All providers support `spt-1` plain text, `spt-2` rich text with bounded alignment and CTA links, and `spt-3` rich text with up to eight bundled PNG images; asset manifest v1; optional PNG/JPEG/WebP/PDF/TXT/LOG attachment declarations (25 MiB/message); [bodies](bodies.md), [assets](assets.md), [attachments](attachments.md) |
+| Bodies and assets | All providers support `spt-1` plain text, `spt-2` rich text with bounded alignment and CTA links, and `spt-3` rich text with up to 24 bundled PNG or JPEG images (512 KiB each, inside the 1 MiB body); asset manifest v1; optional PNG/JPEG/WebP/PDF/TXT/LOG attachment declarations (25 MiB/message); optional signed [relayed-origin statement](bodies.md#relayed-origin) on `spt-2`/`spt-3` (type `email`); [bodies](bodies.md), [assets](assets.md), [attachments](attachments.md) |
 | Delivery results | Delivery Status v1; [delivery state](delivery-state.md), [HTTP binding](http-binding.md) |
 | Connections | Invitation, confirmation and control v1; [consent](connection-auth.md), [federation](connection-federation.md), [wire binding](connection-wire.md) |
 | Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
@@ -287,6 +287,11 @@ contracts documented in the [builder compatibility inventory](../packages/hail-c
 Reference monitor incident review, email capability authorization, and the two
 owner-signed recovery choices are specified in [monitor incidents](monitor-incidents.md).
 This does not add federation credentials or make mailbox approval independent-owner evidence.
+
+The optional [inbound email bridge](email-bridge.md) is reference-provider policy:
+per-subscription aliases, a vendor-neutral ingress contract for mail edges, and
+delivery of converted mail as ordinary hails carrying the relayed-origin statement.
+It adds no federation operation.
 
 Unseen connection indicators are reference-provider presentation policy, documented
 with the [account navigation counts and acknowledgment API](provider-mailbox.md#unseen-connections-reference-provider-account-api).

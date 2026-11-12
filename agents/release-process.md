@@ -124,7 +124,10 @@ See the [standalone guide](../apps/server/deploy/standalone/README.md).
 
 The Haili host has the split-image operations wrapper installed. It is root-owned
 and independent of this checkout; any future wrapper or backup-tool source changes
-require separate reviewed installation through existing privileged access. Preserve
+require separate reviewed installation through existing privileged access. The
+email bridge revision of `provider-ops.sh` (adds the `email-converter` service and
+`email-converter-role`) is one such change: until it is installed, deploys neither
+start nor pin the converter. Preserve
 prior copies and verify their SHA-256; do not broaden sudo/SSH policy. Keep the
 existing Compose project/service names, `.env`, database/image overlays, volumes,
 rollback record and retained images. `deploy/public` remains Haili's site profile;

@@ -67,6 +67,8 @@ jobs:
           bun run --cwd packages/hail-codec-ts typecheck
           bun run --cwd packages/hail-codec-ts test
           bun run --cwd packages/hail-client-support typecheck
+          bun run --cwd packages/hail-email-bridge typecheck
+          bun run --cwd packages/hail-email-bridge test
 
   codec-go:
     needs: changes

@@ -57,7 +57,8 @@
     {href: "/trash", label: "Trash", icon: "trash"},
     {href: "/permissions", label: "Subscriptions", icon: "people"},
     {href: "/connections", label: "Connections", icon: "user", unseen: unseenConnections},
-    {href: "/categories", label: "Categories", icon: "feed"}
+    {href: "/categories", label: "Categories", icon: "feed"},
+    ...(page.data.inboundEmail ? [{href: "/aliases", label: "Aliases", icon: "at"}] : [])
   ]);
   let focused = $derived(!page.data.hasAccountSession || (page.url.pathname === "/" && page.url.searchParams.has("next")) || page.url.pathname.startsWith("/auth/") || page.url.pathname.startsWith("/signup"));
   let address = $derived(page.data.account?.address ?? "Your account");

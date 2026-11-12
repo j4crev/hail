@@ -1,4 +1,7 @@
+import {BUNDLED_IMAGE_LIMITS} from '@racrproto/codec/content';
+
 type JsonObject = Record<string, unknown>;
+const IMAGE=BUNDLED_IMAGE_LIMITS.message;
 
 function object(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid ${label}`);
@@ -60,13 +63,13 @@ export function renderBody(value: unknown): {blocks:MessageBlock[];header:Messag
   let header:MessageImage|null=null,entries=body.blocks;
   const imageFor=(entry:unknown):MessageImage=>{
     const image=object(entry,"image block"),manifest=object(body.assets,"asset manifest");
-    if(body.profile!=="spt-3"||manifest.version!==1||!Array.isArray(manifest.assets)||manifest.assets.length>8)throw new Error("Unsupported image body");
+    if(body.profile!=="spt-3"||manifest.version!==1||!Array.isArray(manifest.assets)||manifest.assets.length>BUNDLED_IMAGE_LIMITS.maximumAssets)throw new Error("Unsupported image body");
     const asset=object(manifest.assets.find((a:unknown)=>object(a,"asset").id===image.asset),"image asset"),data=text(asset.data,"asset data");
-    if(!["header","image"].includes(String(asset.role))||asset.media_type!=="image/png"||asset.loading!=="bundled"||
-      !/^[A-Za-z0-9_-]+$/.test(data)||typeof asset.size!=="number"||asset.size<1||asset.size>196608||Math.floor(data.length*6/8)!==asset.size||
-      typeof asset.width!=="number"||!Number.isInteger(asset.width)||asset.width<1||asset.width>2400||typeof asset.height!=="number"||!Number.isInteger(asset.height)||asset.height<1||asset.height>(asset.role==='image'?2400:1200)||asset.width*asset.height>2000000)throw new Error("Unsupported image asset");
+    if(!["header","image"].includes(String(asset.role))||!(IMAGE.mediaTypes as readonly unknown[]).includes(asset.media_type)||asset.loading!=="bundled"||
+      !/^[A-Za-z0-9_-]+$/.test(data)||typeof asset.size!=="number"||asset.size<1||asset.size>IMAGE.bytes||Math.floor(data.length*6/8)!==asset.size||
+      typeof asset.width!=="number"||!Number.isInteger(asset.width)||asset.width<1||asset.width>IMAGE.width||typeof asset.height!=="number"||!Number.isInteger(asset.height)||asset.height<1||asset.height>(asset.role==='image'?IMAGE.height:IMAGE.headerHeight)||asset.width*asset.height>IMAGE.pixels)throw new Error("Unsupported image asset");
     const base64=data.replaceAll("-","+").replaceAll("_","/").padEnd(Math.ceil(data.length/4)*4,"=");
-    return {src:`data:image/png;base64,${base64}`,alt:text(image.alt,"image alt"),caption:image.caption===undefined?null:text(image.caption,"image caption"),width:asset.width,height:asset.height};
+    return {src:`data:${asset.media_type};base64,${base64}`,alt:text(image.alt,"image alt"),caption:image.caption===undefined?null:text(image.caption,"image caption"),width:asset.width,height:asset.height};
   };
   // Preserve the separate leading-header presentation used by simple compose.
   if(body.profile==='spt-3'&&entries[0]?._type==='spt.image'){

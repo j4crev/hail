@@ -81,7 +81,7 @@ formatting actions, names paragraph styles, and exposes block operations through
 a keyboard-accessible disclosure menu. List-only indent/outdent controls enforce
 levels 1–3. Icon buttons have accessible names and native title tooltips. Native keyboard editing and
 IME handling belong to the upstream editor. The Text / Image palette inserts blocks after the selection. Images are local
-static PNGs with required alternative text and optional captions. Up to eight
+static PNGs or JPEGs with required alternative text and optional captions. Up to 24
 image blocks may appear among text, with drag handles and keyboard Move up/down
 alternatives. Image bytes stay in the local bundle; no remote URL is accepted. Preview has
 narrow/wide, light/dark and images-unavailable settings and uses the recipient
@@ -125,8 +125,9 @@ Browser checks use installed Chromium and do not need a logged-in account.
 See [compatibility evidence and limits](COMPATIBILITY.md). No production deployment
 is implied by building the standalone app or integrating the package.
 
-The builder body is capped at 360,000 UTF-8 JSON bytes so provider draft requests
-fit the existing 400,000-byte account API limit. Portable bundles allow 1,000,000
+The builder body is capped at 1,450,000 UTF-8 JSON bytes so provider draft requests
+fit the 1,500,000-byte draft storage limit. Images are base64url text in that
+form, so this is what a body at the 1 MiB encoded ceiling needs. Portable bundles allow 1,600,000
 bytes to accommodate editor keys without making a valid near-limit body impossible
 to export/reimport. The resulting body must still fit its own limit and all codec
 budgets. No resource limit is relaxed for publication.
@@ -138,22 +139,22 @@ builder cannot edit these rich drafts; retain/export them before such a rollback
 
 ## Inline image slice
 
-Current `spt-3` supports one to eight image blocks among text. Each static PNG is
-at most 192 KiB, 2400 × 2400, and two million pixels; all displayed image
-occurrences total at most eight million pixels. The editor's existing 360,000-byte
-JSON body budget is intentionally unchanged (and can limit uploads before the
-protocol's 1 MiB encoded ceiling). Images preserve aspect ratio without cropping.
+Current `spt-3` supports 1 to 24 image blocks among text. Each static PNG or JPEG is
+at most 512 KiB, 2400 × 2400, and two million pixels; all displayed image
+occurrences total at most eight million pixels. The editor reads these numbers
+from the codec. The complete body must still fit the protocol's 1 MiB encoded
+ceiling, which two images at the per-image limit already reach. Images preserve aspect ratio without cropping.
 Check **Use as Feed header** on an image to designate the message's featured
 image. It moves to the top and retains the `header` role (2400 × 1200 maximum),
 which the Feed already displays. Other images retain the `image` role. Choosing
 a different header keeps the previous one inline; unchecking the option removes the
-Feed designation. The header counts toward the eight-image total and is pinned
+Feed designation. The header counts toward the 24-image total and is pinned
 against drag/Move actions until made inline. Role changes use editor history.
 No received signed document is rewritten.
 
 Upload failures appear in a persistent, dismissible red alert toast using Hail's
 existing bottom-center notification placement. The upload control tooltip states
-the 192 KiB limit. New images show description guidance beside their field; they
+the 512 KiB limit. New images show description guidance beside their field; they
 can be saved unfinished but cannot be sent until described. Other validation
 errors remain beside the document in a red panel.
 

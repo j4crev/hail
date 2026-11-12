@@ -1,7 +1,7 @@
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {strict as assert} from 'node:assert';
 import {resolve} from 'node:path';
-import {validateBody,semantics,pngAsset} from '@racrproto/content-builder/core';
+import {validateBody,semantics,imageAsset} from '@racrproto/content-builder/core';
 import fixture from '../../../packages/hail-content-builder/fixtures/text.json';
 const root=resolve(import.meta.dir,'../dist');
 const server=Bun.serve({hostname:'127.0.0.1',port:0,async fetch(req){const path=new URL(req.url).pathname;const file=resolve(root,'.'+(path==='/'?'/index.html':path));return file.startsWith(root+'/')&&await Bun.file(file).exists()?new Response(Bun.file(file)):new Response(null,{status:404});}});
@@ -25,12 +25,12 @@ const click=async(label:string)=>{assert(await evaluate(`(()=>{const b=Array.fro
 const selectBlock=async(kind:string,last=false)=>{await evaluate(`Array.from(document.querySelectorAll('[data-block-key]')).filter(block=>block.querySelector(${JSON.stringify(kind)})).at(${last?-1:0}).querySelector('.builder-drag').click()`);await wait(()=>evaluate(`!!document.querySelector('.builder-inspector input')`));};
 const saved=()=>evaluate(`JSON.parse(localStorage.getItem('standalone-content:v1'))`);
 const png=new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'));
-const body=validateBody({version:1,profile:'spt-3',assets:{version:1,assets:[await pngAsset(png)]},blocks:[{_type:'spt.image',asset:'header',alt:'One pixel',caption:'Bundled caption'},...fixture.blocks]});
+const body=validateBody({version:1,profile:'spt-3',assets:{version:1,assets:[await imageAsset(png)]},blocks:[{_type:'spt.image',asset:'header',alt:'One pixel',caption:'Bundled caption'},...fixture.blocks]});
 await navigate();
 // Rejected uploads must be announced visibly, with the attempted size and an action.
-await evaluate(`(()=>{const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(200*1024)],'too-large.png',{type:'image/png'}));const input=document.querySelector('input[aria-label="Add image"]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-await wait(()=>evaluate(`document.querySelector('.builder-toast[role=alert]')?.textContent.includes('200 KiB')`));
-assert(await evaluate(`(()=>{const toast=document.querySelector('.builder-toast');const rect=toast.getBoundingClientRect();return getComputedStyle(toast).position==='fixed'&&getComputedStyle(toast).color==='rgb(152, 27, 27)'&&rect.top>=0&&rect.bottom<=innerHeight&&toast.textContent.includes('192 KiB');})()`),'red error toast stays in the viewport');
+await evaluate(`(()=>{const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(600*1024)],'too-large.png',{type:'image/png'}));const input=document.querySelector('input[aria-label="Add image"]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await wait(()=>evaluate(`document.querySelector('.builder-toast[role=alert]')?.textContent.includes('600 KiB')`));
+assert(await evaluate(`(()=>{const toast=document.querySelector('.builder-toast');const rect=toast.getBoundingClientRect();return getComputedStyle(toast).position==='fixed'&&getComputedStyle(toast).color==='rgb(152, 27, 27)'&&rect.top>=0&&rect.bottom<=innerHeight&&toast.textContent.includes('512 KiB');})()`),'red error toast stays in the viewport');
 await click('Dismiss notification');assert.equal(await evaluate(`!!document.querySelector('.builder-toast')`),false);
 await evaluate(`localStorage.setItem('standalone-content:v1',JSON.stringify(${JSON.stringify({revision:1,draft:{version:1,body}})}))`);
 await navigate();
@@ -99,7 +99,7 @@ await wait(()=>evaluate(`document.querySelectorAll('.builder-canvas .builder-ima
 assert(await evaluate(`!document.querySelector('.builder-errors')&&!document.body.textContent.includes('NFC plain text')`),'new image is unfinished input, not a schema error');
 assert(await evaluate(`Array.from(document.querySelectorAll('.builder-image-help')).some(p=>p.textContent==='Add a description of the image before sending.')`),'description guidance is beside the field');
 assert(await evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Use this content').disabled`),'unfinished descriptions still block handoff');
-assert(await evaluate(`!document.querySelector('.editor').textContent.includes('PNG up to 192 KiB each')`),'upload guidance is not in the canvas');
+assert(await evaluate(`!document.querySelector('.editor').textContent.includes('up to 512 KiB')`),'upload guidance is not in the canvas');
 await evaluate(`(()=>{const input=Array.from(document.querySelectorAll('input[aria-label="Image description"]')).at(-1);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Second image');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
 await wait(()=>evaluate(`document.querySelectorAll('.preview img').length===2`));
 await click('Save as Draft');await wait(async()=>(await saved()).revision===8);

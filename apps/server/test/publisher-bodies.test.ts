@@ -21,6 +21,16 @@ describe("publisher content under the 1 MiB body budget", () => {
     expect(validateBodyBytes(bytes)).toBe("spt-2");
   });
 
+  it("lets a relay service state an origin but refuses one in a composed message", () => {
+    const body: HailSpt2Body = { version: 1, profile: "spt-2",
+      origin: { type: "email", from_address: "editors@fieldnotes.example", authentication: "dkim-aligned", received_at: 1_700_000_000 },
+      blocks: [{ _type: "block", style: "normal", children: [{ _type: "span", text: "Issue 12", marks: [] }], markDefs: [] }] };
+    const bytes = bodyFromDocument(body);
+    expect(validateBodyBytes(bytes)).toBe("spt-2");
+    expect(decodePayload("hail.body.spt-2", bytes)).toEqual(body);
+    expect(() => outboundBody({ body })).toThrow("Composed messages cannot declare a relayed origin");
+  });
+
   it("leaves room for intent metadata around a maximum-sized body", () => {
     expect(encodeDeterministic({body:new Uint8Array(BODY_MAX_BYTES),connections:[]},BODY_CONTAINER_LIMITS).length).toBeGreaterThan(BODY_MAX_BYTES);
   });

@@ -20,6 +20,9 @@ COMPONENTS = {
     "apps/cli/": {"cli", "database-server"},
     "apps/plc-monitor/": {"monitor", "database-monitor", "database-server", "monitor-image"},
     "packages/hail-codec-go/": {"codec-go"},
+    # Tested with the shared libraries, and imported by the provider's
+    # email bridge converter, so server suites and the provider image depend on it.
+    "packages/hail-email-bridge/": {"codec-ts", "server", "database-server", "images"},
 }
 
 

@@ -631,9 +631,32 @@ function validateSpt1Body(payload: HailRecord): void {
   });
 }
 
+const ORIGIN_EMAIL_ADDRESS = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const ORIGIN_LIST_ID = /^[a-z0-9](?:[a-z0-9._-]{0,253}[a-z0-9])?$/;
+
+/** A relayed-origin statement; see spec/bodies.md. */
+function validateOrigin(value: unknown): void {
+  const path = "$.origin", origin = record(value, path);
+  exactKeys(origin, ["type", "from_address", "authentication", "received_at"], ["from_name", "list_id"], path);
+  if (origin.type !== "email") fail("unsupported origin type", `${path}.type`);
+  const address = text(origin.from_address, `${path}.from_address`);
+  if (address.length > 254 || address.indexOf("@") > 64 || !ORIGIN_EMAIL_ADDRESS.test(address)) {
+    fail("must be a lowercase ASCII email address", `${path}.from_address`);
+  }
+  if (origin.from_name !== undefined) profileText(origin.from_name, 1, 256, `${path}.from_name`);
+  if (origin.list_id !== undefined && !ORIGIN_LIST_ID.test(text(origin.list_id, `${path}.list_id`))) {
+    fail("must be a lowercase list identifier of at most 255 bytes", `${path}.list_id`);
+  }
+  if (origin.authentication !== "dkim-aligned" && origin.authentication !== "none") {
+    fail("unsupported origin authentication", `${path}.authentication`);
+  }
+  integer(origin.received_at, `${path}.received_at`);
+}
+
 function validateSpt2Body(payload: HailRecord): void {
-  exactKeys(payload, ["version", "profile", "blocks"], ["attachments"], "$");
+  exactKeys(payload, ["version", "profile", "blocks"], ["attachments", "origin"], "$");
   if (payload.attachments !== undefined) validateAttachments(payload.attachments);
+  if (payload.origin !== undefined) validateOrigin(payload.origin);
   if (payload.version !== 1) fail("must equal integer 1", "$.version");
   if (payload.profile !== "spt-2") fail("must equal spt-2", "$.profile");
   const blocks = array(payload.blocks, "$.blocks");
@@ -724,13 +747,90 @@ export function validatePngStructure(data: Uint8Array, path = "$"): { width: num
   return { width, height };
 }
 
+/**
+ * Bundled-image rules from spec/assets.md and spec/bodies.md, exported so that
+ * renderers, editors and relays apply the same numbers as the codec.
+ */
+export const BUNDLED_IMAGE_LIMITS = Object.freeze({
+  /** Assets in one manifest, and image blocks in one body. */
+  maximumAssets: 24,
+  maximumImageBlocks: 24,
+  /** Sum of width × height over every image block. */
+  maximumBodyPixels: 8_000_000,
+  /** `header` and `image` roles, the two a message body may use. */
+  message: Object.freeze({
+    mediaTypes: Object.freeze(["image/png", "image/jpeg"] as const), bytes: 524_288, width: 2_400, height: 2_400,
+    headerHeight: 1_200, pixels: 2_000_000,
+  }),
+  avatar: Object.freeze({ mediaTypes: Object.freeze(["image/png"] as const), bytes: 32_768, width: 512, height: 512, pixels: 262_144 }),
+});
+
+/**
+ * Bounded container and header checks for a baseline or progressive 8-bit JPEG.
+ * Pixels are never decoded. Returns the frame dimensions.
+ */
+export function validateJpegStructure(bytes: Uint8Array, path = "$"): { width: number; height: number } {
+  const invalid = (): never => fail("must be a complete baseline or progressive JPEG image", path);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) invalid();
+  let offset = 2, inScan = false, sawScan = false, sawData = false, width = 0, height = 0;
+  let components: Set<number> | undefined;
+  while (offset < bytes.length) {
+    if (inScan && bytes[offset] !== 0xff) { sawData = true; offset++; continue; }
+    if (bytes[offset++] !== 0xff) invalid();
+    while (bytes[offset] === 0xff) offset++;
+    if (offset >= bytes.length) invalid();
+    const marker = bytes[offset++]!;
+    if (inScan && (marker === 0 || marker >= 0xd0 && marker <= 0xd7)) {
+      if (marker === 0) sawData = true;
+      continue;
+    }
+    inScan = false;
+    if (marker === 0xd9) {
+      if (!components || !sawScan || !sawData || offset !== bytes.length) invalid();
+      return { width, height };
+    }
+    if (![0xc0, 0xc1, 0xc2, 0xc4, 0xdb, 0xdd, 0xda, 0xfe].includes(marker) && !(marker >= 0xe0 && marker <= 0xef)) invalid();
+    if (offset + 2 > bytes.length) invalid();
+    const length = view.getUint16(offset), start = offset + 2, end = offset + length;
+    if (length < 2 || end > bytes.length) invalid();
+    if ([0xc0, 0xc1, 0xc2].includes(marker)) {
+      if (components || length < 11 || bytes[start] !== 8) invalid();
+      height = view.getUint16(start + 1); width = view.getUint16(start + 3);
+      if (width === 0 || height === 0) invalid();
+      const count = bytes[start + 5]!;
+      if (count < 1 || count > 4 || length !== 8 + 3 * count) invalid();
+      components = new Set();
+      for (let index = 0; index < count; index++) {
+        const id = bytes[start + 6 + 3 * index]!, sampling = bytes[start + 7 + 3 * index]!;
+        if (components.has(id) || (sampling >> 4) < 1 || (sampling >> 4) > 4 || (sampling & 15) < 1 || (sampling & 15) > 4 ||
+          bytes[start + 8 + 3 * index]! > 3) invalid();
+        components.add(id);
+      }
+    } else if (marker === 0xda) {
+      if (!components || length < 8) invalid();
+      const count = bytes[start]!, selected = new Set<number>();
+      if (count < 1 || count > components!.size || length !== 6 + 2 * count) invalid();
+      for (let index = 0; index < count; index++) {
+        const id = bytes[start + 1 + 2 * index]!, tables = bytes[start + 2 + 2 * index]!;
+        if (!components!.has(id) || selected.has(id) || (tables >> 4) > 3 || (tables & 15) > 3) invalid();
+        selected.add(id);
+      }
+      if (bytes[end - 3]! > 63 || bytes[end - 2]! > 63) invalid();
+      sawScan = true; inScan = true;
+    } else if (marker === 0xdd && length !== 4) invalid();
+    offset = end;
+  }
+  return invalid();
+}
+
 export function validateAssetManifest(value: unknown): asserts value is HailAssetManifest {
   assertHailValue(value);
   const manifest = record(value, "$");
   exactKeys(manifest, ["version", "assets"], [], "$");
   if (manifest.version !== 1) fail("must equal integer 1", "$.version");
   const assets = array(manifest.assets, "$.assets");
-  if (assets.length < 1 || assets.length > 8) fail("must contain one to eight assets", "$.assets");
+  if (assets.length < 1 || assets.length > BUNDLED_IMAGE_LIMITS.maximumAssets) fail("must contain 1 to 24 assets", "$.assets");
   const ids = new Set<string>(), roles = new Set<string>();
   assets.forEach((entry, index) => {
     const path = `$.assets[${index}]`, asset = record(entry, path);
@@ -739,28 +839,32 @@ export function validateAssetManifest(value: unknown): asserts value is HailAsse
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(id) || ids.has(id)) fail("must be a unique canonical asset ID", `${path}.id`);
     if (!["avatar", "header", "image"].includes(role) || role !== "image" && roles.has(role)) fail("must be a unique supported asset role", `${path}.role`);
     ids.add(id); roles.add(role);
-    if (asset.media_type !== "image/png") fail("must equal image/png", `${path}.media_type`);
+    const rules = role === "avatar" ? BUNDLED_IMAGE_LIMITS.avatar : BUNDLED_IMAGE_LIMITS.message;
+    const mediaType = text(asset.media_type, `${path}.media_type`);
+    if (!(rules.mediaTypes as readonly string[]).includes(mediaType)) fail("unsupported image media type for this role", `${path}.media_type`);
     if (asset.loading !== "bundled") fail("must equal bundled", `${path}.loading`);
     if (!(asset.data instanceof Uint8Array)) fail("must be a byte string", `${path}.data`);
-    const maximum = role === "avatar" ? { bytes: 32_768, width: 512, height: 512, pixels: 262_144 } :
-      { bytes: 196_608, width: 2_400, height: role === "image" ? 2_400 : 1_200, pixels: 2_000_000 };
+    const maximum = { bytes: rules.bytes, width: rules.width, pixels: rules.pixels,
+      height: role === "header" ? BUNDLED_IMAGE_LIMITS.message.headerHeight : rules.height };
     const size = integer(asset.size, `${path}.size`, 1);
     if (size !== asset.data.length || size > maximum.bytes) fail("does not match the bounded asset bytes", `${path}.size`);
     digest(asset.digest, `${path}.digest`);
     const expected = bytes(record(asset.digest, `${path}.digest`).value, 32, `${path}.digest.value`);
     const actual = sha256(asset.data);
     if (!actual.every((byte, byteIndex) => byte === expected[byteIndex])) fail("does not match the asset bytes", `${path}.digest.value`);
-    const dimensions = validatePngStructure(asset.data, `${path}.data`);
+    // The declared type selects the validator; bytes of another format fail it.
+    const dimensions = mediaType === "image/jpeg" ? validateJpegStructure(asset.data, `${path}.data`) : validatePngStructure(asset.data, `${path}.data`);
     const width = integer(asset.width, `${path}.width`, 1), height = integer(asset.height, `${path}.height`, 1);
     if (width !== dimensions.width || height !== dimensions.height || width > maximum.width || height > maximum.height || width * height > maximum.pixels) {
-      fail("does not match bounded PNG dimensions", `${path}.width`);
+      fail("does not match bounded image dimensions", `${path}.width`);
     }
   });
 }
 
 function validateSpt3Body(payload: HailRecord): void {
-  exactKeys(payload, ["version", "profile", "assets", "blocks"], ["attachments"], "$");
+  exactKeys(payload, ["version", "profile", "assets", "blocks"], ["attachments", "origin"], "$");
   if (payload.attachments !== undefined) validateAttachments(payload.attachments);
+  if (payload.origin !== undefined) validateOrigin(payload.origin);
   if (payload.version !== 1) fail("must equal integer 1", "$.version");
   if (payload.profile !== "spt-3") fail("must equal spt-3", "$.profile");
   validateAssetManifest(payload.assets);
@@ -772,7 +876,7 @@ function validateSpt3Body(payload: HailRecord): void {
   const textBlocks = blocks.filter((entry, index) => {
     const path = `$.blocks[${index}]`, block = record(entry, path);
     if (block._type !== "spt.image") return true;
-    if (++imageCount > 8) fail("at most eight image blocks are allowed", path);
+    if (++imageCount > BUNDLED_IMAGE_LIMITS.maximumImageBlocks) fail("at most 24 image blocks are allowed", path);
     exactKeys(block, ["_type", "asset", "alt"], ["caption"], path);
     const id = text(block.asset, `${path}.asset`), asset = assets.find(asset => asset.id === id);
     if (!asset || asset.role === "header" && index !== 0) fail("image must reference a bundled image, or a leading header", `${path}.asset`);
@@ -783,7 +887,7 @@ function validateSpt3Body(payload: HailRecord): void {
     return false;
   });
   if (!imageCount || used.size !== assets.length) fail("all assets must be referenced by image blocks", "$.assets");
-  if (pixels > 8_000_000) fail("image blocks exceed eight million decoded pixels", "$.blocks");
+  if (pixels > BUNDLED_IMAGE_LIMITS.maximumBodyPixels) fail("image blocks exceed eight million decoded pixels", "$.blocks");
   validateSpt2Body({ version: 1, profile: "spt-2", blocks: textBlocks });
 }
 

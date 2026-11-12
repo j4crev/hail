@@ -10,10 +10,14 @@ import {PermissionError,type GrantPermissions} from '../accounts/permissions.js'
 import {PasskeyError} from '../accounts/passkeys.js';
 import {JmapError,argumentsOnly,object} from './common.js';
 import type {JmapBlobs} from './blobs.js';
+import {EmailBridgeError} from '../bridge/aliases.js';
+import type {EmailAliasOperations} from '../bridge/operations.js';
 
 export interface JmapOperationDependencies {
  accounts:AccountApiRepository;grants:GrantRepository;service:GrantService;
  messaging?:AccountMessaging;publications?:AccountPublications;connections?:AccountConnections;permissions?:GrantPermissions;blobs?:JmapBlobs;
+ /** Present only when the provider offers the inbound email bridge. */
+ emailAliases?:EmailAliasOperations;
 }
 const DID=/^did:plc:[a-z2-7]{24}$/;
 const ID=/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -59,7 +63,7 @@ export class JmapOperations {
    if(error instanceof JmapError)throw error;
    if(error instanceof HailCodecError)throw new JmapError('invalidArguments');
    if(error instanceof GrantConflictError)fail('stateMismatch',409,'Grant revision changed; review the retained intent');
-   if(error instanceof UserGrantError||error instanceof ConnectionError||error instanceof PermissionError||error instanceof PasskeyError){
+   if(error instanceof UserGrantError||error instanceof ConnectionError||error instanceof PermissionError||error instanceof PasskeyError||error instanceof EmailBridgeError){
     const status=error.status;
     const type=status===400?'invalidArguments':status===403?'forbidden':status===404?'notFound':status===409?'stateMismatch':status===410?'notFound':status===413?'requestTooLarge':status===429?'rateLimit':'serverUnavailable';
     fail(type,status,error.message,error instanceof ConnectionError?error.code:status===410?'APPROVAL_EXPIRED':undefined);
@@ -69,6 +73,17 @@ export class JmapOperations {
  }
  private async run(s:AccountApiSession,name:string,a:Record<string,unknown>):Promise<object>{
   const d=this.deps;
+  if(name==='HailEmailAlias/get'){
+   argumentsOnly(a,['summary']);scope(s,'messages:read');
+   if(!d.emailAliases)return {available:false};
+   return d.emailAliases.get(s,bool(a,'summary'));
+  }
+  if(name==='HailEmailAlias/create'||name==='HailEmailAlias/destroy'){
+   // Aliases are account configuration managed from the browser, like Trash and preferences.
+   scope(s,'messages:write');browser(s);active(s);const aliases=need(d.emailAliases);
+   if(name==='HailEmailAlias/create'){argumentsOnly(a,['label']);return aliases.create(s,a.label);}
+   argumentsOnly(a,['ids']);return aliases.destroy(s.account_id,a.ids);
+  }
   if(name==='HailAttachment/import'){
    argumentsOnly(a,['filename','blobId']);scope(s,'messages:write');active(s);
    const blob=found(await need(d.blobs).get(s,required(a,'blobId')));

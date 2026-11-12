@@ -366,7 +366,66 @@ func body2Value(value *SPT2Body) map[any]any {
 		}
 		blocks[i] = item
 	}
-	return withAttachments(value.Attachments, map[any]any{"version": value.Version, "profile": value.Profile, "blocks": blocks})
+	return withOrigin(value.Origin, withAttachments(value.Attachments, map[any]any{"version": value.Version, "profile": value.Profile, "blocks": blocks}))
+}
+
+func withOrigin(origin *BodyOrigin, m map[any]any) map[any]any {
+	if origin == nil {
+		return m
+	}
+	item := map[any]any{"type": origin.Type, "from_address": origin.FromAddress,
+		"authentication": origin.Authentication, "received_at": origin.ReceivedAt}
+	if origin.FromName != "" {
+		item["from_name"] = origin.FromName
+	}
+	if origin.ListID != "" {
+		item["list_id"] = origin.ListID
+	}
+	m["origin"] = item
+	return m
+}
+
+var (
+	originEmailAddress = regexp.MustCompile("^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+	originListID       = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9._-]{0,253}[a-z0-9])?$`)
+)
+
+// validateOrigin checks a relayed-origin statement; see spec/bodies.md.
+func validateOrigin(m map[any]any) error {
+	if !has(m, "origin") {
+		return nil
+	}
+	origin, err := mapValue(m["origin"], "$.origin")
+	if err != nil {
+		return err
+	}
+	if err = exact(origin, []string{"type", "from_address", "authentication", "received_at"}, []string{"from_name", "list_id"}, "$.origin"); err != nil {
+		return err
+	}
+	if err = expectText(origin, "type", "email", "$.origin.type"); err != nil {
+		return err
+	}
+	address, err := textValue(origin["from_address"], "$.origin.from_address")
+	if err != nil || len(address) > 254 || strings.Index(address, "@") > 64 || !originEmailAddress.MatchString(address) {
+		return errors.New("$.origin.from_address must be a lowercase ASCII email address")
+	}
+	if has(origin, "from_name") {
+		if err = profileText(origin["from_name"], 1, 256, "$.origin.from_name"); err != nil {
+			return err
+		}
+	}
+	if has(origin, "list_id") {
+		list, err := textValue(origin["list_id"], "$.origin.list_id")
+		if err != nil || !originListID.MatchString(list) {
+			return errors.New("$.origin.list_id must be a lowercase list identifier of at most 255 bytes")
+		}
+	}
+	authentication, err := textValue(origin["authentication"], "$.origin.authentication")
+	if err != nil || authentication != "dkim-aligned" && authentication != "none" {
+		return errors.New("unsupported origin authentication")
+	}
+	_, err = intValue(origin["received_at"], "$.origin.received_at", 0)
+	return err
 }
 
 func assetManifestValue(value AssetManifest) map[any]any {
@@ -418,7 +477,7 @@ func body3Value(value *SPT3Body) map[any]any {
 		}
 		blocks[i] = item
 	}
-	return withAttachments(value.Attachments, map[any]any{"version": value.Version, "profile": value.Profile, "assets": assetManifestValue(value.Assets), "blocks": blocks})
+	return withOrigin(value.Origin, withAttachments(value.Attachments, map[any]any{"version": value.Version, "profile": value.Profile, "assets": assetManifestValue(value.Assets), "blocks": blocks}))
 }
 
 func mapValue(v any, path string) (map[any]any, error) {
@@ -1160,7 +1219,10 @@ func validateSpt2Body(m map[any]any) error {
 	if err := validateAttachments(m); err != nil {
 		return err
 	}
-	if e := exact(m, []string{"version", "profile", "blocks"}, []string{"attachments"}, "$"); e != nil {
+	if e := exact(m, []string{"version", "profile", "blocks"}, []string{"attachments", "origin"}, "$"); e != nil {
+		return e
+	}
+	if e := validateOrigin(m); e != nil {
 		return e
 	}
 	v, e := intValue(m["version"], "$.version", 0)
@@ -1382,7 +1444,10 @@ func validateSpt3Body(m map[any]any) error {
 	if err := validateAttachments(m); err != nil {
 		return err
 	}
-	if err := exact(m, []string{"version", "profile", "assets", "blocks"}, []string{"attachments"}, "$"); err != nil {
+	if err := exact(m, []string{"version", "profile", "assets", "blocks"}, []string{"attachments", "origin"}, "$"); err != nil {
+		return err
+	}
+	if err := validateOrigin(m); err != nil {
 		return err
 	}
 	version, err := intValue(m["version"], "$.version", 0)
@@ -1421,8 +1486,8 @@ func validateSpt3Body(m map[any]any) error {
 			continue
 		}
 		imageCount++
-		if imageCount > 8 {
-			return errors.New("at most eight image blocks are allowed")
+		if imageCount > MaximumImageBlocks {
+			return errors.New("at most 24 image blocks are allowed")
 		}
 		if err = exact(block, []string{"_type", "asset", "alt"}, []string{"caption"}, path); err != nil {
 			return err
@@ -1446,7 +1511,7 @@ func validateSpt3Body(m map[any]any) error {
 	if imageCount == 0 || len(used) != len(assets) {
 		return errors.New("all assets must be referenced by image blocks")
 	}
-	if pixels > 8000000 {
+	if pixels > MaximumBodyPixels {
 		return errors.New("image blocks exceed eight million decoded pixels")
 	}
 	return validateSpt2Body(map[any]any{"version": int64(1), "profile": "spt-2", "blocks": textBlocks})

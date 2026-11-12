@@ -67,7 +67,8 @@ history; take a backup first. It does not invalidate already issued signed links
 ### Reserved provider addresses
 
 Migration 60 automatically reserves `ops`, `alerts`, `abuse`, `security`,
-`support` and `admin` on every served domain before registration opens. These
+`support` and `admin` on every served domain before registration opens.
+Migration 123 adds `email`, the name the inbound email bridge sends as. These
 are name reservations, not accounts: no DID, private keys, credentials or
 administrative privileges are created. Database enforcement also blocks incoming
 transfers from claiming these names. Public address checks report them unavailable.

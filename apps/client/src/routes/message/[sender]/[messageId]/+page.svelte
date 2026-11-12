@@ -12,6 +12,7 @@
   import {replyExcerpt} from "$lib/reply.js";
   import {forwardHref} from "$lib/forward.js";
   import ForwardedPill from "$lib/ForwardedPill.svelte";
+  import RelayedPill from "$lib/RelayedPill.svelte";
   import {forwardedAttribution, messageDisplayContent} from "$lib/messages.js";
   import {tick} from "svelte";
   import {goto, invalidate} from "$app/navigation";
@@ -36,7 +37,9 @@
   });
   let unsubscribe = $state<Unsubscribe>(), unsubscribed = $state(false);
   $effect(() => { data.message.sender; data.message.messageId; unsubscribed = false; });
-  const canUnsubscribe = $derived(data.message.kind !== 'connection' && data.account.custodyProfile === 'managed' && !!data.subscription && !unsubscribed);
+  // Unsubscribing from a relayed message would revoke the relay's Grant, turning off
+  // inbound email entirely; one newsletter is stopped by deleting its alias instead.
+  const canUnsubscribe = $derived(data.message.kind !== 'connection' && !data.message.relayed && data.account.custodyProfile === 'managed' && !!data.subscription && !unsubscribed);
   let readError = $state(''), readPending = $state(true);
   $effect(() => {
     const message = data.message, key = `${message.sender}/${message.messageId}`;
@@ -85,22 +88,31 @@
 <article class="reader-panel overflow-hidden">
   <header class="flex flex-wrap items-center justify-between gap-4 border-0 border-b border-solid border-line pb-5">
     <div class="flex min-w-0 w-full items-start gap-3">
-      {#if data.avatar && failedAvatar !== data.avatar.src}<img class="grid size-[42px] flex-[0_0_42px] place-items-center rounded-[13px] object-cover" src={data.avatar.src} bind:this={avatarImage} alt="" width={data.avatar.width} height={data.avatar.height} />
-      {:else}<span class="grid size-[42px] flex-[0_0_42px] place-items-center rounded-[13px] bg-brand-soft text-xs font-bold text-brand" aria-hidden="true">{(data.message.senderAddress ?? data.message.sender).slice(0, 2).toUpperCase()}</span>{/if}
+      {#if data.avatar && failedAvatar !== data.avatar.src && !data.message.relayed}<img class="grid size-[42px] flex-[0_0_42px] place-items-center rounded-[13px] object-cover" src={data.avatar.src} bind:this={avatarImage} alt="" width={data.avatar.width} height={data.avatar.height} />
+      {:else}<span class="grid size-[42px] flex-[0_0_42px] place-items-center rounded-[13px] bg-brand-soft text-xs font-bold text-brand" aria-hidden="true">{(data.message.relayed?.fromName ?? data.message.relayed?.fromAddress ?? data.message.senderAddress ?? data.message.sender).slice(0, 2).toUpperCase()}</span>{/if}
       <div class="flex min-w-0 flex-1 flex-col gap-1">
-      <strong class="[overflow-wrap:anywhere]"><ContactAddress owner={data.account.did} did={data.message.sender} address={data.message.senderAddress} /></strong>
-      <span class="text-xs text-muted"><DateTime value={data.message.deliveredAt} /></span>
-      {#if data.message.senderAddress}<IdentityDetails did={data.message.sender} />{/if}
+      {#if data.message.relayed}
+        {@const relayed = data.message.relayed}
+        <strong class="[overflow-wrap:anywhere]">{relayed.fromName ?? relayed.fromAddress}</strong>
+        {#if relayed.fromName}<span class="text-sm text-muted [overflow-wrap:anywhere]">{relayed.fromAddress}</span>{/if}
+        <span class="text-xs text-muted"><DateTime value={data.message.deliveredAt} /></span>
+        <span class="text-xs text-muted [overflow-wrap:anywhere]">Relayed from email by <ContactAddress owner={data.account.did} did={data.message.sender} address={data.message.senderAddress} />. {relayed.authenticated ? "The sender’s domain signed this email." : "The email sender could not be verified."} <a href="/aliases">Manage aliases</a></span>
+      {:else}
+        <strong class="[overflow-wrap:anywhere]"><ContactAddress owner={data.account.did} did={data.message.sender} address={data.message.senderAddress} /></strong>
+        <span class="text-xs text-muted"><DateTime value={data.message.deliveredAt} /></span>
+        {#if data.message.senderAddress}<IdentityDetails did={data.message.sender} />{/if}
+      {/if}
       </div>
     </div>
     <div class="flex w-full min-w-0 flex-wrap items-center gap-1">
-      {#if forwardedAttribution(data.message.blocks)}<ForwardedPill />
+      {#if data.message.relayed}<RelayedPill authenticated={data.message.relayed.authenticated} />
+      {:else if forwardedAttribution(data.message.blocks)}<ForwardedPill />
       {:else if data.message.kind!=='connection' && data.message.category}<mark class="max-w-full rounded-full bg-brand-soft px-2 py-1.5 text-xs font-semibold text-brand-strong [overflow-wrap:anywhere]">{data.message.category==='general'?'General':data.message.category}</mark>{/if}
       <div class:mobile-message-actions={!data.message.trashedAt} class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5 [&>section]:w-full [&>p]:w-full" role="group" aria-label="Message actions">
         {#if data.message.trashedAt}
           <button class="restore-button hail-icon-button mobile-floating-action" type="button" aria-label="Restore message" title="Restore message" disabled={restoring} onclick={restore}><Icon name="restore" size={24} /></button>
         {:else}
-        <button disabled={!data.canReply} bind:this={replyButton} class="hail-icon-button compact" type="button" aria-label="Reply" title="Reply" aria-expanded={replyOpen} aria-controls="message-reply" onclick={openReply}><Icon name="reply" /></button>
+        {#if !data.message.relayed}<button disabled={!data.canReply} bind:this={replyButton} class="hail-icon-button compact" type="button" aria-label="Reply" title="Reply" aria-expanded={replyOpen} aria-controls="message-reply" onclick={openReply}><Icon name="reply" /></button>{/if}
         <a class="hail-icon-button compact" aria-label="Forward" title="Forward" href={forwardHref(data.message)}><Icon name="forward" /></a>
         <MessageActions compact menu onunsubscribe={canUnsubscribe ? () => { void unsubscribe?.open(); } : undefined} disabled={readPending} messages={[data.message]} returnTo={data.message.kind==='connection'?'/?view=connections':'/?view=subscriptions'} />
         {/if}
@@ -108,7 +120,7 @@
       {#if !data.message.trashedAt && data.message.kind !== 'connection' && data.account.custodyProfile === 'managed' && data.subscription}
         <div class="w-full empty:hidden">{#key `${data.message.messageId}:${data.subscription.grantId}:${data.subscription.revision}`}<Unsubscribe bind:this={unsubscribe} hideTrigger subscription={data.subscription} owner={data.account.did} ondone={() => { unsubscribed = true; }} />{/key}</div>
       {/if}
-      {#if !data.message.trashedAt && data.message.kind !== 'connection' && data.account.custodyProfile === 'managed'}
+      {#if !data.message.trashedAt && data.message.kind !== 'connection' && !data.message.relayed && data.account.custodyProfile === 'managed'}
         {#if data.subscriptionUnavailable}<p class="w-full text-sm text-muted" role="status">Couldn’t check your subscription. Reload this message to try again.</p>
         {:else if !data.subscription}<p class="w-full text-sm text-muted">You have no active subscription to this sender. This saved message remains available.</p>{/if}
       {/if}

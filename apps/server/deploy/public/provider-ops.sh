@@ -21,6 +21,25 @@ case "${1:-}" in
     ;;
 esac
 
+# The email bridge converter runs from the provider image. It is managed only
+# when the checked-out release defines it and its database password is set, so
+# releases and rollbacks without it are unaffected.
+converter_defined() {
+  grep -q '^  email-converter:$' "$deploy/compose.yaml"
+}
+converter_enabled() {
+  converter_defined && grep -Eq '^EMAIL_CONVERTER_DB_PASSWORD=[A-Za-z0-9_-]{43}$' "$deploy/.env"
+}
+services() {
+  if converter_enabled; then echo "gui provider email-converter"; else echo "gui provider"; fi
+}
+# A release without the converter must not leave a newer one running.
+stop_stale_converter() {
+  if ! converter_enabled && docker inspect hail-public-provider-email-converter-1 >/dev/null 2>&1; then
+    docker stop hail-public-provider-email-converter-1 >/dev/null
+  fi
+}
+
 verify_image() {
   actual=$(docker image inspect "$1" --format '{{.Id}}') || {
     echo "rollback image unavailable; release unchanged" >&2; return 1;
@@ -163,7 +182,13 @@ select_image() {
   # Values originate from the validated digest or our retained rollback tag.
   mkdir -p "$(dirname "$release")" || return 1
   staged=$(mktemp "$release.XXXXXX") || return 1
-  printf '{"services":{"provider":{"image":"%s"},"gui":{"image":"%s"}}}\n' "$1" "$2" > "$staged" || return 1
+  # The converter shares the provider's image. It is pinned only when the release
+  # defines it: an overlay naming an undefined service would create a bare one.
+  if converter_defined; then
+    printf '{"services":{"provider":{"image":"%s"},"gui":{"image":"%s"},"email-converter":{"image":"%s"}}}\n' "$1" "$2" "$1" > "$staged" || return 1
+  else
+    printf '{"services":{"provider":{"image":"%s"},"gui":{"image":"%s"}}}\n' "$1" "$2" > "$staged" || return 1
+  fi
   if [ ! -f "$release" ]; then compose="$compose -f $release"; fi
   mv "$staged" "$release"
 }
@@ -175,7 +200,9 @@ restore_release() {
   git -C "$root" cat-file -e "$1^{commit}"
   git -C "$root" checkout --quiet --detach "$1"
   select_image "$2" "$4"
-  $compose up -d --no-deps --no-build --pull never --force-recreate --wait --wait-timeout 180 gui provider
+  stop_stale_converter
+  # shellcheck disable=SC2046 # services() returns separate service names.
+  $compose up -d --no-deps --no-build --pull never --force-recreate --wait --wait-timeout 180 $(services)
   curl --fail --retry 12 --retry-delay 5 --retry-all-errors --silent --show-error https://haili.app/health/ready
 }
 
@@ -190,13 +217,53 @@ case "${1:-}" in
     curl --fail --retry 12 --retry-delay 5 --retry-all-errors --silent --show-error https://haili.app/health/ready
     ;;
   logs)
-    case "${2:-}" in provider|db|caddy) service=$2;; *) echo "usage: $0 logs provider|db|caddy" >&2; exit 2;; esac
+    case "${2:-}" in provider|db|caddy|email-converter) service=$2;; *) echo "usage: $0 logs provider|db|caddy|email-converter" >&2; exit 2;; esac
     case "${3:-200}" in *[!0-9]*|'') exit 2;; esac
     [ "${3:-200}" -le 2000 ] || exit 2
     $compose logs --no-color --tail "${3:-200}" "$service"
     ;;
   backup)
     exec /usr/local/sbin/hail-provider-backup
+    ;;
+  email-converter-role)
+    # Creates or updates the converter's limited database role from the password
+    # in .env, then starts the converter with the running release's image.
+    [ "$#" -eq 1 ] || exit 2
+    converter_enabled || { echo "set EMAIL_CONVERTER_DB_PASSWORD (43 base64url characters) in $deploy/.env and deploy a release that defines the converter" >&2; exit 1; }
+    [ -f "$release" ] || { echo "no deployed release selection; deploy first" >&2; exit 1; }
+    # A release deployed by an earlier wrapper does not pin the converter. Pin it
+    # to the selected provider image so it never falls back to a mutable tag.
+    python3 - "$release" <<'PY_PIN' || exit 1
+import json
+import os
+import sys
+import tempfile
+path = sys.argv[1]
+with open(path) as handle:
+    selection = json.load(handle)
+services = selection["services"]
+image = services["provider"]["image"]
+if not isinstance(image, str) or not image:
+    raise SystemExit("release selection has no provider image")
+if services.get("email-converter", {}).get("image") != image:
+    services["email-converter"] = {"image": image}
+    staged = tempfile.NamedTemporaryFile("w", dir=os.path.dirname(path), delete=False)
+    with staged:
+        json.dump(selection, staged, separators=(",", ":"))
+        staged.write("\n")
+    os.replace(staged.name, path)
+PY_PIN
+    password=$(sed -n 's/^EMAIL_CONVERTER_DB_PASSWORD=//p' "$deploy/.env")
+    # The password goes through stdin, never a command line.
+    # base64url only (checked above), so the quoted value cannot break out.
+    { printf '%s\n' "\\set password '$password'"
+      cat "$root/apps/server/deploy/email-bridge/converter-role.sql" "$root/apps/server/deploy/email-bridge/converter-login.sql"
+    } | $compose exec -T db psql -q -v ON_ERROR_STOP=1 -U hail -d hail
+    $compose up -d --no-deps --no-build --pull never --force-recreate --wait --wait-timeout 180 email-converter
+    [ "$(docker inspect hail-public-provider-email-converter-1 --format '{{.Image}}')" = "$(docker inspect hail-public-provider-provider-1 --format '{{.Image}}')" ] || {
+      docker stop hail-public-provider-email-converter-1 >/dev/null
+      echo "the converter's image differs from the provider's; stopped it" >&2; exit 1;
+    }
     ;;
   signup-monitor-configure)
     [ "$#" -eq 1 ] || exit 2
@@ -240,8 +307,9 @@ case "${1:-}" in
     docker tag "$gui_image" "$retained_client"
     verify_image "$retained_client" "$gui_image"
     git -C "$root" checkout --quiet --detach "$commit"
-    if select_image "$image" "$client_image" && $compose config --quiet &&
-      $compose up -d --no-deps --no-build --pull never --force-recreate --wait --wait-timeout 180 gui provider &&
+    # shellcheck disable=SC2046 # services() returns separate service names.
+    if select_image "$image" "$client_image" && $compose config --quiet && stop_stale_converter &&
+      $compose up -d --no-deps --no-build --pull never --force-recreate --wait --wait-timeout 180 $(services) &&
       curl --fail --retry 12 --retry-delay 5 --retry-all-errors --silent --show-error https://haili.app/health/ready; then
       umask 077
       record=$(mktemp /var/lib/hail-provider-previous.XXXXXX)
@@ -275,7 +343,7 @@ case "${1:-}" in
     restore_release "$commit" "$image" "$expected" "$client_image" "$client_expected"
     ;;
   *)
-    echo "usage: $0 status|restart|logs|backup|signup-monitor-configure|deploy|rollback|image-retention" >&2
+    echo "usage: $0 status|restart|logs|backup|signup-monitor-configure|email-converter-role|deploy|rollback|image-retention" >&2
     exit 2
     ;;
 esac

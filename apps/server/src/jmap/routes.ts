@@ -163,7 +163,7 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
             if(!result)throw new JmapError(operation==='queryChanges'?'cannotCalculateChanges':'unknownMethod');
             remember(result);responses.push([name,result,callId]);continue;
           }
-          if(operations&&input.using.includes(HAIL_ACCOUNT)&&/^(HailMailbox|HailSubmission|HailGrant|HailRelationship|HailAttachment)\//.test(name)){
+          if(operations&&input.using.includes(HAIL_ACCOUNT)&&/^(HailMailbox|HailSubmission|HailGrant|HailRelationship|HailAttachment|HailEmailAlias)\//.test(name)){
             if(args.accountId!==messages.accountId(session))throw new JmapError('accountNotFound');
             if(/^HailGrant\/(reviewApproval|prepareApproval|commitApproval|approvalStatus)$/.test(name)&&approvalRate.take(clientAddress(context.req.raw),30)!==null)throw new JmapOperationError('rateLimit',429,'Wait before retrying permission requests');
             responses.push([name,await operations.dispatch(session,name,args),callId]);continue;

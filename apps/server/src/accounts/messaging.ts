@@ -41,6 +41,8 @@ export function outboundBody(input:Record<string,unknown>):Uint8Array {
   if(text)return bodyFromText(input.text as string);
   const profile=(input.body as Record<string,unknown>).profile;
   if(profile!=="spt-2"&&profile!=="spt-3")throw new UserGrantError(400,"Invalid body profile");
+  // An account composes its own content. Only a relay service may state that a body came from elsewhere.
+  if((input.body as Record<string,unknown>).origin!==undefined)throw new UserGrantError(400,"Composed messages cannot declare a relayed origin");
   return profile==="spt-2"?bodyFromDocument(fromDiagnosticJson("hail.body.spt-2",input.body as DiagnosticJson)):
     bodyFromDocument(fromDiagnosticJson("hail.body.spt-3",input.body as DiagnosticJson));
 }
@@ -121,6 +123,29 @@ export class AccountMessaging {
         payload.authorization.type!=="grant"||payload.authorization.grant_id!==input.grantId||payload.category!==(input.category||undefined))||
       (input.replyUntil===undefined||input.replyUntil===null ? payload.reply.allowed : !payload.reply.allowed||payload.reply.until!==input.replyUntil))throw new UserGrantError(409,"Message ID has another request");
     return this.submit(session.did,input.messageId);
+  }
+
+  /**
+   * Grant delivery of an already-encoded body for a relay service that this
+   * provider operates, such as the email bridge. Unlike send(), it accepts a
+   * body stating a relayed origin; it is not reachable from the account API.
+   */
+  async sendRelayed(sender:string,input:{messageId:string;grantId:string;category:string;body:Uint8Array}){
+    if(!ID.test(input.messageId)||!ID.test(input.grantId)||!DID.test(sender))throw new UserGrantError(400,"Invalid relayed send");
+    validateBodyBytes(input.body);
+    const digest=new Uint8Array(createHash("sha256").update(input.body).digest());
+    let stored=await this.envelopes.sent(sender,input.messageId);
+    if(!stored){
+      await this.bodies.publish(sender,input.body);
+      try{await this.service.create(sender,input.grantId,encodeBase64Url(digest),input.category,null,input.messageId);}
+      catch(error){stored=await this.envelopes.sent(sender,input.messageId);if(!stored){
+        if(error instanceof EnvelopeAuthorizationError)throw new UserGrantError(409,error.message);throw error;}}
+      stored=await this.envelopes.sent(sender,input.messageId);
+    }
+    const payload=inspectSignedPayload("hail.envelope",stored!).payload;
+    if(payload.authorization.type!=="grant"||payload.authorization.grant_id!==input.grantId||payload.category!==input.category||payload.reply.allowed||
+      !Buffer.from(payload.body.digest.value).equals(Buffer.from(digest)))throw new UserGrantError(409,"Message ID has another request");
+    return this.submit(sender,input.messageId);
   }
 
   ensureConversation(sender:string,id:string,participants:string[],transaction?:SQL){return this.service.ensureConversation(sender,id,participants,transaction);}

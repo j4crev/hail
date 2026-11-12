@@ -1,0 +1,59 @@
+From: =?UTF-8?B?VGhlIEZpZWxkIE5vdGVzIOKYlQ==?= <editors@fieldnotes.example>
+To: x7k2m9qd@in.bridge.example
+Subject: =?UTF-8?Q?Issue_12:_Caf=C3=A9_culture?=
+Message-ID: <issue-12.abc@mail.fieldnotes.example>
+Date: Tue, 10 Nov 2026 09:30:00 -0500
+List-Id: Field Notes weekly <weekly.fieldnotes.example>
+List-Unsubscribe: <https://fieldnotes.example/u/abc>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Issue 12: plain text alternative.
+
+--b1
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!doctype html>
+<html><head><title>Ignored title</title>
+<style>.x { color: red }</style></head>
+<body>
+<div style=3D"display:none; max-height:0; overflow:hidden">Preheader teaser =
+text &zwnj;&nbsp;&zwnj;&nbsp;</div>
+<table role=3D"presentation" width=3D"100%"><tr><td align=3D"center">
+  <a href=3D"https://fieldnotes.example/"><img src=3D"https://cdn.fieldnotes=
+.example/logo.png" alt=3D"Field Notes" width=3D"200" height=3D"60"></a>
+</td></tr><tr><td>
+  <h1>Caf=C3=A9 culture</h1>
+  <p>Welcome back. This week we visit <b>three</b> <i>very</i> different
+     caf=C3=A9s, and one <a href=3D"https://fieldnotes.example/roastery?utm=
+_source=3Dnl">roastery</a>.</p>
+  <p>First line<br>second line<br><br>New paragraph after two breaks.</p>
+  <h2>What we liked</h2>
+  <ul>
+    <li>Bright espresso</li>
+    <li>Quiet corners
+      <ol><li>Upstairs</li><li>By the window</li></ol>
+    </li>
+  </ul>
+  <blockquote>The best cup is the one you did not rush.</blockquote>
+  <table><tr><td bgcolor=3D"#1a7f72" style=3D"border-radius:6px">
+    <a href=3D"https://fieldnotes.example/issue/12" style=3D"color:#ffffff">Rea=
+d the full issue</a>
+  </td></tr></table>
+  <hr>
+  <p style=3D"text-align:center; font-size:12px">You can <a href=3D"http://f=
+ieldnotes.example/old">visit the archive</a>, <a href=3D"mailto:editors@fie=
+ldnotes.example">write to us</a> or
+  <a href=3D"https://fieldnotes.example/u/abc">unsubscribe</a>.</p>
+  <script>alert(1)</script>
+  <form action=3D"https://fieldnotes.example/vote"><input name=3D"q"></form>
+  <img src=3D"https://track.fieldnotes.example/o.gif?id=3Dabc" width=3D"1" he=
+ight=3D"1" alt=3D"">
+</td></tr></table>
+</body></html>
+
+--b1--

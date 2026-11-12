@@ -15,6 +15,14 @@ it('preserves subject, rich body and literal provenance without copying reply au
   expect(body).not.toHaveProperty('reply');
   expect(()=>encodePayload('hail.body.spt-2',body as unknown as HailSpt2Body)).not.toThrow();
 });
+it('does not repeat a relayed-origin statement and records the email sender as provenance',()=>{
+  const origin={type:'email',from_address:'editors@fieldnotes.example',authentication:'dkim-aligned',received_at:1700000000};
+  const input={...source,body:{...source.body,origin}};
+  const body=forwardBody(forwardSource(input,input),'');
+  expect(body).not.toHaveProperty('origin');
+  expect(parseBody(body).paragraphs).toContain(`From: alice@example.com\nSender DID: ${source.sender}\nOriginally received: ${source.deliveredAt}\nMessage ID: ${source.messageId}\nRelayed from email: editors@fieldnotes.example`);
+  expect(()=>encodePayload('hail.body.spt-2',body as unknown as HailSpt2Body)).not.toThrow();
+});
 it('upgrades plain messages so the entire forward is delivered, with no note required',()=>{
   const input={...source,body:{version:1,profile:'spt-1',blocks:composeBlocks('','Plain original')}};
   const body=forwardBody(forwardSource(input,input),'');

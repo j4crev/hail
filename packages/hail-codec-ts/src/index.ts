@@ -48,6 +48,8 @@ export type {
   HailSenderProfile,
   HailAttachment,
   HailSptBody,
+  HailBodyOrigin,
+  HailBodyOriginEmail,
   HailSpt2Body,
   HailSpt2Span,
   HailSpt2TextBlock,
@@ -74,7 +76,7 @@ export type {
   InspectedHailObject,
   VerifiedHailObject,
 } from "./types.js";
-export { expectedKeyId, validatePngStructure, validateAssetManifest, validatePayload } from "./validation.js";
+export { BUNDLED_IMAGE_LIMITS, expectedKeyId, validateJpegStructure, validatePngStructure, validateAssetManifest, validatePayload } from "./validation.js";
 export {
   createWebCryptoSigner,
   createWebCryptoVerifier,

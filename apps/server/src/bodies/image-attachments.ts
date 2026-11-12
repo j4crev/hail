@@ -1,51 +1,9 @@
+import {validateJpegStructure as codecJpegStructure} from '@racrproto/codec';
+
 /** Bounded container/header checks only. Never decode pixels or rewrite signed bytes. */
 export function validateJpegStructure(bytes:Uint8Array):void {
-  const invalid=()=>{throw new Error('Invalid or unsupported JPEG structure');};
-  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
-  if(bytes.length<4||bytes[0]!==0xff||bytes[1]!==0xd8)invalid();
-  let offset=2,inScan=false,sawScan=false,sawData=false;
-  let components:Set<number>|undefined;
-  while(offset<bytes.length){
-    if(inScan&&bytes[offset]!==0xff){sawData=true;offset++;continue;}
-    if(bytes[offset++]!==0xff)invalid();
-    while(bytes[offset]===0xff)offset++;
-    if(offset>=bytes.length)invalid();
-    const marker=bytes[offset++]!;
-    if(inScan&&(marker===0||marker>=0xd0&&marker<=0xd7)){
-      if(marker===0)sawData=true;
-      continue;
-    }
-    inScan=false;
-    if(marker===0xd9){if(!components||!sawScan||!sawData||offset!==bytes.length)invalid();return;}
-    if(![0xc0,0xc1,0xc2,0xc4,0xdb,0xdd,0xda,0xfe].includes(marker)&&!(marker>=0xe0&&marker<=0xef))invalid();
-    if(offset+2>bytes.length)invalid();
-    const length=view.getUint16(offset),start=offset+2,end=offset+length;
-    if(length<2||end>bytes.length)invalid();
-    if([0xc0,0xc1,0xc2].includes(marker)){
-      if(components||length<11||bytes[start]!==8||view.getUint16(start+1)===0||view.getUint16(start+3)===0)invalid();
-      const count=bytes[start+5]!;
-      if(count<1||count>4||length!==8+3*count)invalid();
-      components=new Set();
-      for(let i=0;i<count;i++){
-        const id=bytes[start+6+3*i]!,sampling=bytes[start+7+3*i]!;
-        if(components.has(id)||(sampling>>4)<1||(sampling>>4)>4||(sampling&15)<1||(sampling&15)>4||bytes[start+8+3*i]!>3)invalid();
-        components.add(id);
-      }
-    }else if(marker===0xda){
-      if(!components||length<8)invalid();
-      const count=bytes[start]!,selected=new Set<number>();
-      if(count<1||count>components!.size||length!==6+2*count)invalid();
-      for(let i=0;i<count;i++){
-        const id=bytes[start+1+2*i]!,tables=bytes[start+2+2*i]!;
-        if(!components!.has(id)||selected.has(id)||(tables>>4)>3||(tables&15)>3)invalid();
-        selected.add(id);
-      }
-      if(bytes[end-3]!>63||bytes[end-2]!>63)invalid();
-      sawScan=true;inScan=true;
-    }else if(marker===0xdd&&length!==4)invalid();
-    offset=end;
-  }
-  invalid();
+  // One implementation, shared with bundled body images, lives in the codec.
+  try{codecJpegStructure(bytes);}catch{throw new Error('Invalid or unsupported JPEG structure');}
 }
 
 /** RFC 9649: static VP8/VP8L images, optionally in an extended RIFF container. */

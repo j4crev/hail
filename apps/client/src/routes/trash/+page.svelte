@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MessageSender from "$lib/MessageSender.svelte";
   import {restoreReceivedMessage} from "$lib/jmap.js";
   import {mailboxView} from "$lib/mailbox-view.svelte.js";
   import MailboxRefresh from "$lib/MailboxRefresh.svelte";
@@ -75,8 +76,8 @@
         {@const message=item.message}
         {#if item.type==='received'}
           <MessageListRow inline muted href={`/message/${encodeURIComponent(item.message.sender)}/${encodeURIComponent(message.messageId)}`} timestamp={item.timestamp} title={message.title} preview={message.preview} header={$showInboxHeaders ? message.header : null} selected={selected.includes(item.key)}>
-            {#snippet leading()}<SelectionAvatar name={item.message.senderAddress??item.message.sender} avatar={item.message.avatar} selected={selected.includes(item.key)} disabled={busy||!ready} label={`Select message from ${item.message.senderAddress??item.message.sender}`} ontoggle={()=>toggle(item.key)} />{/snippet}
-            {#snippet sender()}<ContactAddress owner={data.account.did} did={item.message.sender} address={item.message.senderAddress} />{/snippet}
+            {#snippet leading()}<SelectionAvatar name={item.message.relayed?(item.message.relayed.fromName??item.message.relayed.fromAddress):item.message.senderAddress??item.message.sender} avatar={item.message.relayed?null:item.message.avatar} selected={selected.includes(item.key)} disabled={busy||!ready} label={`Select message from ${item.message.senderAddress??item.message.sender}`} ontoggle={()=>toggle(item.key)} />{/snippet}
+            {#snippet sender()}<MessageSender owner={data.account.did} did={item.message.sender} address={item.message.senderAddress} relayed={item.message.relayed} />{/snippet}
             {#snippet details()}Trashed <DateTime format="list" value={item.message.trashedAt} />{/snippet}
           </MessageListRow>
         {:else}

@@ -415,7 +415,7 @@
                 "assets": {
                   "type": "array",
                   "minItems": 1,
-                  "maxItems": 8,
+                  "maxItems": 24,
                   "items": {
                     "type": "object",
                     "additionalProperties": false,
@@ -442,7 +442,10 @@
                         ]
                       },
                       "media_type": {
-                        "const": "image/png"
+                        "enum": [
+                          "image/png",
+                          "image/jpeg"
+                        ]
                       },
                       "loading": {
                         "const": "bundled"
@@ -450,7 +453,7 @@
                       "size": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 196608
+                        "maximum": 524288
                       },
                       "digest": {
                         "type": "object",
@@ -481,7 +484,7 @@
                       },
                       "data": {
                         "type": "string",
-                        "maxLength": 262144,
+                        "maxLength": 699051,
                         "pattern": "^[A-Za-z0-9_-]+$"
                       }
                     }
@@ -494,5 +497,5 @@
       ]
     }
   },
-  "description": "Maximum 360,000 UTF-8 JSON bytes for body. Codec validation is additionally required: canonical base64url, link rules and annotation scope, resource budgets, PNG structure, digest, dimensions and pixels, asset binding, and NFC/control-free alt/caption. Block/span editor keys are not stored here. Up to eight image blocks and eight million displayed pixels. Every bundled asset must be referenced; header-role references must lead. Image alt may be empty only in drafts. CTA drafts may retain a blank label and any destination string up to 2048 UTF-8 bytes, but publishing requires a valid label and HTTPS link. Alignment is limited to left, center or right."
+  "description": "Maximum 1,450,000 UTF-8 JSON bytes for body. Codec validation is additionally required: canonical base64url, link rules and annotation scope, resource budgets, PNG structure, digest, dimensions and pixels, asset binding, and NFC/control-free alt/caption. Block/span editor keys are not stored here. Up to eight image blocks and eight million displayed pixels. Every bundled asset must be referenced; header-role references must lead. Image alt may be empty only in drafts. CTA drafts may retain a blank label and any destination string up to 2048 UTF-8 bytes, but publishing requires a valid label and HTTPS link. Alignment is limited to left, center or right."
 }

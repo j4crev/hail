@@ -33,6 +33,8 @@ const senders = [
   {did:'did:plc:'+'c'.repeat(24),address:'essays@quietinternet.example.com'},
   {did:'did:plc:'+'d'.repeat(24),address:'studio@north.example.com'},
   {did:'did:plc:'+'e'.repeat(24),address:'alex@connections.example.com'},
+  // The provider's email bridge; its messages state the email they relay.
+  {did:'did:plc:'+'f'.repeat(24),address:'email@mail.example.test'},
 ];
 const connectionId = uuidV7();
 const messages = [
@@ -41,9 +43,12 @@ const messages = [
   {sender:senders[2], title:'A new chapter in the studio',text:'Sketches, experiments, and a first look at what we are making next.\n\nWe have spent the last few weeks exploring a new collection. Here is a little of the thinking behind it.',hours:24,read:true},
   {sender:senders[3], title:'Saturday at the market?',text:'Would you like to meet around ten? There is a new coffee stand I think you would like.',hours:2,connection:true},
   {sender:senders[3], title:'The photos turned out beautifully',text:'Thanks again for sending them over. That last one is my favorite.',hours:40,connection:true,read:true},
-].map(m => ({messageId:uuidV7(),sender:m.sender.did,senderAddress:m.sender.address,recipient:did,category:m.connection?null:'general',
-  kind:m.connection?'connection':'subscription',isRead:!!m.read,deliveredAt:date(m.hours),body:body(m.title,m.text,!!m.image),
-  ...(m.connection?{connection:{id:connectionId,epoch:1,active:true}}:{reply:{allowed:true,until:Math.floor(started/1000)+6*86400},replyAvailable:true})}));
+  // Last, so the indexes other fixtures use for connection messages are unchanged.
+  {sender:senders[4], title:'Issue 12: Café culture',text:'Welcome back. This week we visit three very different cafés, and one roastery.\n\nRead the full issue on our site.',hours:3,
+    origin:{type:'email',from_address:'editors@fieldnotes.example',from_name:'Field Notes',authentication:'dkim-aligned',received_at:Math.floor(started/1000)-10800}},
+].map(m => ({messageId:uuidV7(),sender:m.sender.did,senderAddress:m.sender.address,recipient:did,category:m.connection?null:'origin' in m?'email':'general',
+  kind:m.connection?'connection':'subscription',isRead:!!m.read,deliveredAt:date(m.hours),body:{...body(m.title,m.text,!!m.image),...('origin' in m?{origin:m.origin}:{})},
+  ...(m.connection?{connection:{id:connectionId,epoch:1,active:true}}:'origin' in m?{reply:{allowed:false},replyAvailable:false}:{reply:{allowed:true,until:Math.floor(started/1000)+6*86400},replyAvailable:true})}));
 // A second incoming reply makes the unread-count preview observable.
 const firstConnection=messages[3];
 const secondConnection={...firstConnection,messageId:uuidV7(),deliveredAt:date(1),body:body('Saturday at the market?','There is also a new bakery next door. We could stop there afterward.'),isRead:false};
@@ -85,6 +90,12 @@ const drafts = new Map<string,Draft>();
 const trash = new Map<string,string>();
 const deleted = new Set<string>();
 let allowIntroductions=true,conversationsConfigured=false;
+// Fictional inbound email: on, with two aliases. Turning it off needs a passkey, which this fixture lacks.
+const aliasDomain='in.mail.example.test',bridgeSender={address:'email@mail.example.test',category:'email'};
+const aliases=[
+  {id:'0b8f1a52-6d1e-4c3a-9a51-2f0f7a1c0001',address:`kq4tzx7m2fpa@${aliasDomain}`,label:'Field Notes weekly',createdAt:'2026-10-20T15:00:00Z',lastReceivedAt:'2026-11-10T14:30:00Z',messageCount:4},
+  {id:'0b8f1a52-6d1e-4c3a-9a51-2f0f7a1c0002',address:`r7wd3nb5yhce@${aliasDomain}`,label:'Neighborhood garden club',createdAt:'2026-11-02T09:12:00Z',lastReceivedAt:null,messageCount:0},
+];
 const preferences = {theme:'system',showHeaderImages:true,trashEnabled:true,startScreen:'feed'};
 const json = (data: unknown, status = 200) => Response.json(data,{status,headers:{'Cache-Control':'no-store','Content-Type':'application/json'}});
 const fixtureFailure=(status:number,description='This fictional preview does not support this action.'):never=>{
@@ -169,6 +180,21 @@ const accountOperation=(name:string,args:Record<string,any>):Record<string,unkno
   }
   if(name==='HailRelationship/list')return result({preview:true,codes:[],connections:emptyRelationships?[]:fixtureConnections(),pendingConnections:[]});
   if(name==='HailSubmission/audiences')return result({maxRecipients:100,categories:[{category:'general',subscribers:12},{category:'essays',subscribers:8}]});
+  if(name==='HailEmailAlias/get'){
+    const state={available:true,domain:aliasDomain,sender:bridgeSender,enabled:true,grant:{grantId:'0b8f1a52-6d1e-4c3a-9a51-2f0f7a1c00ff',revision:1,digest:'A'.repeat(43)}};
+    return result(args.summary?state:{...state,aliases});
+  }
+  if(name==='HailEmailAlias/create'){
+    const label=String(args.label??'').trim();if(!label)return fixtureFailure(400);
+    const local=Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>'abcdefghijklmnopqrstuvwxyz234567'[b&31]).join('');
+    const alias={id:crypto.randomUUID(),address:`${local}@${aliasDomain}`,label,createdAt:new Date().toISOString(),lastReceivedAt:null,messageCount:0};
+    aliases.unshift(alias);return result({alias});
+  }
+  if(name==='HailEmailAlias/destroy'){
+    const ids=Array.isArray(args.ids)?args.ids as string[]:[],destroyed=ids.filter(id=>aliases.some(a=>a.id===id));
+    for(const id of destroyed)aliases.splice(aliases.findIndex(a=>a.id===id),1);
+    return result({destroyed,notFound:ids.filter(id=>!destroyed.includes(id))});
+  }
   if(name==='HailSubmission/targets')return result({maxRecipients:100,connections:[{connectionId,recipientDid:senders[3].did,epoch:1,address:senders[3].address},...(sharedMode?[{connectionId:sharedConversation.conversationId,recipientDid:maya.did,epoch:1,address:maya.address}]:[])]});
   return fixtureFailure(501,'This local design preview supports reading, appearance preferences, and mailbox selection/deletion/restoration only.');
 };

@@ -21,6 +21,7 @@ COPY apps/client/package.json ./apps/client/package.json
 COPY packages/hail-codec-ts ./packages/hail-codec-ts
 COPY packages/hail-client-support ./packages/hail-client-support
 COPY packages/hail-content-builder ./packages/hail-content-builder
+COPY packages/hail-email-bridge/package.json ./packages/hail-email-bridge/package.json
 COPY --from=plc-lib-build /workspace/hail/vendor/did-method-plc ./vendor/did-method-plc
 RUN bun install --frozen-lockfile --filter hailproto --filter hail-client --filter @racrproto/codec --filter @racrproto/client-support --filter @racrproto/content-builder
 RUN bun run --cwd packages/hail-codec-ts build
@@ -45,6 +46,7 @@ COPY apps/client/package.json ./apps/client/package.json
 COPY --from=build /workspace/hail/packages/hail-codec-ts ./packages/hail-codec-ts
 COPY --from=build /workspace/hail/packages/hail-client-support ./packages/hail-client-support
 COPY --from=build /workspace/hail/packages/hail-content-builder ./packages/hail-content-builder
+COPY packages/hail-email-bridge/package.json ./packages/hail-email-bridge/package.json
 COPY --from=build /workspace/hail/vendor/did-method-plc ./vendor/did-method-plc
 RUN bun install --production --frozen-lockfile --filter hail-client --filter @racrproto/codec --filter @racrproto/client-support --filter @racrproto/content-builder
 
