@@ -43,6 +43,16 @@ export const GET: import('./$types').RequestHandler = async event => {
     await mark('account', canaryAccount(event.cookies,url).catch(() => null));
     const data:Record<string, unknown> = await mark('load', loader({...event, url, params}) as Promise<Record<string, unknown>>);
     const counts = 'account' in data ? await mark('counts', Promise.resolve(unread)) : null;
+    // Each provider round trip this request made, with the provider's own breakdown.
+    const account = await canaryAccount(event.cookies,url).catch(() => null);
+    account?.client.timings.forEach((trip, index) => {
+      const desc = trip.path.replace(/[^A-Za-z0-9/._-]/g, '').slice(0, 64);
+      timing.push(`p${index};desc="${desc}";dur=${trip.ms.toFixed(1)}`);
+      for (const item of trip.server?.split(',') ?? []) {
+        const [name, ...rest] = item.trim().split(';');
+        if (name && /^[A-Za-z0-9_-]{1,16}$/.test(name)) timing.push([`p${index}.${name}`, ...rest].join(';'));
+      }
+    });
     const encodeStart = performance.now();
     const body = JSON.stringify({data, counts, scope:mailboxScope(event.cookies)});
     timing.push(`encode;dur=${(performance.now() - encodeStart).toFixed(1)}`, `total;dur=${(performance.now() - started).toFixed(1)}`);

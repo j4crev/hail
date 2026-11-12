@@ -63,15 +63,23 @@ stream; reconnecting requires fresh authorization. Passive stream checks MUST NO
 extend session idle time. A change racing a check may precede termination; no
 post-revocation data lookup is authorized by an old stream session alone.
 
-Reference-provider policy: at most two streams per account and 64 per process,
+Reference-provider policy: at most six streams per account and 256 per process,
 separate from the ordinary four-request account limit. A new stream for an account
-already holding two closes that account's oldest stream instead of being refused
+already holding six closes that account's oldest stream instead of being refused
 (an intermediary may keep a stream the client abandoned open until its lifetime
-ends); exceeding the process limit returns 429. Streams
-have a five-minute lifetime, read states every two seconds while waiting, and use
-backpressure rather than accumulating unbounded event queues. Disconnects and
-cancellation release stream slots. No persistent database connection or lock is
-held across waits. Multiple provider processes observe the shared database states.
+ends); exceeding the process limit returns 429. Streams have a five-minute
+lifetime and use backpressure rather than accumulating unbounded event queues.
+Database triggers on the per-account JMAP state rows issue a PostgreSQL `NOTIFY`
+(channel `hail_jmap_state`, payload the account ID only) when a state change
+commits, from any provider process. Each process holds one `LISTEN` connection
+and wakes only that account's streams, which then read their states once. While
+that listener is verified working (a probe it sends itself must return within
+five seconds; it is re-checked every 30 seconds and after each reconnect) streams
+also re-read every 30 seconds; otherwise they poll every two seconds. Each read
+re-checks the session, so revocation ends a stream within about 30 seconds.
+Notifications are only wake-ups: a lost one delays a state event until the next
+read. Disconnects and cancellation release stream slots. No database lock or
+transaction is held across waits.
 These limits are reference implementation policy, not portable wire requirements.
 
 Clients MUST recover through `/changes` or a fresh snapshot, never advance their

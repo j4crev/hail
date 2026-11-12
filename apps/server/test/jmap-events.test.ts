@@ -41,6 +41,28 @@ it('pings without event IDs and releases on expiry, revocation, abort and backpr
   const bounded=stateStream(read,options,new AbortController().signal,null,release).body!.getReader();
   await vi.advanceTimersByTimeAsync(300000);expect((await bounded.read()).done).toBe(true);expect(release).toHaveBeenCalledTimes(3);
 });
+it('wakes on a notification, keeps one that arrives during a read, and polls at the current interval',async()=>{
+  vi.useFakeTimers();let state='one',reads=0,wake:()=>void=()=>{},slow=true;const unsubscribe=vi.fn(),release=vi.fn();
+  let during:(()=>void)|null=null;
+  const read=async()=>{reads++;const snapshot={accountId:'a',states:{HailMessage:state}};if(during){const d=during;during=null;d();}return snapshot;};
+  const reader=stateStream(read,{...options,pingSeconds:0},new AbortController().signal,null,release,{pollMs:()=>slow?30_000:2_000,lifetimeMs:300_000},
+    w=>{wake=w;return unsubscribe;}).body!.getReader();
+  expect(decode((await reader.read()).value)).toContain('"one"');
+  const next=reader.read();await vi.advanceTimersByTimeAsync(0);const before=reads;
+  // Slow interval: nothing is read for 29 seconds without a notification.
+  await vi.advanceTimersByTimeAsync(29_000);expect(reads).toBe(before);
+  state='two';wake();expect(decode((await next).value)).toContain('"two"');
+  // A notification that lands while states are being read is not lost.
+  const third=reader.read();state='three';during=()=>wake();await vi.advanceTimersByTimeAsync(30_000);
+  expect(decode((await third).value)).toContain('"three"');
+  const fourth=reader.read();await vi.advanceTimersByTimeAsync(0);
+  state='four';during=()=>{state='five';wake();};await vi.advanceTimersByTimeAsync(30_000);
+  expect(decode((await fourth).value)).toContain('"four"');
+  expect(decode((await reader.read()).value)).toContain('"five"');
+  // Quick polling when notifications are unhealthy.
+  slow=false;const fifth=reader.read();state='six';await vi.advanceTimersByTimeAsync(30_000);expect(decode((await fifth).value)).toContain('"six"');
+  await reader.cancel();expect(unsubscribe).toHaveBeenCalledOnce();expect(release).toHaveBeenCalledOnce();
+});
 describe('authenticated event route',()=>{
   function fixture(){
     let session:AccountApiSession|null={account_id:'a',credential_id:'c',did:'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa',canonical_address:'a@example.com',scopes:['messages:read'],migration_state:null,serving_generation:1} as AccountApiSession;
@@ -53,13 +75,13 @@ describe('authenticated event route',()=>{
     const f=fixture();expect((await (await f.app.request('/.well-known/jmap')).json()).capabilities[HAIL_EVENTS].transport).toBe('eventsource');
     expect((await f.request(undefined,{headers:{Origin:'https://other.example'}})).status).toBe(403);
     expect((await f.request(undefined,{method:'POST'})).status).toBe(405);
-    const one=await f.request(),two=await f.request();
+    const open=[];for(let i=0;i<6;i++)open.push(await f.request());
     // At the account limit the newest stream replaces the oldest (which a proxy
     // may still hold open after the browser left) instead of being refused.
-    const oldest=one.body!.getReader(),three=await f.request();expect(three.status).toBe(200);
+    const oldest=open[0]!.body!.getReader(),seventh=await f.request();expect(seventh.status).toBe(200);
     for(let frame=await oldest.read();!frame.done;frame=await oldest.read()){/* drain until closed */}
-    await two.body!.cancel();const four=await f.request();expect(four.status).toBe(200);
-    await three.body!.cancel();await four.body!.cancel();
+    await open[1]!.body!.cancel();const eighth=await f.request();expect(eighth.status).toBe(200);
+    for(const response of [...open.slice(2),seventh,eighth])await response.body!.cancel();
   });
   for(const action of ['revoke','change'] as const)it('ends stream on '+action+' without refreshing session activity',async()=>{
     const f=fixture(),response=await f.request(),reader=response.body!.getReader();

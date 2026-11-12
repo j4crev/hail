@@ -501,7 +501,9 @@ Loaders batch independent provider methods into one JMAP request: opening a
 message reads the message, its thread and the sender's subscriptions together,
 and `/mailbox-data` reads unread counts alongside the page's data.
 `/mailbox-data` responses carry a `Server-Timing` header (`account`, `load`,
-`counts`, `encode`, `total`) for diagnosing slow loads.
+`counts`, `encode`, `total`) for diagnosing slow loads, plus each provider round
+trip (`p0`, `p1`, … with the path) and the provider's own breakdown of it
+(`p0.auth`, `p0.m0` per JMAP method, labelled with the method and view).
 
 Feed, Trash and reader views ask the provider for image references
 (`images: "reference"`), so message images are not embedded in page data. Each
