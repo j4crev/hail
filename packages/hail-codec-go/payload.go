@@ -1486,8 +1486,8 @@ func validateSpt3Body(m map[any]any) error {
 			continue
 		}
 		imageCount++
-		if imageCount > 8 {
-			return errors.New("at most eight image blocks are allowed")
+		if imageCount > MaximumImageBlocks {
+			return errors.New("at most 24 image blocks are allowed")
 		}
 		if err = exact(block, []string{"_type", "asset", "alt"}, []string{"caption"}, path); err != nil {
 			return err
@@ -1511,7 +1511,7 @@ func validateSpt3Body(m map[any]any) error {
 	if imageCount == 0 || len(used) != len(assets) {
 		return errors.New("all assets must be referenced by image blocks")
 	}
-	if pixels > 8000000 {
+	if pixels > MaximumBodyPixels {
 		return errors.New("image blocks exceed eight million decoded pixels")
 	}
 	return validateSpt2Body(map[any]any{"version": int64(1), "profile": "spt-2", "blocks": textBlocks})

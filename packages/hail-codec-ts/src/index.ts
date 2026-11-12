@@ -76,7 +76,7 @@ export type {
   InspectedHailObject,
   VerifiedHailObject,
 } from "./types.js";
-export { expectedKeyId, validatePngStructure, validateAssetManifest, validatePayload } from "./validation.js";
+export { BUNDLED_IMAGE_LIMITS, expectedKeyId, validateJpegStructure, validatePngStructure, validateAssetManifest, validatePayload } from "./validation.js";
 export {
   createWebCryptoSigner,
   createWebCryptoVerifier,

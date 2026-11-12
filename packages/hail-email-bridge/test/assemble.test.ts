@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { decodePayload, type HailSpt2Body, type HailSpt3Body } from "@racrproto/codec";
 import { describe, expect, it } from "vitest";
@@ -24,6 +25,9 @@ function png(width: number, height: number, padding = 0): Uint8Array {
     chunk("IDAT", deflateSync(new Uint8Array((width * 4 + 1) * height))), chunk("IEND", new Uint8Array()),
   ]));
 }
+/** The frozen JPEG from the shared attachment vectors. */
+const JPEG = Uint8Array.from(Buffer.from((JSON.parse(readFileSync(new URL("../../../spec/vectors/attachment-images.json", import.meta.url), "utf8")) as
+  { records: { id: string; fileHex: string }[] }).records.find(record => record.id === "baseline.jpg")!.fileHex, "hex"));
 const GIF = Uint8Array.from(atob("R0lGODlhEAAQAIAAAAAAAP///yH5BAEAAAAALAAAAAAQABAAAAIBRAA7"), character => character.charCodeAt(0));
 
 const email = (html: string, from = "Field Notes <editors@fieldnotes.example>") => new TextEncoder().encode(
@@ -71,6 +75,15 @@ describe("assembleBody", () => {
     expect(spt3.blocks[3]).toMatchObject({ style: "caption", markDefs: [{ href: "https://fieldnotes.example/" }] });
   });
 
+  it("bundles a JPEG under its own media type and links one whose bytes are damaged", async () => {
+    const damaged = JPEG.slice(0, JPEG.length - 2);
+    const { body, diagnostics } = await assemble('<img src="https://cdn.example/p.jpg" alt="Photo"><img src="https://cdn.example/d.jpg" alt="Damaged">',
+      { "https://cdn.example/p.jpg": JPEG, "https://cdn.example/d.jpg": damaged }, { minDimension: 1 });
+    expect(texts(body)).toEqual(["Issue", "[image-1: Photo]", "Image: Damaged"]);
+    expect((body as HailSpt3Body).assets.assets[0]).toMatchObject({ media_type: "image/jpeg", size: JPEG.length });
+    expect(diagnostics["image-linked-unsupported"]).toBe(1);
+  });
+
   it("supplies a stated placeholder when an image has no description", async () => {
     const { body } = await assemble('<img src="https://cdn.example/a.png">', { "https://cdn.example/a.png": png(10, 10) });
     expect(texts(body)).toEqual(["Issue", "[image-1: Image without a description]"]);
@@ -88,7 +101,7 @@ describe("assembleBody", () => {
     const truncated = png(10, 10).subarray(0, 40);
     const { body, diagnostics } = await assemble(
       ["gif", "big", "wide", "gone", "boom", "bad"].map(name => `<img src="https://cdn.example/${name}" alt="${name}">`).join(""), {
-        "https://cdn.example/gif": GIF, "https://cdn.example/big": png(10, 10, 200_000), "https://cdn.example/wide": png(2401, 3),
+        "https://cdn.example/gif": GIF, "https://cdn.example/big": png(10, 10, 530_000), "https://cdn.example/wide": png(2401, 3),
         "https://cdn.example/gone": null, "https://cdn.example/boom": new Error("network"), "https://cdn.example/bad": truncated,
       });
     expect(body.profile).toBe("spt-2");

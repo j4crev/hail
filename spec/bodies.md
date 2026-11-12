@@ -71,13 +71,15 @@ invalid fields MUST NOT be silently discarded. Provider support for these curren
 Upgrade codecs, provider and clients together before publishing the expanded alpha
 vocabulary. `spt-1` remains unchanged and rejects alignment or CTA styling.
 
-The `spt-3` alpha profile retains `spt-2` text and interleaves one to eight
+The `spt-3` alpha profile retains `spt-2` text and interleaves 1 to 24
 `spt.image` blocks with text in document order. Each image references a verified
-bundled static PNG asset by ID. The manifest contains one to eight `image` or
+bundled static PNG or JPEG asset by ID. The manifest contains 1 to 24 `image` or
 `header` assets, all referenced; a `header` reference is permitted only at block
 zero. The same asset may be referenced again, but each image occurrence counts
-against the eight-block and eight-million-pixel display budgets. Each image is at
-most 192 KiB, 2400 × 2400 and two million pixels (`header` height remains 1200).
+against the 24-block and eight-million-pixel display budgets. Each image is at
+most 512 KiB, 2400 × 2400 and two million pixels (`header` height remains 1200).
+These limits were set from measured email newsletters (2026-11-11): 24 blocks and
+512 KiB admit most of their images while the complete body stays inside 1 MiB.
 The complete deterministic body remains at most 1 MiB, with the standard encoding
 node/depth/array limits; no new nesting is introduced. See [assets.md](assets.md).
 Image blocks require meaningful, nonempty NFC plain-text `alt` and permit a
@@ -492,7 +494,7 @@ within the body ceiling. No other content coding is defined by this profile.
 The 1 MiB ceiling covers the complete deterministic SPT document, including any
 bundled asset bytes and CBOR metadata. Text/layout complexity also obeys the
 independent depth, item and collection budgets in [encoding](encoding.md).
-The existing header asset retains its own 192 KiB, dimension and pixel limits;
+Each bundled image retains its own 512 KiB, dimension and pixel limits;
 increasing the body ceiling does not increase any image limit.
 
 Detached [attachments](attachments.md) have a separate 25 MiB aggregate budget

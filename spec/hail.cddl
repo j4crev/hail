@@ -433,7 +433,8 @@ spt-link = {
   ? "title": tstr
 }
 
-; spt-3 interleaves bounded, digest-bound PNG images and rich text.
+; spt-3 interleaves bounded, digest-bound PNG or JPEG images and rich text.
+; Role-specific formats and sizes (avatar: PNG, 32768 bytes) are semantic checks.
 hail-body-spt-3 = {
   "version": 1,
   "profile": "spt-3",
@@ -466,15 +467,15 @@ body-origin-email = {
 ; Reusable bundled-image manifest for future body and profile versions.
 asset-manifest-v1 = {
   "version": 1,
-  "assets": [1*8 bundled-image-asset-v1]
+  "assets": [1*24 bundled-image-asset-v1]
 }
 
 bundled-image-asset-v1 = {
   "id": tstr,
   "role": "avatar" / "header" / "image",
-  "media_type": "image/png",
+  "media_type": "image/png" / "image/jpeg",
   "loading": "bundled",
-  "size": 1..196608,
+  "size": 1..524288,
   "digest": digest,
   "width": 1..2400,
   "height": 1..2400,

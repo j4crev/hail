@@ -6,7 +6,7 @@ export interface HailDigest {
 export interface HailBundledImageAsset {
   id: string;
   role: "avatar" | "header" | "image";
-  media_type: "image/png";
+  media_type: "image/png" | "image/jpeg";
   loading: "bundled";
   size: number;
   digest: HailDigest;

@@ -1,5 +1,5 @@
 import {
-  encodePayload, validatePngStructure, type HailBodyOriginEmail, type HailBundledImageAsset, type HailSpt2Body,
+  BUNDLED_IMAGE_LIMITS, encodePayload, validateJpegStructure, validatePngStructure, type HailBodyOriginEmail, type HailBundledImageAsset, type HailSpt2Body,
   type HailSpt2TextBlock, type HailSpt3Body, type HailSptImageBlock,
 } from "@racrproto/codec";
 import { encodeDeterministic } from "@racrproto/codec/cbor";
@@ -24,10 +24,12 @@ export interface ImagePolicy {
   maxFetches: number;
 }
 
-/** The current `spt-3` rules in spec/bodies.md and spec/assets.md. */
+/** The current `spt-3` rules, taken from the codec so the two cannot drift. */
 export const CURRENT_IMAGE_POLICY: ImagePolicy = {
-  formats: new Set<ImageFormat>(["png"]), maxImages: 8, maxImageBytes: 196_608, maxWidth: 2400, maxHeight: 2400,
-  maxImagePixels: 2_000_000, maxTotalPixels: 8_000_000, maxBodyBytes: 1_048_576, minDimension: 3, maxFetches: 32,
+  formats: new Set<ImageFormat>(["png", "jpeg"]), maxImages: BUNDLED_IMAGE_LIMITS.maximumImageBlocks,
+  maxImageBytes: BUNDLED_IMAGE_LIMITS.message.bytes, maxWidth: BUNDLED_IMAGE_LIMITS.message.width,
+  maxHeight: BUNDLED_IMAGE_LIMITS.message.height, maxImagePixels: BUNDLED_IMAGE_LIMITS.message.pixels,
+  maxTotalPixels: BUNDLED_IMAGE_LIMITS.maximumBodyPixels, maxBodyBytes: 1_048_576, minDimension: 3, maxFetches: 48,
 };
 
 /**
@@ -62,7 +64,7 @@ const UNBOUNDED = {
 };
 
 type Refusal = Extract<DiagnosticCode, `image-${string}` | "tracking-pixel-dropped">;
-interface Candidate { bytes: Uint8Array; width: number; height: number; mediaType: "image/png" }
+interface Candidate { bytes: Uint8Array; width: number; height: number; mediaType: "image/png" | "image/jpeg" }
 
 const linkBlock = (text: string, href: string, style: "normal" | "caption"): HailSpt2TextBlock => ({
   _type: "block", style, children: [{ _type: "span", text, marks: ["l1"] }], markDefs: [{ _key: "l1", _type: "spt.link", href }],
@@ -87,10 +89,14 @@ function inspect(bytes: Uint8Array, policy: ImagePolicy): Candidate | Refusal {
   if (!policy.formats.has(probe.format) || probe.animated) return "image-linked-unsupported";
   if (bytes.length > policy.maxImageBytes || probe.width > policy.maxWidth || probe.height > policy.maxHeight ||
     probe.width * probe.height > policy.maxImagePixels) return "image-linked-too-large";
-  // Only PNG has a codec validator today; other formats join when the profile admits them.
-  if (probe.format !== "png") return "image-linked-unsupported";
-  try { validatePngStructure(bytes); } catch { return "image-linked-unsupported"; }
-  return { bytes, width: probe.width, height: probe.height, mediaType: "image/png" };
+  // The codec has validators for exactly the formats the profile admits.
+  if (probe.format !== "png" && probe.format !== "jpeg") return "image-linked-unsupported";
+  try {
+    // The validator's dimensions are authoritative; the probe only pre-screens.
+    const { width, height } = probe.format === "png" ? validatePngStructure(bytes) : validateJpegStructure(bytes);
+    if (width > policy.maxWidth || height > policy.maxHeight || width * height > policy.maxImagePixels) return "image-linked-too-large";
+    return { bytes, width, height, mediaType: probe.format === "png" ? "image/png" : "image/jpeg" };
+  } catch { return "image-linked-unsupported"; }
 }
 
 /**

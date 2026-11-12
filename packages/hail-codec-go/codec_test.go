@@ -95,7 +95,7 @@ func fromHex(t testing.TB, s string) []byte {
 
 func TestPositiveVectors(t *testing.T) {
 	m := vectors(t)
-	if m.Format != "hail-conformance-vectors-1" || len(m.Positive) != 15 {
+	if m.Format != "hail-conformance-vectors-1" || len(m.Positive) != 17 {
 		t.Fatalf("unexpected manifest %q (%d positives)", m.Format, len(m.Positive))
 	}
 	keys := map[string]testKeyVector{}

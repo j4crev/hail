@@ -190,13 +190,15 @@ type ExpectedSpt2Block = {
   level?: 1 | 2 | 3;
 };
 type ExpectedBody = { version: 1; profile: "spt-1"; blocks: ExpectedBlock[] };
-type ExpectedSpt2Body = { version: 1; profile: "spt-2"; blocks: ExpectedSpt2Block[] };
-type ExpectedAsset = { id:string;role:"avatar"|"header"|"image";media_type:"image/png";loading:"bundled";size:number;
+type ExpectedOrigin = { type: "email"; from_address: string; from_name?: string; list_id?: string;
+  authentication: "dkim-aligned" | "none"; received_at: number };
+type ExpectedSpt2Body = { version: 1; profile: "spt-2"; blocks: ExpectedSpt2Block[]; origin?: ExpectedOrigin };
+type ExpectedAsset = { id:string;role:"avatar"|"header"|"image";media_type:"image/png"|"image/jpeg";loading:"bundled";size:number;
   digest:ExpectedDigest;width:number;height:number;data:Uint8Array };
 type ExpectedAssetManifest = { version:1;assets:[ExpectedAsset,...ExpectedAsset[]] };
 type ExpectedSenderProfile = ExpectedSenderProfileBase & ({version:1}|{version:2;assets?:ExpectedAssetManifest});
 type ExpectedImageBlock = {_type:"spt.image";asset:string;alt:string;caption?:string};
-type ExpectedSpt3Body = {version:1;profile:"spt-3";assets:ExpectedAssetManifest;
+type ExpectedSpt3Body = {version:1;profile:"spt-3";assets:ExpectedAssetManifest;origin?:ExpectedOrigin;
   blocks:(ExpectedImageBlock|ExpectedSpt2Block)[]};
 
 type ModelAssertions = [

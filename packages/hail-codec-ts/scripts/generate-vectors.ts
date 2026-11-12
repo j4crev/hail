@@ -32,6 +32,9 @@ import {
   senderProfileV2,
 } from "../test/fixtures.js";
 
+import attachmentImages from "../../../spec/vectors/attachment-images.json" with { type: "json" };
+import { validateJpegStructure } from "../src/index.js";
+
 const outputUrl = new URL("../vectors/v0.json", import.meta.url);
 const PKCS8_PREFIX = "302e020100300506032b657004220420";
 const SPKI_PREFIX_BYTES = 12;
@@ -240,6 +243,17 @@ const portraitBody=structuredClone(inlineImageBody);
 portraitBody.assets.assets[0]=dimensionAsset(1,1800);
 await addPositive('body-spt-3-portrait','hail.body.spt-3',portraitBody);
 await addPositive('body-spt-2-cta-alignment','hail.body.spt-2',ctaBody);
+
+// JPEG message images and the 24-image budget. The JPEG bytes are the frozen attachment vector.
+const jpegFile=Uint8Array.from(Buffer.from(attachmentImages.records.find(record=>record.id==='baseline.jpg')!.fileHex,'hex'));
+const jpegAsset={id:'photo',role:'image' as const,media_type:'image/jpeg' as const,loading:'bundled' as const,size:jpegFile.length,
+  digest:{algorithm:'sha-256' as const,value:sha256(jpegFile)},...validateJpegStructure(jpegFile),data:jpegFile};
+const jpegBody={version:1 as const,profile:'spt-3' as const,assets:{version:1 as const,assets:[jpegAsset] as [typeof jpegAsset]},
+  blocks:[{_type:'spt.image' as const,asset:'photo',alt:'A photograph'},richBody.blocks[1]!]};
+await addPositive('body-spt-3-jpeg','hail.body.spt-3',jpegBody);
+const fullBody=structuredClone(inlineImageBody);
+fullBody.blocks=Array.from({length:24},(_,index)=>({_type:'spt.image' as const,asset:index%2?'image-b':'image-a',alt:`Image ${index+1}`}));
+await addPositive('body-spt-3-24-images','hail.body.spt-3',fullBody);
 
 // Relayed-origin statements: the sender attests where it obtained the content.
 const emailOrigin={type:'email' as const,from_address:'editors@fieldnotes.example',from_name:'Field Notes',
@@ -544,7 +558,7 @@ const inlineInvalid: Array<[string, (body: any) => void]> = [
   ['inline-image-unused-asset',body=>body.blocks.splice(1,1)],
   ['inline-image-empty-alt',body=>body.blocks[3].alt=''],
   ['inline-image-nonleading-header',body=>body.assets.assets[0].role='header'],
-  ['inline-image-too-many-blocks',body=>body.blocks.push(...Array.from({length:7},()=>({...body.blocks[1]})))],
+  ['inline-image-too-many-blocks',body=>body.blocks.push(...Array.from({length:23},()=>({...body.blocks[1]})))],
   ['inline-image-remote-url',body=>body.blocks[1].src='https://example.invalid/tracker.png'],
   ['inline-image-duplicate-id',body=>body.assets.assets[1].id=body.assets.assets[0].id],
 ];
@@ -566,6 +580,22 @@ for(const [id,mutate,cddl_valid] of originInvalid){const body=structuredClone(or
 // spt-1 is unchanged and carries no origin.
 negativePayload.push({id:'origin-in-spt-1',type:'hail.body.spt-1',hex:hex(encode({...structuredClone(body),origin:emailOrigin},rfc8949EncodeOptions)),
   expected_error:'schema-violation',cddl_valid:false});
+
+const pngFile=inlineImageBody.assets.assets[0].data;
+const retyped=(asset:any,data:Uint8Array)=>Object.assign(asset,{data,size:data.length,digest:{algorithm:'sha-256',value:sha256(data)}});
+const jpegInvalid: Array<[string,(body:any)=>void,boolean]> = [
+  ['image-jpeg-declared-as-png',body=>body.assets.assets[0].media_type='image/png',true],
+  ['image-png-declared-as-jpeg',body=>retyped(body.assets.assets[0],pngFile),true],
+  ['image-jpeg-truncated',body=>retyped(body.assets.assets[0],jpegFile.subarray(0,jpegFile.length-2)),true],
+  ['image-jpeg-dimension-mismatch',body=>body.assets.assets[0].width+=1,true],
+  ['image-unsupported-media-type',body=>body.assets.assets[0].media_type='image/gif',false],
+];
+for(const [id,mutate,cddl_valid] of jpegInvalid){const body=structuredClone(jpegBody);mutate(body);
+  negativePayload.push({id,type:'hail.body.spt-3',hex:hex(encode(body,rfc8949EncodeOptions)),expected_error:'schema-violation',cddl_valid});}
+// Profile avatars remain PNG only.
+const jpegAvatar=structuredClone(senderProfileV2) as any;
+Object.assign(retyped(jpegAvatar.assets.assets[0],jpegFile),{media_type:'image/jpeg',...validateJpegStructure(jpegFile)});
+negativePayload.push({id:'avatar-jpeg',type:'hail.sender-profile',hex:hex(encode(jpegAvatar,rfc8949EncodeOptions)),expected_error:'schema-violation',cddl_valid:true});
 
 const pixelBody=structuredClone(inlineImageBody);
 pixelBody.assets.assets=[dimensionAsset(1000,2000)];
