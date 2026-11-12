@@ -289,8 +289,9 @@ owner-signed recovery choices are specified in [monitor incidents](monitor-incid
 This does not add federation credentials or make mailbox approval independent-owner evidence.
 
 The optional [inbound email bridge](email-bridge.md) is reference-provider policy:
-per-subscription aliases, a vendor-neutral ingress contract for mail edges, and
-delivery of converted mail as ordinary hails carrying the relayed-origin statement.
+aliases, a vendor-neutral ingress contract and permanent deletion feed for mail
+edges, consented best-effort one-click unsubscribe, and delivery of converted mail
+as ordinary hails carrying the relayed-origin statement.
 It adds no federation operation.
 
 Unseen connection indicators are reference-provider presentation policy, documented

@@ -4,14 +4,16 @@
   "name": "hail-email-bridge",
   "main": "worker.ts",
   "compatibility_date": "2026-10-20",
-  // Mail reaches this Worker only through Email Routing; it serves no web requests.
+  // Mail arrives through Email Routing; scheduled runs sync deletions. No web requests.
   "workers_dev": false,
   "preview_urls": false,
   // Keeps invocation logs, including why a hand-off to the provider failed.
   "observability": { "enabled": true },
   "r2_buckets": [
-    { "binding": "PENDING", "bucket_name": "hail-email-bridge-pending" }
+    { "binding": "PENDING", "bucket_name": "hail-email-bridge-pending" },
+    { "binding": "DELETIONS", "bucket_name": "hail-email-bridge-deletions" }
   ],
+  "triggers": { "crons": ["* * * * *"] },
   "queues": {
     "producers": [
       { "binding": "RETRY", "queue": "hail-email-bridge-retry" }

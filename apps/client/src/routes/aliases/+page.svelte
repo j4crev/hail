@@ -13,6 +13,8 @@
   let {data}=$props();
   let addOpen=$state(false),label=$state(""),created=$state<EmailAlias|null>(null);
   let selected=$state<string[]>([]),confirming=$state(false),busy=$state(false),message=$state(""),failed=$state(false);
+  let unsubscribe=$state(false);
+  $effect(()=>{if(!confirming)unsubscribe=false;});
   let chosen=$derived(data.aliases.filter(alias=>selected.includes(alias.id)));
   afterNavigate(({from,to})=>{if(from?.url.pathname!==to?.url.pathname){selected=[];confirming=false;}});
   $effect(()=>{if(!addOpen){created=null;label="";}});
@@ -28,10 +30,11 @@
     await invalidateAll();
   }
   async function remove(){
-    const ids=chosen.map(alias=>alias.id),result=await accountOperation("HailEmailAlias/destroy",{ids});
+    const ids=chosen.map(alias=>alias.id),result=await accountOperation("HailEmailAlias/destroy",{ids,unsubscribe});
     const destroyed=Array.isArray(result.destroyed)?result.destroyed.length:0;
     selected=[];confirming=false;
-    message=`Deleted ${destroyed} ${destroyed===1?"alias":"aliases"}.`;
+    const requests=typeof result.unsubscribeRequests==="number"?result.unsubscribeRequests:0;
+    message=`Deleted ${destroyed} ${destroyed===1?"alias":"aliases"}.`+(unsubscribe?(requests?` Queued ${requests} unsubscribe ${requests===1?"request":"requests"}.`:" No supported unsubscribe requests were available."):"");
     await invalidateAll();
   }
 </script>
@@ -75,6 +78,8 @@
           {#if confirming}
             <div class="grid gap-3" role="group" aria-label="Confirm deletion">
               <p class="m-0 text-sm">Delete {chosen.length===1?"this alias":`${chosen.length} aliases`}? Mail sent to {chosen.length===1?"it":"them"} will be refused, and the {chosen.length===1?"address":"addresses"} can’t be used again. Messages you already received are kept.</p>
+              <label class="flex items-start gap-2 text-sm"><input type="checkbox" bind:checked={unsubscribe} disabled={busy} />Also request unsubscribe from newsletters using these aliases.</label>
+              <p class="m-0 text-sm text-muted">We’ll contact supported newsletters in the background. Some may need manual unsubscribe. Deleting the alias stops incoming mail immediately.</p>
               <div class="flex flex-wrap gap-2">
                 <button class="hail-button-secondary" disabled={busy} onclick={()=>confirming=false}>Cancel</button>
                 <button class="hail-button-secondary text-danger [border-color:var(--color-danger)]" disabled={busy} onclick={()=>run(remove)}>Delete</button>

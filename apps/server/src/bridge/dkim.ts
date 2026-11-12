@@ -1,3 +1,4 @@
+import { unsubscribeTarget } from "./unsubscribe.js";
 import { dkimVerify } from "mailauth/lib/dkim/verify";
 import type { DkimCheck, DkimOutcome } from "./converter.js";
 
@@ -28,7 +29,9 @@ export function createDkimCheck(resolver?: TxtResolver, now: () => Date = () => 
     if (result.fromFields !== 1 || result.headerFrom.length !== 1) return outcome("none", "message does not have exactly one From address");
     if (result.headerFrom[0]?.toLowerCase() !== fromAddress) return outcome("none", "From header differs from the converted sender");
     if (!signatures.length) return outcome("none", "no DKIM signature");
-    return result.results.some(signature => signature.status.result === "pass" && signature.status.aligned)
-      ? outcome("dkim-aligned") : outcome("none", "no passing signature from the sender's domain");
+    const passing = result.results.filter(signature => signature.status.result === "pass" && signature.status.aligned);
+    const unsubscribe = passing.map(signature => unsubscribeTarget(raw, String(signature.signingDomain), signature.signingHeaders?.headers ?? [])).find(Boolean);
+    return passing.length ? { ...outcome("dkim-aligned"), ...(unsubscribe ? { unsubscribe } : {}) }
+      : outcome("none", "no passing signature from the sender's domain");
   };
 }

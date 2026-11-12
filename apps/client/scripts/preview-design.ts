@@ -196,7 +196,7 @@ const accountOperation=(name:string,args:Record<string,any>):Record<string,unkno
   if(name==='HailEmailAlias/destroy'){
     const ids=Array.isArray(args.ids)?args.ids as string[]:[],destroyed=ids.filter(id=>aliases.some(a=>a.id===id));
     for(const id of destroyed)aliases.splice(aliases.findIndex(a=>a.id===id),1);
-    return result({destroyed,notFound:ids.filter(id=>!destroyed.includes(id))});
+    return result({unsubscribeRequests:0,destroyed,notFound:ids.filter(id=>!destroyed.includes(id))});
   }
   if(name==='HailSubmission/targets')return result({maxRecipients:100,connections:[{connectionId,recipientDid:senders[3].did,epoch:1,address:senders[3].address},...(sharedMode?[{connectionId:sharedConversation.conversationId,recipientDid:maya.did,epoch:1,address:maya.address}]:[])]});
   return fixtureFailure(501,'This local design preview supports reading, appearance preferences, and mailbox selection/deletion/restoration only.');

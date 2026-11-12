@@ -5,7 +5,8 @@ operation and no provider is required to offer it. The only protocol element it
 uses is the signed [relayed-origin](bodies.md#relayed-origin) body member.
 
 Implemented: aliases, the ingress contract, conversion, the converter worker,
-delivery as the bridge's account, the account API and web client screens, and
+delivery as the bridge's account, the account API and web client screens, permanent
+edge deletion records, consented one-click unsubscribe, and
 a [Cloudflare ingress adapter](../apps/server/deploy/cloudflare-email-worker/README.md).
 See the
 [implementation plan](../agents/email-bridge-plan.md).
@@ -13,14 +14,17 @@ See the
 ## Model
 
 The bridge is an ordinary Hail sender operated by the provider. A user grants it
-permission like any other sender, then creates one **alias** per email
-subscription. Mail sent to an alias is converted to a body and delivered to that
-user as a normal Grant-authorized hail whose body states its `email` origin.
+permission like any other sender, then creates **aliases** for email
+subscriptions. One alias per subscription gives independent control; an alias
+can also be shared by multiple subscriptions. Mail sent to an alias is converted
+to a body and delivered to that user as a normal Grant-authorized hail whose body states its `email` origin.
 
 - The bridge only receives. It never sends email, including bounces,
-  auto-replies and unsubscribe requests.
-- An alias is the user's consent for one subscription. Removing it stops that
-  sender without the sender's cooperation. Revoking the Grant stops all of them.
+  auto-replies and unsubscribe emails. With explicit user consent it can send
+  HTTPS one-click unsubscribe requests, as specified below.
+- An alias is the user's consent to receive mail at that address. Removing it
+  stops all mail to it without any sender's cooperation. Revoking the Grant stops
+  all of them.
 - An alias address is not a Hail address. The alias domain MUST differ from the
   provider's Hail address domain.
 
@@ -48,7 +52,7 @@ is an **ingress adapter**: a small component at the mail edge that calls the two
 operations below. The contract names no mail vendor, and the provider contains
 no adapter-specific behaviour.
 
-Both operations are `POST` requests authenticated with
+The intake operations and deletion feed are `POST` requests authenticated with
 `Authorization: Bearer TOKEN`, where `TOKEN` is a 32-byte secret in unpadded
 base64url that is used for nothing else. Responses are `Cache-Control: no-store`.
 
@@ -103,6 +107,40 @@ Limits apply per alias per hour, per account per day, and to the bytes of
 original messages an account has awaiting conversion. Their values are provider
 policy.
 
+### Permanent deletion feed
+
+`POST /email-bridge/v1/deletions`, with `Content-Type: application/json` and
+`{"after":"0"}`, returns `{"deletions":[{"sequence":"1","localPart":"abcdefghijkl"}]}`.
+The same ingress credential is required. This endpoint exposes permanent deletion
+state to a trusted adapter; it MUST NOT be exposed to unauthenticated callers.
+It does not change the indistinguishable replies of the recipient check.
+
+`after` is a canonical nonnegative decimal string no greater than
+9223372036854775807. Sequences are positive decimal strings to preserve bigint
+precision. At most 500 entries strictly after the cursor are returned in numeric
+sequence order; gaps are allowed. An empty page means caught up. Invalid cursors
+return 400, unauthorized calls 401, non-POST calls 405, and non-JSON calls 415.
+
+Publication is commit-ordered: deletion transactions serialize sequence allocation
+through commit. The migration backfills previously deleted aliases. Records never
+expire, survive account removal, and permanently reserve their local parts. Only
+permanent alias deletion publishes a record; pause, Grant revocation, account
+fencing, unknown recipients and quota refusals do not.
+
+An adapter MAY use these records to reject recipients without contacting the
+provider. It MUST durably write every record in a page before advancing its
+cursor, tolerate replay, and fall back to the provider for a missing record or
+unavailable edge storage. It MUST NOT permanently cache a generic `reject` reply.
+Propagation is asynchronous; provider checks enforce deletion immediately.
+
+The Cloudflare adapter keeps records and its cursor in a separate R2 bucket with
+no expiration policy. A one-minute scheduled handler copies at most 500 records
+per invocation. The apex catch-all still sends mail to the Worker; a matching
+record avoids the provider request and body read, not the Worker invocation or
+Cloudflare's SMTP receipt. Retry processing checks recipient eligibility before
+retrieving a held R2 body; reject deletes and acknowledges it, while defer or an
+outage keeps it for the existing bounded retry policy.
+
 ### Adapter requirements
 
 - Decide during the SMTP transaction wherever the edge allows it. An edge that
@@ -137,8 +175,8 @@ Each accepted message moves through these states:
 | `dead` | Neither, plus a short failure reason | Final |
 
 The original message is deleted as soon as it is converted or abandoned. The
-record that remains holds no message content: it exists to recognize resends,
-count against the limits above, and give the operator a failure reason. It also records the DKIM outcome: each signature's domain and result, and why a message was not verified.
+record that remains holds no message body: it exists to recognize resends,
+count against the limits above, and give the operator a failure reason. It also records the DKIM outcome: each signature's domain and result, and why a message was not verified. Eligible one-click unsubscribe metadata is retained as described below; its URL can contain a private subscription token.
 
 Deleting an alias moves every message of that alias still in the first three
 states to `dead`. A worker that finishes later finds its claim gone and writes
@@ -187,6 +225,50 @@ retried delivery reuses the same envelope.
 | A transient failure | Retried with backoff, up to eight attempts |
 | The bridge account is missing or inactive | Kept, and retried; this is the operator's to fix |
 
+## Best-effort one-click unsubscribe
+
+This is reference-provider policy implementing [RFC 8058](https://www.rfc-editor.org/rfc/rfc8058.html),
+not a Hail federation operation. Before discarding original message bytes, the
+converter records eligible metadata only when one passing, From-aligned DKIM
+signature covers both `List-Unsubscribe` and `List-Unsubscribe-Post`. Each header
+MUST occur exactly once; the latter MUST equal `List-Unsubscribe=One-Click`.
+The former must be a bracketed URI list containing exactly one HTTPS URI.
+The reference provider accepts only canonical HTTPS DNS targets on port 443,
+without credentials or fragments, at most 4096 UTF-8 bytes. Headers beyond the
+first 64 KiB or ambiguous/unsupported values yield no automatic action.
+
+The list key is SHA-256 of the lowercase signing domain, a newline, and either
+`list:` plus the signed List-ID identifier or `url:` plus the exact endpoint.
+An unsigned/missing List-ID uses the endpoint so distinct lists are not silently
+merged. This fallback can produce multiple requests for rotating URLs from one
+list. Deletion selects the latest accepted message per list key (UUID descending
+breaks timestamp ties), considers at most 100 keys per alias in key order, and
+deduplicates identical URLs. Older mail processed before this feature has no
+eligible metadata. Lists with no supported endpoint need manual unsubscribe.
+
+Alias destruction with `unsubscribe:true` is explicit consent to request removal
+from supported lists using those aliases. In one transaction it marks the alias
+deleted, publishes its deletion record, discards pending mail, snapshots eligible
+metadata into jobs, and erases unsubscribe metadata from the intake records.
+Without consent it queues no jobs but still erases that metadata. Delivered hails
+are unchanged. A converter finishing after deletion cannot restore metadata or
+mail. Repeating destruction returns notFound and cannot enqueue extra jobs.
+
+A provider worker sends `POST` with `Content-Type: application/x-www-form-urlencoded`
+and exactly `List-Unsubscribe=One-Click`, without cookies or authorization. It
+uses the existing safe HTTPS transport: public-address-only DNS validation,
+connection pinning, no redirects, and a ten-second deadline. Response bodies are
+cancelled without parsing. A 2xx response marks `requested`, not proof that the
+publisher removed the subscription. Network errors, 429 and 5xx retry with bounded
+backoff, at most five claimed attempts; other statuses fail. Crash recovery may
+repeat a request. Jobs erase their URL on either terminal outcome. Metadata URLs
+and request errors containing them MUST NOT be logged. The converter can write
+intake diagnostics but cannot create consented jobs or read their table.
+
+Unsubscribe failure never delays or reverses alias deletion. Deletion records
+are permanent; active-alias unsubscribe metadata currently shares intake-record
+retention. A general retention policy remains an open item.
+
 ## Account API
 
 Three typed operations under the `https://racrproto.com/ns/jmap/account`
@@ -197,7 +279,7 @@ capability manage inbound email. A provider without the bridge answers
 | --- | --- | --- | --- |
 | `HailEmailAlias/get` | optional `summary` (Boolean) | `messages:read` | The state below, plus `aliases` unless `summary` is true |
 | `HailEmailAlias/create` | `label` | `messages:write`, browser session, inbound email on | `{"alias": ALIAS}` |
-| `HailEmailAlias/destroy` | `ids`: 1 to 50 alias IDs | `messages:write`, browser session | `{"destroyed": [...], "notFound": [...]}` |
+| `HailEmailAlias/destroy` | `ids`: 1 to 50 alias IDs; optional `unsubscribe` Boolean, default false | `messages:write`, browser session | `{"destroyed": [...], "notFound": [...], "unsubscribeRequests": 0}` |
 
 The state is `{available:true, domain, sender:{address, category}, enabled,
 grant}`. `enabled` is true when the account holds an active Grant to the bridge
@@ -205,7 +287,8 @@ for its category; `grant` then carries that Grant's `grantId`, `revision` and
 `digest`, and is otherwise null. An alias is `{id, address, label, createdAt,
 lastReceivedAt, messageCount}`, with RFC 3339 timestamps and
 `lastReceivedAt` null until mail arrives. Create fails with `stateMismatch`
-while inbound email is off.
+while inbound email is off. `unsubscribeRequests` counts newly queued requests,
+not completed unsubscribes. Non-Boolean `unsubscribe` values are invalid.
 
 Inbound email has no separate switch. Turning it on is an ordinary Grant to
 the bridge account for its category, through the passkey-confirmed sender
@@ -219,8 +302,11 @@ Following the reader requirements for a [relayed origin](bodies.md#relayed-origi
 Feed, Trash and message views name the email sender, labelled "via email", and
 the message view names the bridge account as the Hail sender that relayed it
 and says whether the sender's domain signed the email. Reply is not offered.
-Unsubscribe is not offered either: it would revoke the Grant to the bridge and
-turn inbound email off for every alias; the view links to Aliases instead.
+The ordinary Hail unsubscribe action is not offered: it would revoke the Grant
+to the bridge and turn inbound email off for every alias. The view links to Aliases
+instead. Alias deletion offers an unchecked option to request unsubscribe from
+newsletters using the selected addresses, explains best-effort coverage, and
+reports the number queued (or that none were available).
 
 ## Operator setup
 
@@ -238,16 +324,38 @@ turn inbound email off for every alias; the view links to Aliases instead.
    `email-bridge` Compose profile in the standalone deployment, or
    `EMAIL_CONVERTER_DB_PASSWORD` and `hail-provider-ops email-converter-role` on Haili.
 4. Point the alias domain's mail at an ingress adapter that calls the contract
-   above.
+   above. For Cloudflare, retain the catch-all and configure the deletion bucket
+   and schedule as described in the [adapter README](../apps/server/deploy/cloudflare-email-worker/README.md).
 
 A user receives bridged mail after granting the bridge account its category,
 through the same sender approval as any other publisher.
 
 ## Open items
 
-- Retention period for the content-free intake record, and for `dead` records.
+- Retention period for intake diagnostics (including active-alias unsubscribe
+  tokens), terminal unsubscribe jobs, and `dead` records.
 - Telling which alias a delivered message arrived through, so a message view
   can offer to delete that alias.
 - A storage ceiling for delivered bridged content. Current storage accounting
   measures usage and does not limit it.
 - Whether aliases can continue after a provider transfer; see plan decision D8.
+
+## Implementation conformance checks
+
+- Unknown/paused/revoked aliases return the same recipient refusal and never
+  become permanent edge records; deleting an alias publishes a durable record.
+- Authenticated deletion-feed pages order sequences numerically, reject invalid
+  cursors, and never skip an earlier uncommitted deletion.
+- An edge hit rejects with no provider request or body read; failed page writes
+  leave the cursor unchanged. Edge misses/storage failures use provider checks.
+- Held-mail reject/defer/outage decisions occur before R2 body retrieval.
+- Real DKIM test vectors reject unsigned, tampered, duplicate or incompletely
+  covered unsubscribe headers, and distinguish signed list IDs from URL fallback.
+- Deletion without consent makes no jobs; shared-alias deletion with consent
+  queues distinct eligible lists, erases metadata, and preserves delivered mail.
+- Redirects are not followed; private DNS targets are refused before connection;
+  retries are bounded and terminal jobs erase their URL.
+
+Executable checks: `cloudflare-email-worker.test.ts`, `email-unsubscribe.test.ts`,
+`email-unsubscribe.integration.test.ts`, and the existing email-bridge pipeline and
+migration suites under `apps/server/test/`.

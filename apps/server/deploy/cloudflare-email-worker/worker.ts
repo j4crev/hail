@@ -26,6 +26,8 @@ export interface Env {
   /** Optional, bytes. Defaults to the provider's 10 MiB limit. */
   MAX_MESSAGE_BYTES?: string;
   PENDING: { put(key: string, value: Uint8Array): Promise<unknown>; get(key: string): Promise<PendingObject | null>; delete(key: string): Promise<void> };
+  /** Permanent tombstones and sync cursor; this bucket must have no expiration policy. */
+  DELETIONS?: { head(key: string): Promise<unknown | null>; get(key: string): Promise<{ text(): Promise<string> } | null>; put(key: string, value: string): Promise<unknown> };
   RETRY: { send(body: RetryBody, options?: { delaySeconds?: number }): Promise<void> };
 }
 export interface IncomingEmail {
@@ -75,8 +77,37 @@ async function intake(env: Env, path: "check" | "messages", init: RequestInit, t
   return result as Outcome;
 }
 
-const check = (env: Env, recipient: string) =>
-  intake(env, "check", { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient }) }, 5_000);
+async function check(env: Env, recipient: string): Promise<Outcome> {
+  const local = recipient.slice(0, -(env.ALIAS_DOMAIN.length + 1));
+  if (!recipient.endsWith(`@${env.ALIAS_DOMAIN}`) || !/^[a-z2-7]{12}$/.test(local)) return "reject";
+  try { if (await env.DELETIONS?.head(`deleted/${local}`)) return "reject"; }
+  catch { /* Storage failure falls back to the authoritative provider. */ }
+  return intake(env, "check", { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient }) }, 5_000);
+}
+
+/** Poll the durable, commit-ordered feed; publish records before advancing the cursor. */
+export async function syncDeletions(env: Env): Promise<void> {
+  if (!env.DELETIONS) return;
+  let after = await (await env.DELETIONS.get("cursor"))?.text() ?? "0";
+  if (!/^(0|[1-9][0-9]{0,18})$/.test(after)) throw new Error("Invalid stored deletion cursor");
+  // One bounded page per invocation; a backlog resumes at the next minute.
+  const response = await fetch(`${env.PROVIDER_ORIGIN}/email-bridge/v1/deletions`, {
+    method: "POST", redirect: "manual", signal: AbortSignal.timeout(5_000),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.INTAKE_TOKEN}` }, body: JSON.stringify({ after }),
+  });
+  if (response.status !== 200) { await response.body?.cancel(); throw new Error("Deletion synchronization unavailable"); }
+  const data = await response.json() as { deletions?: { sequence: string; localPart: string }[] };
+  if (!Array.isArray(data.deletions) || data.deletions.length > 500) throw new Error("Invalid deletion feed");
+  for (const record of data.deletions) {
+    if (typeof record.sequence !== "string" || !/^[1-9][0-9]{0,18}$/.test(record.sequence) ||
+      BigInt(record.sequence) <= BigInt(after) || !/^[a-z2-7]{12}$/.test(record.localPart)) throw new Error("Invalid deletion record");
+    after = record.sequence;
+  }
+  for (let start = 0; start < data.deletions.length; start += 25) {
+    await Promise.all(data.deletions.slice(start, start + 25).map(record => env.DELETIONS!.put(`deleted/${record.localPart}`, "1")));
+  }
+  if (data.deletions.length) await env.DELETIONS.put("cursor", after);
+}
 
 const submit = (env: Env, body: RetryBody, raw: Uint8Array) => intake(env, "messages", {
   headers: { "Content-Type": "message/rfc822", "Bridge-Recipient": body.recipient, "Bridge-Received-At": String(body.receivedAt),
@@ -132,13 +163,15 @@ export async function handleEmail(message: IncomingEmail, env: Env): Promise<voi
 
 export async function handleRetry(messages: readonly RetryMessage[], env: Env): Promise<void> {
   for (const message of messages) {
-    const object = await env.PENDING.get(message.body.key);
-    if (!object) { message.ack(); continue; }
     let finished: boolean;
     try {
-      const result = await submit(env, message.body, new Uint8Array(await object.arrayBuffer()));
-      // Accepted, duplicate and refused all end the attempt; refused mail is discarded silently.
-      finished = result !== "defer";
+      const decision = await check(env, message.body.recipient);
+      finished = decision === "reject";
+      if (decision === "accept") {
+        const object = await env.PENDING.get(message.body.key);
+        // No R2 body retrieval or upload for refused/deferred recipients.
+        finished = !object || await submit(env, message.body, new Uint8Array(await object.arrayBuffer())) !== "defer";
+      }
     } catch (error) {
       if (!(error instanceof Unavailable)) throw error;
       finished = false;
@@ -151,6 +184,7 @@ export async function handleRetry(messages: readonly RetryMessage[], env: Env): 
 }
 
 export default {
+  scheduled: (_event: unknown, env: Env) => syncDeletions(env),
   email: (message: IncomingEmail, env: Env) => handleEmail(message, env),
   queue: (batch: { messages: readonly RetryMessage[] }, env: Env) => handleRetry(batch.messages, env),
 };

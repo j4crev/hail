@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleEmail, handleRetry, MAX_ATTEMPTS, type Env, type IncomingEmail, type RetryBody, type RetryMessage } from "../deploy/cloudflare-email-worker/worker.js";
+import { handleEmail, handleRetry, syncDeletions, MAX_ATTEMPTS, type Env, type IncomingEmail, type RetryBody, type RetryMessage } from "../deploy/cloudflare-email-worker/worker.js";
 
 const raw = new TextEncoder().encode("From: a@b.example\r\nMessage-ID: <1@b.example>\r\n\r\nHello\r\n");
 function email(to = "kq4tzx7m2fpa@haili.email", bytes = raw, rawSize = bytes.length) {
@@ -101,8 +101,8 @@ describe("retry consumer", () => {
       await handleRetry([message], env);
       expect(state).toEqual({ acked: true, retried: null });
       expect(stored.has("pending/x")).toBe(false);
-      expect(calls.map(call => call.path)).toEqual(["/email-bridge/v1/intake/messages"]);
-      expect(calls[0]!.headers.get("bridge-received-at")).toBe("1794400000");
+      expect(calls.map(call => call.path)).toEqual(["/email-bridge/v1/intake/check", "/email-bridge/v1/intake/messages"]);
+      expect(calls[1]!.headers.get("bridge-received-at")).toBe("1794400000");
     }
   });
 
@@ -129,6 +129,77 @@ describe("retry consumer", () => {
     const { message, state } = retryMessage(body, 2);
     await handleRetry([message], env);
     expect(state.acked).toBe(true);
+    expect(calls.map(call => call.path)).toEqual(["/email-bridge/v1/intake/check"]);
+  });
+});
+
+describe("permanent edge deletions", () => {
+  function deletions() {
+    const records = new Map<string, string>();
+    const binding: NonNullable<Env["DELETIONS"]> = {
+      head: async key => records.has(key) ? {} : null,
+      get: async key => records.has(key) ? { text: async () => records.get(key)! } : null,
+      put: async (key, value) => { records.set(key, value); },
+    };
+    return { records, binding };
+  }
+  it("rejects a known deletion without provider calls or reading fresh/held bodies, even during an outage", async () => {
+    const { env, stored } = environment(), { records, binding } = deletions();
+    env.DELETIONS = binding;
+    records.set("deleted/kq4tzx7m2fpa", "1");
+    const calls = provider("down"), { message, rejected } = email();
+    const read = vi.spyOn(message.raw, "getReader"), get = vi.spyOn(env.PENDING, "get");
+    await handleEmail(message, env);
+    expect(rejected).toEqual(["No such recipient"]);
+    await env.PENDING.put("pending/x", raw);
+    const ack = vi.fn();
+    await handleRetry([{ body: { key: "pending/x", recipient: message.to, envelopeSender: message.from, receivedAt: 1 }, attempts: 1, ack, retry: vi.fn() }], env);
+    expect(ack).toHaveBeenCalledOnce();
+    expect(stored.size).toBe(0);
     expect(calls).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+  });
+  it("falls back on an edge miss or storage failure and never caches generic refusals", async () => {
+    for (const fail of [false, true]) {
+      const { env } = environment(), { binding, records } = deletions();
+      env.DELETIONS = binding;
+      if (fail) binding.head = async () => { throw new Error("storage unavailable"); };
+      const calls = provider({ result: "reject" });
+      await handleEmail(email().message, env);
+      expect(calls).toHaveLength(1);
+      expect(records.size).toBe(0);
+    }
+  });
+  it("checks held recipients before R2 access on rejection, deferral and provider outage", async () => {
+    for (const answer of [{ result: "reject" }, { result: "defer" }, "down"] as Answer[]) {
+      const { env } = environment(), get = vi.spyOn(env.PENDING, "get"), ack = vi.fn(), retry = vi.fn();
+      const calls = provider(answer);
+      await handleRetry([{ body: { key: "pending/x", recipient: "kq4tzx7m2fpa@haili.email", envelopeSender: "", receivedAt: 1 }, attempts: 1, ack, retry }], env);
+      expect(get).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(1);
+      expect(answer !== "down" && answer.result === "reject" ? ack : retry).toHaveBeenCalledOnce();
+    }
+  });
+  it("advances its cursor only after all records are durable; failed sync safely replays", async () => {
+    const { env } = environment(), { records, binding } = deletions();
+    env.DELETIONS = binding;
+    records.set("cursor", "9");
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      requests.push(JSON.parse(String(init.body)).after);
+      expect(new Headers(init.headers).get("Authorization")).toBe(`Bearer ${env.INTAKE_TOKEN}`);
+      expect(init.redirect).toBe("manual");
+      return Response.json({ deletions: [{ sequence: "10", localPart: "abcdefghijkl" }, { sequence: "11", localPart: "mnopqrstuvwx" }] });
+    });
+    const put = binding.put;
+    binding.put = async (key, value) => { if (key === "deleted/mnopqrstuvwx") throw new Error("write failed"); return put(key, value); };
+    await expect(syncDeletions(env)).rejects.toThrow("write failed");
+    expect(records.get("cursor")).toBe("9");
+    expect(records.get("deleted/abcdefghijkl")).toBe("1");
+    binding.put = put;
+    await syncDeletions(env);
+    expect(records.get("cursor")).toBe("11");
+    expect(requests).toEqual(["9", "9"]);
   });
 });

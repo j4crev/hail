@@ -1,3 +1,4 @@
+import { queueUnsubscriptions } from "./unsubscribe.js";
 import type { SQL } from "bun";
 import { randomBytes, randomUUID } from "node:crypto";
 
@@ -68,10 +69,17 @@ export class EmailAliases {
       const [count] = await transaction<{ total: number }[]>`
         SELECT count(*)::integer AS total FROM email_bridge_aliases WHERE account_id = ${accountId} AND state <> 'deleted'`;
       if ((count?.total ?? 0) >= this.limits.maxAliasesPerAccount) throw new EmailBridgeError(409, "This account has reached its alias limit");
-      const [row] = await transaction<Row[]>`
-        INSERT INTO email_bridge_aliases (id, account_id, local_part, label) VALUES (${randomUUID()}, ${accountId}, ${randomLocalPart()}, ${name})
-        RETURNING id, local_part, label, state, created_at, last_received_at, message_count`;
-      return this.view(row!);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const local = randomLocalPart();
+        const [row] = await transaction<Row[]>`
+          INSERT INTO email_bridge_aliases (id, account_id, local_part, label)
+          SELECT ${randomUUID()}::uuid, ${accountId}::uuid, ${local}, ${name}
+          WHERE NOT EXISTS (SELECT 1 FROM email_bridge_deletions WHERE local_part = ${local})
+          ON CONFLICT (local_part) DO NOTHING
+          RETURNING id, local_part, label, state, created_at, last_received_at, message_count`;
+        if (row) return this.view(row);
+      }
+      throw new EmailBridgeError(409, "Unable to allocate an alias; try again");
     });
   }
 
@@ -89,16 +97,25 @@ export class EmailAliases {
   }
 
   /** Permanent: the address is never issued again and queued mail for it is discarded. */
-  async remove(accountId: string, id: unknown): Promise<void> {
+  async remove(accountId: string, id: unknown, unsubscribe = false): Promise<number> {
     if (typeof id !== "string" || !UUID.test(id)) throw new EmailBridgeError(404, "Alias not found");
-    await this.sql.begin(async transaction => {
+    return this.sql.begin(async transaction => {
+      // Serialize sequence allocation through commit, so an ingress cursor cannot skip a late commit.
+      await transaction`SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || ':email-deletions', 0))`;
       const rows = await transaction`
         UPDATE email_bridge_aliases SET state = 'deleted', deleted_at = clock_timestamp()
-        WHERE id = ${id} AND account_id = ${accountId} AND state <> 'deleted' RETURNING id`;
+        WHERE id = ${id} AND account_id = ${accountId} AND state <> 'deleted' RETURNING id, local_part`;
       if (!rows.length) throw new EmailBridgeError(404, "Alias not found");
+      await transaction`INSERT INTO email_bridge_deletions(local_part) VALUES (${rows[0]!.local_part}) ON CONFLICT DO NOTHING`;
+      // Cancel conversions first; a concurrent converter must finish or lose its claim
+      // before we snapshot metadata, so no unsubscribe token can be written afterwards.
       await transaction`
         UPDATE email_bridge_intake SET state = 'dead', raw = NULL, converted_body = NULL, failure = 'alias deleted'
         WHERE alias_id = ${id} AND state IN ('queued','converting','converted')`;
+      const queued = unsubscribe ? await queueUnsubscriptions(transaction, id) : 0;
+      await transaction`UPDATE email_bridge_intake SET diagnostics = diagnostics #- '{dkim,unsubscribe}'
+        WHERE alias_id = ${id} AND jsonb_typeof(diagnostics->'dkim') = 'object'`;
+      return queued;
     });
   }
 }
