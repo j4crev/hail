@@ -1,6 +1,6 @@
 import { decodeBase64Url, encodeBase64Url } from "./base64url.js";
 import { HailCodecError } from "./errors.js";
-import { assertHailValue } from "./cbor.js";
+import { assertHailValue, DEFAULT_HAIL_RESOURCE_LIMITS } from "./cbor.js";
 import type { HailPayloadType, HailValue } from "./types.js";
 import type { HailPayloadByType } from "./models.js";
 import { validatePayload } from "./validation.js";
@@ -77,11 +77,20 @@ function fromJson(value: DiagnosticJson, parent?: Record<string, DiagnosticJson>
   return value;
 }
 
+const DIAGNOSTIC_INPUT_LIMITS = {
+  ...DEFAULT_HAIL_RESOURCE_LIMITS,
+  maximumBytes: Math.ceil(DEFAULT_HAIL_RESOURCE_LIMITS.maximumBytes * 4 / 3) + 65_536,
+  maximumTextBytes: Math.ceil(DEFAULT_HAIL_RESOURCE_LIMITS.maximumByteStringLength * 4 / 3) + 4,
+};
+
 export function fromDiagnosticJson<T extends HailPayloadType>(
   type: T,
   value: DiagnosticJson,
 ): HailPayloadByType[T] {
-  assertHailValue(value);
+  // Byte strings are base64url text in this form, a third larger than the bytes
+  // they stand for. Bound the input by that inflated size here; the converted
+  // value is held to the real limits by validatePayload below.
+  assertHailValue(value, DIAGNOSTIC_INPUT_LIMITS);
   let converted: HailValue;
   try {
     converted = fromJson(value);
