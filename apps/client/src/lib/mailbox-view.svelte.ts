@@ -1,6 +1,6 @@
 import {onMount, untrack} from 'svelte';
 import {goto} from '$app/navigation';
-import {isRedirect} from '@sveltejs/kit';
+import {isHttpError, isRedirect} from '@sveltejs/kit';
 import {mailboxCache, StaleMailboxRead} from './mailbox-cache.js';
 import {readMailbox, mailboxKey} from './mailbox-load.js';
 import {appendMailbox} from './mailbox-history.js';
@@ -19,6 +19,7 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
   // What is on screen, compared with each refresh to decide whether anything changed.
   let recent = untrack(source) as Record<string, unknown>;
   let mounted = false, lastCheck = 0, failures = 0, version = 0, previous = untrack(source) as Record<string, unknown>;
+  let retryTimer:ReturnType<typeof setTimeout>|undefined;
   $effect(() => {
     const next = source();
     untrack(() => {
@@ -30,7 +31,9 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
         data = {...data, ...Object.fromEntries(changedKeys.map(key => [key, (next as Record<string, unknown>)[key]]))} as T;
         return;
       }
-      data = next; recent = next as Record<string, unknown>; historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++; lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));
+      data = next; recent = next as Record<string, unknown>; historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++;
+      // Freshly loaded content supersedes an earlier refresh failure.
+      failure = ''; failures = 0; clearTimeout(retryTimer); lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));
     });
   });
   // Operation IDs are fresh form defaults, not mailbox changes.
@@ -41,27 +44,46 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
   const differs = (result:Record<string, unknown>) =>
     fingerprint(result) !== fingerprint(Object.fromEntries(Object.keys(result).map(key=>[key, recent[key]])));
   const scope = () => source().mailboxKey?.split(':')[0] ?? '';
+  /**
+   * Checks for changes. applyNow is the person asking (Refresh/Retry): it waits
+   * for this tab's own mailbox changes to finish and repeats a read that another
+   * change made stale, so the click always ends in fresh content or a failure.
+   */
   async function refresh(force = false, applyNow = false) {
-    if (!mounted || busy || mailboxCache.mutations || document.visibilityState !== 'visible' || !scope()) return;
+    if (!mounted || busy || (mailboxCache.mutations && !applyNow) || document.visibilityState !== 'visible' || !scope()) return;
     if (!force && Date.now() - lastCheck < Math.min(300_000, 30_000 * 2 ** failures)) return;
-    busy = true; lastCheck = Date.now();
-    const generation = mailboxCache.generation, current = version;
-    const location = new URL(url());
+    busy = true; lastCheck = Date.now(); clearTimeout(retryTimer);
     try {
-      const next = await mailboxCache.request(mailboxKey(scope(), location), () => readMailbox<T>(fetch, location, scope()));
-      if (!mounted || current !== version || generation !== mailboxCache.generation) return;
-      const result = {...next, mailboxKey:source().mailboxKey};
-      // A cache generation changes on any mailbox change anywhere. Pages that defer
-      // updates (an open message) offer one only when their own content changed.
-      if (applyNow || differs(result) || (!deferChanges && generation !== historyGeneration)) {
-        if (!applyNow && (deferChanges || locked() || batches || location.searchParams.has('after') || location.searchParams.has('sentAfter') || location.searchParams.has('draftAfter') || window.scrollY > 100)) {pending = result; pendingGeneration = generation;}
-        else {data = result; recent = result; historyGeneration = generation; pending = null; batches = 0;}
-      } else if (deferChanges) historyGeneration = generation;
-      failure = ''; failures = 0;
+      for (let attempt = 0; ; attempt++) {
+        if (applyNow) await mailboxCache.idle();
+        const generation = mailboxCache.generation, current = version;
+        const location = new URL(url());
+        let next:T;
+        try {next = await mailboxCache.request(mailboxKey(scope(), location), () => readMailbox<T>(fetch, location, scope()));}
+        catch (cause) {if (cause instanceof StaleMailboxRead && applyNow && attempt < 3) continue; throw cause;}
+        if (!mounted || current !== version) return;
+        if (generation !== mailboxCache.generation) {if (applyNow && attempt < 3) continue; return;}
+        accept(next, generation, location, applyNow);
+        failure = ''; failures = 0;
+        return;
+      }
     } catch (cause) {
       if (isRedirect(cause)) {await goto(cause.location, {invalidateAll:true}); return;}
-      if (!(cause instanceof StaleMailboxRead)) {failure = 'Unable to refresh. Showing previously loaded messages.'; failures++;}
+      if (cause instanceof StaleMailboxRead) return;
+      failure = 'Unable to refresh. Showing previously loaded messages.'; failures++;
+      // A busy provider says when to come back; retry then without waiting for a click.
+      const retryAfter = isHttpError(cause) ? cause.body.retryAfter : undefined;
+      if (retryAfter && mounted) retryTimer = setTimeout(() => {void refresh(true);}, retryAfter * 1000 + Math.random() * 1000);
     } finally {busy = false;}
+  }
+  function accept(next:T, generation:number, location:URL, applyNow:boolean) {
+    const result = {...next, mailboxKey:source().mailboxKey};
+    // A cache generation changes on any mailbox change anywhere. Pages that defer
+    // updates (an open message) offer one only when their own content changed.
+    if (applyNow || differs(result) || (!deferChanges && generation !== historyGeneration)) {
+      if (!applyNow && (deferChanges || locked() || batches || location.searchParams.has('after') || location.searchParams.has('sentAfter') || location.searchParams.has('draftAfter') || window.scrollY > 100)) {pending = result; pendingGeneration = generation;}
+      else {data = result; recent = result; historyGeneration = generation; pending = null; batches = 0;}
+    } else if (deferChanges) historyGeneration = generation;
   }
   async function older(cursor:string, value:string | null | undefined) {
     if (!value || busy || locked() || pending) return;
@@ -109,9 +131,11 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
     window.addEventListener('focus',focus);
     window.addEventListener('hail:mailbox-changed',changed);
     document.addEventListener('visibilitychange',focus);
-    const interval = setInterval(focus, 30_000 + Math.random()*5000);
+    // Fallback only: the layout's change check and live events refresh this view
+    // (via hail:mailbox-changed) as soon as the mailbox changes.
+    const interval = setInterval(focus, 120_000 + Math.random()*10_000);
     if (source().mailboxCached) void refresh(true);
-    return () => {mounted = false; version++; clearInterval(interval); window.removeEventListener('focus',focus); window.removeEventListener('hail:mailbox-changed',changed); document.removeEventListener('visibilitychange',focus);};
+    return () => {mounted = false; version++; clearInterval(interval); clearTimeout(retryTimer); window.removeEventListener('focus',focus); window.removeEventListener('hail:mailbox-changed',changed); document.removeEventListener('visibilitychange',focus);};
   });
   return {get data(){return data;},get pending(){return !!pending;},get busy(){return busy;},get failure(){return failure;},get batches(){return batches;},refresh,older,apply,adopt};
 }

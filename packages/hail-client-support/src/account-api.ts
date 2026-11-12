@@ -33,8 +33,50 @@ export class AccountApiError extends Error {
 }
 
 export class AccountApiClient {
+  private clientAddress:string|undefined;
+  private jmapAccountId:Promise<string>|undefined;
   private constructor(private readonly provider: string, private readonly token: string,
     private readonly accountId: string,private readonly sessionOrigin?:string,private readonly transport=provider) {}
+
+  /**
+   * A trusted server acting for a browser (the web client) names the browser's
+   * address so provider per-client limits apply to that user rather than to the
+   * server itself. Invalid or absent addresses are ignored.
+   */
+  private withClientAddress(address:string|null|undefined):this{
+    this.clientAddress=address&&isIP(address)?address:undefined;
+    return this;
+  }
+
+  private credentialHeaders():Record<string,string>{
+    return {...(this.sessionOrigin?{Cookie:`hail_session=${this.token}`,Origin:this.sessionOrigin}:this.token?{Authorization:`Bearer ${this.token}`}:{}),
+      ...(this.clientAddress?{"X-Hail-Trusted-Client-IP":this.clientAddress}:{})};
+  }
+
+  /**
+   * JMAP request that retries the provider's concurrency refusal: a 429 without
+   * Retry-After is returned before any work starts, so repeating it is safe.
+   * A 429 with Retry-After (a rate limit) is left to the caller.
+   */
+  private async jmapRequest(path:string,body?:JsonObject,maxResponse?:number):Promise<JsonObject>{
+    for(let attempt=0;;attempt++){
+      try{return await this.request(path,body,'',maxResponse);}
+      catch(error){
+        if(!(error instanceof AccountApiError)||error.status!==429||error.retryAfterSeconds!==undefined||attempt>=3)throw error;
+        await new Promise(resolve=>setTimeout(resolve,150*2**attempt+Math.random()*100));
+      }
+    }
+  }
+
+  /** The JMAP account ID, read from the Session once per client. */
+  private jmapAccount():Promise<string>{
+    this.jmapAccountId??=this.jmapRequest('/.well-known/jmap').then(session=>{
+      const accountId=object(session.primaryAccounts)['https://racrproto.com/ns/jmap/account'];
+      if(typeof accountId!=='string')throw new AccountApiError(403);
+      return accountId;
+    }).catch(error=>{this.jmapAccountId=undefined;throw error;});
+    return this.jmapAccountId;
+  }
 
   static publicProvider(provider:string){
     const url=new URL(provider);
@@ -48,7 +90,7 @@ export class AccountApiClient {
     return new AccountApiClient(provider,token,"");
   }
 
-  static fromSession(provider:string,token:string,origin=provider,transport=provider){
+  static fromSession(provider:string,token:string,origin=provider,transport=provider,clientAddress?:string|null){
     const url=new URL(provider);
     if(url.origin!==provider||url.username||url.password||url.search||url.hash||
       url.protocol!=="https:"&&!(url.protocol==="http:"&&url.hostname==="localhost")||
@@ -60,11 +102,11 @@ export class AccountApiClient {
     const transportUrl=new URL(transport);
     if(transportUrl.origin!==transport||transportUrl.protocol!=="https:"&&!(transportUrl.protocol==="http:"&&transportUrl.hostname==="localhost")&&transport!=="http://provider:3000")
       throw new Error("Invalid account API transport");
-    return new AccountApiClient(provider,token,"",origin,transport);
+    return new AccountApiClient(provider,token,"",origin,transport).withClientAddress(clientAddress);
   }
 
   static async fromCredentialFile(path: string, selection: { provider?: string | undefined; accountId?: string | undefined;
-    transport?:string|undefined } = {}): Promise<AccountApiClient> {
+    transport?:string|undefined; clientAddress?:string|null|undefined } = {}): Promise<AccountApiClient> {
     const record = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(await privateFile(path, 16_384))));
     if (record.type !== "racr.api-credential" || record.version !== 1 ||
       typeof record.provider !== "string" || typeof record.token !== "string" ||
@@ -83,15 +125,13 @@ export class AccountApiClient {
     const transport=selection.transport??record.provider,transportUrl=new URL(transport);
     if(transportUrl.origin!==transport||transportUrl.protocol!=="https:"&&!(transportUrl.protocol==="http:"&&transportUrl.hostname==="localhost")&&transport!=="http://provider:3000")
       throw new Error("Invalid account API transport");
-    return new AccountApiClient(record.provider, record.token, record.accountId,undefined,transport);
+    return new AccountApiClient(record.provider, record.token, record.accountId,undefined,transport).withClientAddress(selection.clientAddress);
   }
 
   async jmap(name:string,args:JsonObject={},maxResponse=40*1024*1024):Promise<JsonObject>{
     const capability='https://racrproto.com/ns/jmap/account';
-    const session=await this.request('/.well-known/jmap',undefined,'');
-    const accountId=object(session.primaryAccounts)[capability];
-    if(typeof accountId!=='string')throw new AccountApiError(403);
-    const response=await this.request('/jmap',{using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{...args,accountId},'account']]},'',maxResponse);
+    const accountId=await this.jmapAccount();
+    const response=await this.jmapRequest('/jmap',{using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{...args,accountId},'account']]},maxResponse);
     const calls=response.methodResponses;
     if(!Array.isArray(calls)||calls.length!==1||!Array.isArray(calls[0])||calls[0][2]!=='account')throw new ClientError('RESPONSE_ERROR','Invalid JMAP response');
     const result=object(calls[0][1]);
@@ -102,12 +142,10 @@ export class AccountApiClient {
 
   async uploadAttachment(filename:string,bytes:Uint8Array):Promise<JsonObject>{
     if(bytes.length<1||bytes.length>25*1024*1024)throw new Error('Invalid attachment size');
-    const session=await this.request('/.well-known/jmap',undefined,'');
-    const accountId=object(session.primaryAccounts)['https://racrproto.com/ns/jmap/account'];
-    if(typeof accountId!=='string')throw new AccountApiError(403);
+    const accountId=await this.jmapAccount();
     const response=await fetch(`${this.transport}/jmap/upload/${encodeURIComponent(accountId)}`,{
       method:'POST',redirect:'error',credentials:'omit',signal:AbortSignal.timeout(60_000),
-      headers:{...(this.sessionOrigin?{Cookie:`hail_session=${this.token}`,Origin:this.sessionOrigin}:{Authorization:`Bearer ${this.token}`}),
+      headers:{...this.credentialHeaders(),
         'Content-Type':'application/octet-stream','Accept-Encoding':'identity'},body:Uint8Array.from(bytes)});
     if(!response.ok){await response.body?.cancel();throw new AccountApiError(response.status);}
     const reader=response.body?.getReader();if(!reader)throw new Error('Missing upload response');
@@ -123,7 +161,7 @@ export class AccountApiClient {
   async attachment(path:string):Promise<Response>{
     if(!/^\/attachments\/[^/]+\/[^/]+\/[A-Za-z0-9_-]{43}(?:\?index=(?:[0-9]|1[0-9]))?$/.test(path))throw new Error('Invalid attachment path');
     const response=await fetch(`${this.transport}/api/v1/account${path}`,{redirect:'error',signal:AbortSignal.timeout(60_000),headers:{
-      ...(this.sessionOrigin?{Cookie:`hail_session=${this.token}`,Origin:this.sessionOrigin}:{Authorization:`Bearer ${this.token}`}),
+      ...this.credentialHeaders(),
       'Accept-Encoding':'identity'}});
     if(!response.ok){await response.body?.cancel();throw new AccountApiError(response.status);}
     const length=Number(response.headers.get('Content-Length'));
@@ -141,7 +179,7 @@ export class AccountApiClient {
   }
 
   async request(path: string, bytes?: Uint8Array | JsonObject, namespace = "/api/v1/account",maxResponse=namespace==="/api/v1/account"&&path.startsWith("/connection-threads/")?192*1024*1024:namespace==="/api/v1/account"&&/^\/(?:inbox|sent|conversations)(?:\/|$)/.test(path)?40*1024*1024:MAX_RESPONSE, signal?: AbortSignal): Promise<JsonObject> {
-    const headers: Record<string, string> = { ...(this.sessionOrigin?{Cookie:`hail_session=${this.token}`,Origin:this.sessionOrigin}:this.token?{Authorization:`Bearer ${this.token}`}:{}),
+    const headers: Record<string, string> = { ...this.credentialHeaders(),
       Accept: "application/json", "Accept-Encoding": "identity", "Cache-Control": "no-store" };
     if (bytes) headers["Content-Type"] = bytes instanceof Uint8Array ? 'application/cose; cose-type="cose-sign1"' : "application/json";
     let response: Response;

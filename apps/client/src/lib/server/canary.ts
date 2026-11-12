@@ -4,6 +4,7 @@ import { env } from "$env/dynamic/private";
 import { error,redirect } from "@sveltejs/kit";
 import { AccountApiClient,AccountApiError } from "@racrproto/client-support/account-api";
 import {loginPath} from "$lib/auth-routing.js";
+import {clientAddress} from "./client-address.js";
 
 export const PROVIDER = env.HAIL_WEB_CLIENT_PROVIDER?.replace(/\/$/, "") || "";
 if (!building && !PROVIDER) throw new Error("Set HAIL_WEB_CLIENT_PROVIDER to the provider HTTPS origin");
@@ -18,7 +19,7 @@ export function isConfigured(cookies?:Cookies): boolean {
 export async function bootstrapAccount() {
   const credentialFile = env.HAIL_WEB_CLIENT_CREDENTIAL_FILE;
   if (!credentialFile) error(503, "Set HAIL_WEB_CLIENT_CREDENTIAL_FILE to the canary account credential file");
-  const client = await AccountApiClient.fromCredentialFile(credentialFile, { provider: PROVIDER,transport:API_ORIGIN });
+  const client = await AccountApiClient.fromCredentialFile(credentialFile, { provider: PROVIDER,transport:API_ORIGIN,clientAddress:clientAddress() });
   const account = await client.account();
   return { account, client };
 }
@@ -30,7 +31,7 @@ export function canaryAccount(cookies?:Cookies,url?:URL) {
 async function loadAccount(cookies?:Cookies,url?:URL) {
   const session=cookies?.get("hail_session");
   if(session){
-    const client=AccountApiClient.fromSession(PROVIDER,session,ORIGIN,API_ORIGIN);
+    const client=AccountApiClient.fromSession(PROVIDER,session,ORIGIN,API_ORIGIN,clientAddress());
     try{return {account:await client.account(),client};}
     catch(error_){if(error_ instanceof AccountApiError&&error_.status===401){cookies?.delete?.("hail_session",{path:"/"});redirect(303,loginPath(url));}throw error_;}
   }

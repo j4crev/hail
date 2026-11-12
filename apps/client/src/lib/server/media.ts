@@ -1,6 +1,7 @@
 import {error,redirect} from '@sveltejs/kit';
 import {PROVIDER,ORIGIN,API_ORIGIN,canaryAccount} from './canary.js';
 import {AccountApiClient} from '@racrproto/client-support/account-api';
+import {clientAddress} from './client-address.js';
 
 export async function redirectMedia(client:AccountApiClient,path:string):Promise<never>{
   let location:string;
@@ -19,5 +20,5 @@ export async function redirectMedia(client:AccountApiClient,path:string):Promise
 // for every image in a mailbox page.
 export async function mediaClient(cookies:{get(name:string):string|undefined},url:URL){
   const token=cookies.get('hail_session');
-  return token?AccountApiClient.fromSession(PROVIDER,token,ORIGIN,API_ORIGIN):(await canaryAccount(cookies,url)).client;
+  return token?AccountApiClient.fromSession(PROVIDER,token,ORIGIN,API_ORIGIN,clientAddress()):(await canaryAccount(cookies,url)).client;
 }

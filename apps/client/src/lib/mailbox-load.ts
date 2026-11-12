@@ -9,6 +9,9 @@ export async function readMailbox<T>(fetcher:typeof fetch, url:URL, scope?:strin
   const response = await fetcher('/mailbox-data?path=' + encodeURIComponent(url.pathname + url.search), {cache:'no-store',signal:AbortSignal.timeout(30_000)});
   if (!response.ok) {
     if (browser && (response.status === 401 || response.status === 403)) mailboxCache.clear();
+    const retryAfter = Number(response.headers.get('retry-after'));
+    if ((response.status === 429 || response.status === 503) && Number.isSafeInteger(retryAfter) && retryAfter > 0)
+      error(503, {message:'Your provider is busy. Please try again shortly.', retryAfter:Math.min(retryAfter, 60)});
     error(response.status, 'Unable to refresh your mailbox. Please try again.');
   }
   const result = await response.json();
