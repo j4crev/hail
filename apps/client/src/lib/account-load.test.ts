@@ -33,7 +33,7 @@ it("loads a new alpha account's empty inbox through the real session account cli
       expect(args).toEqual({accountId:jmapAccount,view:'settings'});
       return json({methodResponses:[[name,{accountId:jmapAccount,startScreen:'feed'},tag]]});
     }
-    expect(args).toEqual({accountId:jmapAccount,view:'inboxFeed',channel:'subscriptions',after:null});
+    expect(args).toEqual({accountId:jmapAccount,view:'inboxFeed',channel:'subscriptions',images:'reference',after:null});
     return json({methodResponses:[[name,{accountId:jmapAccount,messages:[],next:null},tag]]});
   });
   vi.stubGlobal("fetch",request);

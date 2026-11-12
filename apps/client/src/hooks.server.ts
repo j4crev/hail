@@ -23,6 +23,9 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
   }
   const csp=response.headers.get('content-security-policy');
   if(ingestOrigin && csp) response.headers.set('content-security-policy',sentryCsp(csp,ingestOrigin));
+  // Message images are immutable, digest-addressed and privately cacheable (see
+  // lib/server/message-image.ts); every other response is no-store.
+  if(event.url.pathname.startsWith("/media/images/")&&response.status===200&&response.headers.get("cache-control")?.startsWith("private, max-age="))return response;
   response.headers.set("cache-control","no-store");
   // Native same-origin POSTs need a non-null Origin for SvelteKit's CSRF check.
   response.headers.set("referrer-policy",(event.url.pathname.startsWith("/auth/") || (event.url.pathname === "/" && event.url.searchParams.has("next")))?"no-referrer":"same-origin");

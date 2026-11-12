@@ -251,8 +251,18 @@ logs/telemetry and never cache them at a CDN. Expiry does not revoke a download
 already in progress. Tickets add no authority beyond the issuing account.
 
 The browser origin must not proxy uploaded bytes. Its API bridge permits only
-JSON responses and blocks the media-ticket, media-redemption, attachment-download
-and avatar-image endpoints. Browser avatar/attachment routes return redirects to
+JSON responses and blocks the media-ticket, media-redemption, attachment-download,
+message-image and avatar-image endpoints. One exception, for caching: the
+reference web client serves message images at
+`/media/images/{sender}/{messageId}/{digest}` on its own origin. Each request is
+authenticated with the browser session against the provider's message-image
+endpoint; the client verifies the bytes against the digest and as structurally
+valid PNG/JPEG, and serves them with that fixed type, `nosniff`,
+`Content-Security-Policy: sandbox; default-src 'none'`,
+`Cross-Origin-Resource-Policy: same-origin` and `Cache-Control: private,
+max-age=2592000, immutable` (the URL is content-addressed and messages are
+immutable). Refusals are `no-store`. Sign-out responds with `Clear-Site-Data:
+"cache"` so cached images do not outlive the session in that browser. Browser avatar/attachment routes return redirects to
 provider capabilities, with no-store/no-referrer headers. Host-only application
 cookies are never shared using a parent-domain cookie. CORS is not opened to the
 media origin; server-to-server JSON bridging preserves the actual browser Origin

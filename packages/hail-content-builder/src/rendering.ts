@@ -55,7 +55,14 @@ export function forwardedAttribution(blocks: MessageBlock[]) {
   return null;
 }
 
-export function renderBody(value: unknown): {blocks:MessageBlock[];header:MessageImage|null;paragraphs:string[]} {
+/**
+ * Where a referenced image is fetched from. A body from a presentation view with
+ * image references omits each bundled image's `data`; its SHA-256 `digest.value`
+ * identifies the image.
+ */
+export type ImageSource = (image:{digest:string;mediaType:string}) => string;
+
+export function renderBody(value: unknown, imageSource?: ImageSource): {blocks:MessageBlock[];header:MessageImage|null;paragraphs:string[]} {
   const body = object(value, "message body");
   if (body.version !== 1 || !["spt-1","spt-2","spt-3"].includes(body.profile as string) || !Array.isArray(body.blocks)) {
     throw new Error("Unsupported message body");
@@ -64,12 +71,16 @@ export function renderBody(value: unknown): {blocks:MessageBlock[];header:Messag
   const imageFor=(entry:unknown):MessageImage=>{
     const image=object(entry,"image block"),manifest=object(body.assets,"asset manifest");
     if(body.profile!=="spt-3"||manifest.version!==1||!Array.isArray(manifest.assets)||manifest.assets.length>BUNDLED_IMAGE_LIMITS.maximumAssets)throw new Error("Unsupported image body");
-    const asset=object(manifest.assets.find((a:unknown)=>object(a,"asset").id===image.asset),"image asset"),data=text(asset.data,"asset data");
+    const asset=object(manifest.assets.find((a:unknown)=>object(a,"asset").id===image.asset),"image asset");
+    const referenced=asset.data===undefined&&imageSource!==undefined,data=referenced?"":text(asset.data,"asset data");
+    const digest=referenced?object(asset.digest,"asset digest"):{};
+    if(referenced&&digest.algorithm!=="sha-256")throw new Error("Unsupported image asset");
     if(!["header","image"].includes(String(asset.role))||!(IMAGE.mediaTypes as readonly unknown[]).includes(asset.media_type)||asset.loading!=="bundled"||
-      !/^[A-Za-z0-9_-]+$/.test(data)||typeof asset.size!=="number"||asset.size<1||asset.size>IMAGE.bytes||Math.floor(data.length*6/8)!==asset.size||
+      (referenced?typeof digest.value!=="string"||!/^[A-Za-z0-9_-]{43}$/.test(digest.value):!/^[A-Za-z0-9_-]+$/.test(data)||Math.floor(data.length*6/8)!==asset.size)||
+      typeof asset.size!=="number"||asset.size<1||asset.size>IMAGE.bytes||
       typeof asset.width!=="number"||!Number.isInteger(asset.width)||asset.width<1||asset.width>IMAGE.width||typeof asset.height!=="number"||!Number.isInteger(asset.height)||asset.height<1||asset.height>(asset.role==='image'?IMAGE.height:IMAGE.headerHeight)||asset.width*asset.height>IMAGE.pixels)throw new Error("Unsupported image asset");
     const base64=data.replaceAll("-","+").replaceAll("_","/").padEnd(Math.ceil(data.length/4)*4,"=");
-    return {src:`data:${asset.media_type};base64,${base64}`,alt:text(image.alt,"image alt"),caption:image.caption===undefined?null:text(image.caption,"image caption"),width:asset.width,height:asset.height};
+    return {src:referenced?imageSource!({digest:digest.value as string,mediaType:asset.media_type as string}):`data:${asset.media_type};base64,${base64}`,alt:text(image.alt,"image alt"),caption:image.caption===undefined?null:text(image.caption,"image caption"),width:asset.width,height:asset.height};
   };
   // Preserve the separate leading-header presentation used by simple compose.
   if(body.profile==='spt-3'&&entries[0]?._type==='spt.image'){

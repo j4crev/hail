@@ -47,7 +47,7 @@ function references(args:Record<string,unknown>,responses:Invocation[]){
 }
 
 export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messages:JmapMessages,origin:string,browserOrigin=origin,drafts?:JmapDrafts,blobs?:JmapBlobs,collections?:JmapCollections,operations?:JmapOperations,push?:JmapPush){
-  const rate=new FixedWindowRateLimit(),active=new Map<string,number>(),uploads=new Map<string,number>(),approvalRate=new FixedWindowRateLimit();let processing=0,streamCount=0;const streams=new Map<string,number>();
+  const rate=new FixedWindowRateLimit(),active=new Map<string,number>(),uploads=new Map<string,number>(),approvalRate=new FixedWindowRateLimit();let processing=0,streamCount=0;const streams=new Map<string,AbortController[]>();
   function sessionObject(session:AccountApiSession){
     const accountId=messages.accountId(session),read=session.scopes.includes('messages:read');
     const writable=canMutateMessages(session),destroyable=canDestroyMessages(session),draftRead=!!drafts&&canReadDrafts(session);
@@ -78,10 +78,14 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
       const allowed=(s:AccountApiSession)=>options.types.filter(t=>t==='HailMessage'?s.scopes.includes('messages:read'):
         t==='HailDraft'?!!drafts&&canReadDrafts(s):!!collections&&canReadCollection(s,t as Collection));
       if(session.migration_state||!allowed(session).length)return problem(403,'forbidden');
-      const count=streams.get(session.account_id)??0;if(streamCount>=64||count>=2)return problem(429,'limit');
+      // A new stream replaces the account's oldest at the limit instead of being
+      // refused: a proxy may keep a stream the browser already closed open until
+      // its lifetime ends, and refusing would lock the account out until then.
+      const held=streams.get(session.account_id)??[];if(held.length>=2)held[0]!.abort();
+      if(streamCount>=64)return problem(429,'limit');
       const identity=(s:AccountApiSession)=>JSON.stringify([s.account_id,s.credential_id,s.serving_generation??1,s.did,[...s.scopes].sort()]);
       const admitted=identity(session),account=session.account_id;
-      streams.set(account,count+1);streamCount++;
+      const slot=new AbortController();streams.set(account,[...(streams.get(account)??[]),slot]);streamCount++;
       return stateStream(async()=>{
         const current=await accounts.authenticate(context.req.header('Authorization'),getCookie(context,'hail_session'),false);
         if(!current||current.migration_state||identity(current)!==admitted)return null;
@@ -91,7 +95,7 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
             type==='HailDraft'?await drafts!.currentState(current):await collections!.currentState(current,type as Collection);
           return {accountId:messages.accountId(current),states};
         });
-      },options,context.req.raw.signal,lastId,()=>{streamCount--;const left=(streams.get(account)??1)-1;if(left)streams.set(account,left);else streams.delete(account);});
+      },options,AbortSignal.any([context.req.raw.signal,slot.signal]),lastId,()=>{streamCount--;const left=(streams.get(account)??[]).filter(other=>other!==slot);if(left.length)streams.set(account,left);else streams.delete(account);});
     }
     const count=active.get(session.account_id)??0;
     if(processing>=32||count>=4)return problem(429,'limit');

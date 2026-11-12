@@ -151,6 +151,19 @@ Reference-provider sent-list identities
 may use `sent-category`, `sent-connections`, or `sent-message` in place of sender;
 these are local API selectors, never protocol identities.
 
+### Message images
+
+`GET /api/v1/account/images/{sender}/{message-id}/{digest}` requires
+`messages:read` and returns the bytes of one bundled `header` or `image` asset of
+a visible message (the same visibility as `HailMailbox/view` `read`, including
+Trash retention; `sender` equal to the account's own DID selects its retained Sent
+message). `digest` is the asset's 43-character unpadded base64url SHA-256
+`digest.value`. The response has the asset's `image/png` or `image/jpeg`
+`Content-Type`, `Content-Length`, `nosniff`, `Content-Security-Policy: sandbox;
+default-src 'none'` and `Cache-Control: private, no-store`; no query parameters are
+accepted. Clients verify the bytes against the digest. This is a reference-provider
+account API, not a federation endpoint.
+
 The web composer and reply forms accept multiple files. Drafts retain metadata;
 forwarding re-authorizes and uploads files from the user's local received copy.
 The CLI supports repeated `--attachment PATH` for `send`, `reply`, and

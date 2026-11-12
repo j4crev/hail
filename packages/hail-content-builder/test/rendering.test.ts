@@ -1,4 +1,4 @@
-import {expect,it} from 'vitest';
+import {expect,it,vi} from 'vitest';
 import {BUNDLED_IMAGE_LIMITS,encodeBase64Url,validateJpegStructure} from '@racrproto/codec/content';
 import vectors from '../../../spec/vectors/attachment-images.json';
 import {renderBody} from '../src/rendering.js';
@@ -23,4 +23,17 @@ it('accepts the protocol image budget and refuses formats and sizes outside it',
   expect(()=>renderBody(body([...many,asset({id:'extra'})],[image]))).toThrow();
   for(const overrides of [{media_type:'image/gif'},{media_type:'image/svg+xml'},{size:BUNDLED_IMAGE_LIMITS.message.bytes+1},{width:2401}])
     expect(()=>renderBody(body([asset(overrides)],[image]))).toThrow();
+});
+
+it('renders a referenced image from its source and still validates its metadata',()=>{
+  const value='D'.repeat(43),{data:_data,...metadata}=asset(),digest={algorithm:'sha-256',value};
+  const source=vi.fn(({digest}:{digest:string})=>`/media/images/x/${digest}`);
+  const rendered=renderBody(body([{...metadata,digest}],[image]),source);
+  expect(JSON.stringify(rendered.blocks[0])).toContain(`"src":"/media/images/x/${value}"`);
+  expect(source).toHaveBeenCalledWith({digest:value,mediaType:'image/jpeg'});
+  expect(()=>renderBody(body([{...metadata,digest:{...digest,value:'short'}}],[image]),source)).toThrow('Unsupported image asset');
+  expect(()=>renderBody(body([{...metadata,digest:{...digest,algorithm:'md5'}}],[image]),source)).toThrow('Unsupported image asset');
+  expect(()=>renderBody(body([{...metadata,digest,size:BUNDLED_IMAGE_LIMITS.message.bytes+1}],[image]),source)).toThrow('Unsupported image asset');
+  // Without a source, a reference is not an inline image.
+  expect(()=>renderBody(body([{...metadata,digest}],[image]))).toThrow('asset data');
 });

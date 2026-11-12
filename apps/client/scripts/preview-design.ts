@@ -4,7 +4,7 @@ import {groupConnectionMessages,connectionKey} from '../../server/src/accounts/c
 import {threadBodyPreview} from '../../server/src/accounts/message-threads.js';
 // Local-only visual fixture provider. Never imports production configuration or credentials.
 // Build first, then: bun scripts/preview-design.ts. All changes disappear on restart.
-import {createWebCryptoSigner, signPayload, encodeBase64Url, type HailGrant, type HailSenderProfile} from '@racrproto/codec';
+import {createWebCryptoSigner, signPayload, decodeBase64Url, encodeBase64Url, type HailGrant, type HailSenderProfile} from '@racrproto/codec';
 import {uuidV7} from '../../server/src/identity/uuid-v7.js';
 
 const unseenFixture=process.env.HAIL_DESIGN_UNSEEN_CONNECTIONS==='1';
@@ -101,6 +101,9 @@ const json = (data: unknown, status = 200) => Response.json(data,{status,headers
 const fixtureFailure=(status:number,description='This fictional preview does not support this action.'):never=>{
   throw Object.assign(new Error(description),{httpStatus:status,type:status===404?'notFound':status===409?'stateMismatch':status===400?'invalidArguments':'forbidden'});
 };
+// `images: "reference"`: bundled images keep their digest and load from /api/v1/account/images.
+const referenced=(m:any,args:Record<string,any>)=>args.images==='reference'&&Array.isArray(m?.body?.assets?.assets)?
+  {...m,body:{...m.body,assets:{...m.body.assets,assets:m.body.assets.assets.map(({data:_data,...rest}:any)=>rest)}}}:m;
 const result=(data:Record<string,unknown>,status=200)=>status>=400?fixtureFailure(status):data;
 const accountOperation=(name:string,args:Record<string,any>):Record<string,unknown>=>{
   const input=args.input??{};
@@ -153,10 +156,10 @@ const accountOperation=(name:string,args:Record<string,any>):Record<string,unkno
     const limit=Number(process.env.HAIL_DESIGN_PAGE_SIZE)||rows.length||1;
     const after=args.after, start=after?Math.max(0,rows.findIndex(m=>m.messageId===after)+1):0;
     const page=rows.slice(start,start+limit);
-    return result({messages:page,next:start+limit<rows.length?page.at(-1)!.messageId:null});
+    return result({messages:page.map(m=>referenced(m,args)),next:start+limit<rows.length?page.at(-1)!.messageId:null});
   }
-  if(name==='HailMailbox/view'&&args.view==='inboxFeed'&&args.trash)return result({messages:messages.filter(m=>trash.has(m.messageId)).map(m=>({...m,trashedAt:trash.get(m.messageId)})),next:null});
-  if(name==='HailMailbox/view'&&args.view==='read'){const m=messages.find(m=>args.sender===m.sender&&args.messageId===m.messageId&&!deleted.has(m.messageId));return m?result({...m,trashedAt:trash.get(m.messageId)??null}):result({},404);}
+  if(name==='HailMailbox/view'&&args.view==='inboxFeed'&&args.trash)return result({messages:messages.filter(m=>trash.has(m.messageId)).map(m=>referenced({...m,trashedAt:trash.get(m.messageId)},args)),next:null});
+  if(name==='HailMailbox/view'&&args.view==='read'){const m=messages.find(m=>args.sender===m.sender&&args.messageId===m.messageId&&!deleted.has(m.messageId));return m?result(referenced({...m,trashedAt:trash.get(m.messageId)??null},args)):result({},404);}
   if(name==='HailMailbox/view'&&args.view==='threads'){
     const root=messages.find(m=>args.sender===m.sender&&args.messageId===m.messageId&&!trash.has(m.messageId)&&!deleted.has(m.messageId));
     if(!root)return result({},404);
@@ -171,7 +174,7 @@ const accountOperation=(name:string,args:Record<string,any>):Record<string,unkno
     {...sent[0],messageId:uuidV7(),kind:'category',category:'essays',recipientSummary:undefined},
     {...sent[0],messageId:uuidV7(),kind:'category',category:'general',recipientSummary:undefined}],next:null});
   if(name==='HailMailbox/view'&&['sent','sentFeed','sentSends'].includes(args.view))return result({messages:sent.filter(m=>!deleted.has(m.messageId)&&(args.trash===true?trash.has(m.messageId):!trash.has(m.messageId))).map(m=>({...m,trashedAt:trash.get(m.messageId)??null})),next:null});
-  if(name==='HailMailbox/view'&&['sentMessage','sentSend'].includes(args.view)){const m=sent.find(m=>m.messageId===args.messageId&&!deleted.has(m.messageId)&&(args.trash===true?trash.has(m.messageId):!trash.has(m.messageId)));return m && (args.kind===undefined||args.kind===m.kind)?result({...m,trashedAt:trash.get(m.messageId)??null,...(args.kind===undefined?{kind:"connection"}:{})}):result({},404);}
+  if(name==='HailMailbox/view'&&['sentMessage','sentSend'].includes(args.view)){const m=sent.find(m=>m.messageId===args.messageId&&!deleted.has(m.messageId)&&(args.trash===true?trash.has(m.messageId):!trash.has(m.messageId)));return m && (args.kind===undefined||args.kind===m.kind)?result(referenced({...m,trashedAt:trash.get(m.messageId)??null,...(args.kind===undefined?{kind:"connection"}:{})},args)):result({},404);}
   if(name==='HailGrant/list')return result({grants:(emptyRelationships?[]:grants).filter(g=>args.sender===undefined||g.payload.grantee===args.sender).map(g=>({grantId:g.payload.grant_id,localRole:'grantor',grantee:g.payload.grantee,status:'active'})),next:null});
   if(name==='HailGrant/read'){const grant=grants.find(g=>g.payload.grant_id===args.grantId);return grant?result(grant.representation):result({},404);}
   if(name==='HailRelationship/conversationPreferences'){
@@ -222,6 +225,14 @@ const server = Bun.serve({hostname:'127.0.0.1',port,async fetch(request) {
   if(sharedMode&&path==='/api/v1/account/fixture-active'){sharedConversation.state='active';sharedConversation.expiresAt=new Date(Date.now()+90*86400000).toISOString();return json({});}
   if(sharedMode&&path==='/api/v1/account/fixture-expire'){sharedConversation.state='expired';sharedConversation.expiresAt=new Date(0).toISOString();return json({});}
   if(request.method!=='GET')return json({error:'This local design preview does not support this action.'},501);
+  if(path.startsWith('/api/v1/account/images/')){
+    const [,,,,,imageSender,messageId,imageDigest]=path.split('/');
+    const message=[...messages,...sent].find((m:any)=>m.messageId===messageId&&(m.sender??did)===imageSender&&!deleted.has(m.messageId)) as any;
+    const asset=message?.body?.assets?.assets?.find((a:any)=>a.digest?.value===imageDigest&&a.data);
+    if(!asset)return json({},404);
+    const bytes=decodeBase64Url(asset.data);
+    return new Response(bytes,{headers:{'content-type':asset.media_type,'content-length':String(bytes.length),'cache-control':'private, no-store'}});
+  }
   if(path==='/api/v1/account')return json({type:'racr.account',version:1,provider:origin,providerOperator:process.env.HAIL_DESIGN_OPERATOR==='1',accountId:'019a15fd-2bd0-7433-8afa-bd0355e0608d',address,did,migrationState:null,custodyProfile:'managed',
     monitorVerificationMode:'reduced-assurance-alpha-v1',managedProfileVersion:'hail-managed-custody-v1',identityPublicKey:null,ownerRecoveryPublicKey:null,scopes:['account:read','grants:read','messages:read','messages:write']});
   if(path==='/api/v1/account/profile')return json(profileResponse);

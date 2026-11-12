@@ -13,7 +13,7 @@ it('adds sender avatars to Trash without changing restoration identity',async()=
   expect(result.messages[0]).toMatchObject({sender:'sender',messageId:'message',avatar:{width:44}});
   expect(fixture.avatars.mock.calls[0][1]).toEqual(new Set(['sender']));
   expect(fixture.jmap.mock.calls).toEqual([
-    ['HailMailbox/view',{view:'inboxFeed',after:null,trash:true},2_000_000],
+    ['HailMailbox/view',{view:'inboxFeed',after:null,trash:true,images:'reference'},2_000_000],
     ['HailMailbox/view',{view:'settings'}],
     ['HailMailbox/view',{view:'sentSends',trash:true,after:null},2_000_000],
   ]);
@@ -31,7 +31,7 @@ it('separates Trash subjects from previews while retaining restore identity and 
   fixture.jmap.mockResolvedValueOnce({trashEnabled:true}).mockResolvedValueOnce({messages:[],next:null});
   const pagedEvent={url:new URL('https://example.com/trash?after=received-page&sentAfter=sent-page'),cookies:{}} as never;
   const result=await trash(pagedEvent);
-  expect(fixture.jmap).toHaveBeenNthCalledWith(1,'HailMailbox/view',{view:'inboxFeed',after:'received-page',trash:true},2_000_000);
+  expect(fixture.jmap).toHaveBeenNthCalledWith(1,'HailMailbox/view',{view:'inboxFeed',after:'received-page',trash:true,images:'reference'},2_000_000);
   expect(fixture.jmap).toHaveBeenNthCalledWith(3,'HailMailbox/view',{view:'sentSends',trash:true,after:'sent-page'},2_000_000);
   expect(result).toMatchObject({paged:true,sentPaged:true,next:'next-page',messages:[{sender:'sender',messageId:'message',kind:'connection',deliveredAt:'2026-10-27T12:00:00Z',trashedAt:'2026-10-28T12:00:00Z',title:'Weekend plans',preview:'See you Saturday.',avatar:{width:44}}]});
 });

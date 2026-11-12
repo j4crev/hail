@@ -19,7 +19,7 @@ export async function load({url,cookies,fetch,setHeaders}: import("@sveltejs/kit
       redirect(307, destination.pathname + destination.search);
     }
   }
-  const after=url.searchParams.get("after"),page=parseInboxFeed(await client.jmap("HailMailbox/view",{view:view==="connections"?"connectionInbox":"inboxFeed",...(view==="connections"?{}:{channel:view}),after},2_000_000));
+  const after=url.searchParams.get("after"),page=parseInboxFeed(await client.jmap("HailMailbox/view",{view:view==="connections"?"connectionInbox":"inboxFeed",...(view==="connections"?{}:{channel:view,images:"reference"}),after},2_000_000),view!=="connections");
   const avatars=await senderAvatars(client,new Set(page.messages.map(message=>message.sender)));
   return {configured:true as const,account,view,paged:after!==null,next:page.next,messages:page.messages.map(message=>({...listSummary(message), avatar:avatars.get(message.sender)??null}))};
 }

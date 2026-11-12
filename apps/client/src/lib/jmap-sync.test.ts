@@ -119,7 +119,7 @@ it('converges after lost, duplicate and reordered event hints without trusting t
   const server=provider(),client=server.transport();await client.sync.poll();
   const listeners=new Map<string,(event:unknown)=>void>();let pending=Promise.resolve(false);
   const source={close:vi.fn(),onopen:null as null|(()=>void),onerror:null,addEventListener:(name:string,callback:(event:unknown)=>void)=>listeners.set(name,callback)};
-  const events=new MailboxEvents(()=>{pending=pending.then(()=>client.sync.poll());},()=>source as unknown as EventSource);
+  const events=new MailboxEvents(()=>{pending=pending.then(()=>client.sync.poll());},()=>source as unknown as EventSource,{locks:null,channel:null});
   events.start();source.onopen!();expect(await pending).toBe(false);
   // No event arrives for either write. A reconnect discovers both via /changes.
   server.events.get('HailMessage')!.push({id:'lost-one',operation:'created'},{id:'lost-two',operation:'updated'});

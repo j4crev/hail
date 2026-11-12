@@ -375,7 +375,7 @@ async function accountOperation(name:string,args:Record<string,any>,request:Requ
   const enc=(value:string)=>encodeURIComponent(value);
   const query=(values:Record<string,unknown>)=>{const q=new URLSearchParams();for(const [key,value] of Object.entries(values))if(value!==null&&value!==undefined)q.set(key,String(value));return q.size?'?'+q:'';};
   if(name==='HailMailbox/view'){
-    fields('view','after','channel','trash','sender','messageId','kind','offset','peer');
+    fields('view','after','channel','trash','sender','messageId','kind','offset','peer','images');
     switch(args.view){
       case 'connectionAddress':return json({owner:did,contact:null});
       case 'settings':path='/message-preferences';break;

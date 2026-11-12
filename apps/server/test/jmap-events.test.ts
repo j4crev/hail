@@ -49,13 +49,17 @@ describe('authenticated event route',()=>{
     const request=(query='types=*&closeafter=no&ping=30',init?:RequestInit)=>app.request('https://p.example/jmap/events?'+query,init);
     return {app,request,authenticate,revoke:()=>session=null,change:()=>{session={...session!,serving_generation:2};}};
   }
-  it('advertises connected events, rejects cross-origin access and frees account stream limits',async()=>{
+  it('advertises connected events, rejects cross-origin access and replaces the oldest stream at the account limit',async()=>{
     const f=fixture();expect((await (await f.app.request('/.well-known/jmap')).json()).capabilities[HAIL_EVENTS].transport).toBe('eventsource');
     expect((await f.request(undefined,{headers:{Origin:'https://other.example'}})).status).toBe(403);
     expect((await f.request(undefined,{method:'POST'})).status).toBe(405);
-    const one=await f.request(),two=await f.request();expect((await f.request()).status).toBe(429);
-    await one.body!.cancel();const three=await f.request();expect(three.status).toBe(200);
-    await two.body!.cancel();await three.body!.cancel();
+    const one=await f.request(),two=await f.request();
+    // At the account limit the newest stream replaces the oldest (which a proxy
+    // may still hold open after the browser left) instead of being refused.
+    const oldest=one.body!.getReader(),three=await f.request();expect(three.status).toBe(200);
+    for(let frame=await oldest.read();!frame.done;frame=await oldest.read()){/* drain until closed */}
+    await two.body!.cancel();const four=await f.request();expect(four.status).toBe(200);
+    await three.body!.cancel();await four.body!.cancel();
   });
   for(const action of ['revoke','change'] as const)it('ends stream on '+action+' without refreshing session activity',async()=>{
     const f=fixture(),response=await f.request(),reader=response.body!.getReader();

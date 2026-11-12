@@ -253,6 +253,32 @@ export class AccountApiClient {
     catch { throw new ClientError("RESPONSE_ERROR", "Provider API returned invalid JSON"); }
   }
 
+  /**
+   * One bundled image of a visible message, by the digest a presentation view
+   * returned for it. The bytes are verified against that digest.
+   */
+  async messageImage(sender:string,messageId:string,digest:string):Promise<{mediaType:"image/png"|"image/jpeg";bytes:Uint8Array}>{
+    if(!/^did:plc:[a-z2-7]{24}$/.test(sender)||!UUID.test(messageId)||!/^[A-Za-z0-9_-]{43}$/.test(digest))throw new ClientError("USAGE_ERROR","Invalid message image reference");
+    let response:Response;
+    try{
+      response=await fetch(`${this.transport}/api/v1/account/images/${encodeURIComponent(sender)}/${messageId}/${digest}`,{
+        method:"GET",redirect:"error",credentials:"omit",signal:AbortSignal.timeout(20_000),
+        headers:{...this.credentialHeaders(),Accept:"image/png, image/jpeg","Accept-Encoding":"identity","Cache-Control":"no-store"}});
+    }catch{throw new ClientError("TRANSPORT_ERROR","Provider API transport failed; check connectivity/HTTPS trust and retain exact retry artifacts");}
+    if(!response.ok){
+      const retry=response.headers.get("Retry-After");
+      void response.body?.cancel();throw new AccountApiError(response.status,retry!==null&&/^\d+$/.test(retry)?Math.min(Number(retry),300):undefined);
+    }
+    const mediaType=response.headers.get("Content-Type"),length=Number(response.headers.get("Content-Length"));
+    if(mediaType!=="image/png"&&mediaType!=="image/jpeg"||response.headers.has("Content-Encoding")||!Number.isSafeInteger(length)||length<1||length>524_288){
+      void response.body?.cancel();throw new ClientError("RESPONSE_ERROR","Provider returned an invalid image representation");
+    }
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    const actual=encodeBase64Url(new Uint8Array(createHash("sha256").update(bytes).digest()));
+    if(bytes.length!==length||actual!==digest)throw new ClientError("RESPONSE_ERROR","Provider image bytes do not match their digest");
+    return {mediaType,bytes};
+  }
+
   async account() {
     const result = await this.request("");
     const publicKey = (value: unknown) => value === null || typeof value === "string" &&

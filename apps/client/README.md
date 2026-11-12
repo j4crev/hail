@@ -473,7 +473,10 @@ Cached navigation renders immediately. The layout checks for mailbox changes wit
 JMAP `/changes` on focus, on live-event hints and on a timer: roughly every 30–35
 seconds, or every five minutes while the live-event stream is open (it announces
 each change, so the timer is only a safety net). One check is a single JMAP
-request covering every collection; the Session is reread only when a response's
+request covering every collection. Tabs share one live-event stream per browser:
+they elect a leader with a Web Lock, the leader holds the stream and relays hints
+and its connection state to the other tabs over a BroadcastChannel, and a waiting
+tab takes over when the leader is hidden or closed. The Session is reread only when a response's
 `sessionState` differs from it or after a failed check. Only when a check finds a
 change does it clear the navigation cache, reload unread counts and Aliases
 availability and ask visible views to refresh; the first check after a page load
@@ -497,6 +500,16 @@ retries the provider's concurrency refusal (429 without `Retry-After`) briefly.
 Loaders batch independent provider methods into one JMAP request: opening a
 message reads the message, its thread and the sender's subscriptions together,
 and `/mailbox-data` reads unread counts alongside the page's data.
+`/mailbox-data` responses carry a `Server-Timing` header (`account`, `load`,
+`counts`, `encode`, `total`) for diagnosing slow loads.
+
+Feed, Trash and reader views ask the provider for image references
+(`images: "reference"`), so message images are not embedded in page data. Each
+image loads from `/media/images/{sender}/{messageId}/{digest}` on this origin: the
+server fetches it with the session, verifies its digest and PNG/JPEG structure,
+and serves it with `Cache-Control: private, max-age=2592000, immutable`, a sandbox
+CSP and `nosniff`. The URL names the image's content digest, so a cached copy
+never goes stale. Sign-out sends `Clear-Site-Data: "cache"`.
 
 Desktop folders place a compact refresh icon alongside their heading and a
 conditional “Updates available” pill below it. On mobile folders, pending updates

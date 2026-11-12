@@ -18,7 +18,7 @@ it('reads the message, its thread and the sender subscriptions in one provider r
   fixture.batch.mockResolvedValue([message(),thread,{grants:[],next:null}]);
   const result=await load(event() as never);
   expect(fixture.batch).toHaveBeenCalledExactlyOnceWith([
-    ['HailMailbox/view',{view:'read',sender,messageId}],
+    ['HailMailbox/view',{view:'read',sender,messageId,images:'reference'}],
     ['HailMailbox/view',{view:'threads',sender,messageId}],
     ['HailGrant/list',{sender}],
   ]);

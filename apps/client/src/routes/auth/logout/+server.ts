@@ -1,4 +1,4 @@
-import {error,redirect} from "@sveltejs/kit";
+import {error} from "@sveltejs/kit";
 import {API_ORIGIN,ORIGIN} from "$lib/server/canary.js";
 
 export async function POST({cookies}){
@@ -9,5 +9,6 @@ export async function POST({cookies}){
     if(!response.ok)error(502,"Provider logout failed");
   }
   cookies.delete("hail_session",{path:"/"});
-  redirect(303,"/");
+  // Message images are cached privately by the browser; drop them with the session.
+  return new Response(null,{status:303,headers:{location:"/","clear-site-data":'"cache"',"cache-control":"no-store"}});
 }

@@ -9,7 +9,7 @@ const proxy:RequestHandler=async({request,url,params,cookies})=>{
   if(events&&request.method!=='GET')return new Response(null,{status:405});
   const jmapPath=events?'/jmap/events':path==='jmap/session'?'/.well-known/jmap':path==='jmap'?'/jmap':null;
   if(!jmapPath&&!/^v1\//.test(path)||/(?:^|\/)(?:media|media-ticket)(?:\/|$)/.test(path)||
-    /^v1\/account\/attachments\//.test(path)||/\/avatar\/image$/.test(path))
+    /^v1\/account\/(?:attachments|images)\//.test(path)||/\/avatar\/image$/.test(path))
     return new Response(null,{status:404});
   const headers=new Headers();
   for(const name of ['content-type','origin','accept','authorization',...(jmapPath?['x-hail-background']:[]),...(events?['last-event-id']:[])]){const value=request.headers.get(name);if(value)headers.set(name,value);}
