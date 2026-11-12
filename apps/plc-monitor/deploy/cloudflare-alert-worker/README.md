@@ -1,21 +1,26 @@
 # Cloudflare email alert receiver
 
-This Worker receives signed monitor alerts at
-`https://alerts.plcmonitor.us/hail`, verifies the pinned monitor Ed25519 key and
-signature, and sends them from `security@notify.haili.app`. Bound consumer
-identities go to their verified security email destination; unmapped existing
-canaries continue going to the operator at `the@j4w8n.com`. Its
-minute cron also checks `haili.app` and alerts when authenticated monitor-host
-heartbeats are more than six minutes old. Outage and recovery mail is sent only
-when state changes.
+This Worker is the **shared receiver** for every provider registered with the
+monitor ([registration v2](../../../../spec/monitor-receiver.md)). It verifies
+users' security emails during signup, confirms bindings to the monitor, and
+delivers signed monitor alerts from `security@notify.racrproto.com`. Bound
+consumer identities go to their verified security email destination; unmapped
+existing canaries continue going to the deployment operator at `the@j4w8n.com`.
+
+Providers are added only by monitor-signed provisioning requests; each has its
+own receiver credential, and signups, codes and rate limits are separated per
+provider. Its optional minute cron checks the deployment operator's own provider
+readiness, monitor heartbeat and backup heartbeat, each only when configured.
+Outage and recovery mail is sent only when state changes.
 
 ## Cloudflare Email Sending
 
-Use Workers Paid and onboard `notify.haili.app` as a sending domain with its
+Use Workers Paid and onboard `notify.racrproto.com` as a sending domain with its
 required DNS authentication. The structured `EMAIL.send()` binding supports
 arbitrary recipients; no Cloudflare Email API key is needed in the monitor VPS
 or provider. Operator alerts and user security alerts use
-`security@notify.haili.app`; signup verification uses `welcome@notify.haili.app`.
+`security@notify.racrproto.com`; signup verification, invitations and operator
+codes use `welcome@notify.racrproto.com`.
 All messages use **Hail** as the sender display name; the underlying email
 addresses are unchanged. The verification URL is on its own line so mail clients
 do not include sentence punctuation in the link.
@@ -41,8 +46,6 @@ bunx wrangler login
 printf '%s' 'did:key:z...' | bunx wrangler secret put MONITOR_PUBLIC_KEY
 printf '%s' 'random secret' | bunx wrangler secret put HEARTBEAT_TOKEN
 printf '%s' 'different random secret' | bunx wrangler secret put BACKUP_TOKEN
-# Interactive prompt: use the same new 32-byte base64url secret in the provider.
-bunx wrangler secret put SIGNUP_EMAIL_TOKEN
 bunx wrangler deploy
 ```
 
@@ -80,17 +83,24 @@ enable automatic enrollment merely by existing in the source tree. See the
 ## Signup Email Verification And Routing
 
 `POST /signup-email`, `/signup-email/verify` and `/signup-email/bind` are private
-backend-to-Worker operations. They require `Authorization: Bearer <SIGNUP_EMAIL_TOKEN>`.
-Without that configured secret they fail closed. Never put it in browser code,
-query strings, logs or the public repository. It is our service authentication
-secret, not a Cloudflare Email API key.
+backend-to-Worker operations. They require `Authorization: Bearer <receiver credential>`,
+the `receiverToken` a provider receives at registration. Only its hash is stored,
+and it selects one enabled provider record; unknown or disabled credentials get
+`401`. Never put it in browser code, query strings, logs or the public repository.
+It is a service authentication secret, not a Cloudflare Email API key.
+
+Bind also carries the exact signed genesis `operation`. The Worker derives the DID
+and CID from it and requires its `hail` service to be the provider's
+`{providerOrigin}/hail`, so no provider can bind, and so block, another
+provider's DID. Removing monitoring is accepted only from the provider that bound
+the DID.
 
 The provider enables its same-origin proxy only when both are configured in its
 private environment:
 
 ```dotenv
 SIGNUP_EMAIL_ORIGIN=https://alerts.plcmonitor.us
-SIGNUP_EMAIL_TOKEN=<same canonical 32-byte base64url secret as the Worker>
+SIGNUP_EMAIL_TOKEN=<receiverToken from registration>
 ```
 
 Public-provider Compose passes these optional settings only to the provider,
@@ -167,16 +177,35 @@ after 26 hours.
 
 ### Provider invitation delivery
 
-The provider operator dashboard calls `POST /signup-email/invite` with the existing
-`SIGNUP_EMAIL_TOKEN` bearer and JSON `{id,email,url,expiresAt}`. `expiresAt` is Unix
-seconds, at most seven days away. The Worker accepts only the configured HTTPS
-`SIGNUP_ORIGIN` with `/signup#invitation=...`; it uses `SIGNUP_SENDER` and a fixed
-plain-text template. Return `204` means email-service acceptance, not inbox delivery.
+The provider operator dashboard calls `POST /signup-email/invite` with its
+receiver credential and JSON `{id,email,url,expiresAt}`. `expiresAt` is Unix
+seconds, at most seven days away. The Worker accepts only the provider's registered
+web origin (or its provider origin, without one) with `/signup#invitation=...`; it
+uses `SIGNUP_SENDER` and a fixed plain-text template. Return `204` means
+email-service acceptance, not inbox delivery.
 
 The invitation ID and content digest deduplicate successful retries and reject
 changed recipients or links. In-progress or ambiguous failed sends remain `503`
 until expiry to prevent duplicate sends; check with the recipient before issuing
 a fresh invitation. Pending records expire with the invitation. Rate limits are
-five per destination per hour and 100 total per hour. Deploy this Worker version
+five per destination per hour, 100 per provider per hour and 1,000 total per hour. Deploy this Worker version
 before enabling dashboard email sends. No public signup-email route proxies this
 operator-only operation.
+
+## Shared operation
+
+Monitor-signed `POST /hail/providers` adds or updates a provider record, and
+`POST /hail/operator-verification` sends the fixed operator-code template during
+registration ([wire formats](../../../../spec/monitor-receiver.md#monitor--receiver-provisioning)).
+Both use the pinned `MONITOR_PUBLIC_KEY` with their own signature contexts and a
+five-minute freshness window. The newest provider record wins; an older one never
+restores a rotated credential.
+
+`LEGACY_RECIPIENT_PROVIDER_ORIGIN` is a temporary migration setting. When the
+provider with that origin is provisioned, recipients bound before registration v2
+are assigned to it. Remove the setting once that has happened.
+
+`PROVIDER_HEALTH_URL`, `HEARTBEAT_TOKEN`, `BACKUP_TOKEN` and the
+`HAIL_PRODUCTION_MONITOR` KV binding serve only the deployment operator's own
+checks. Each check runs only when configured; providers registered by others are
+not health-checked.

@@ -3,12 +3,30 @@
 }
 
 {$PROVIDER_DOMAIN} {
-	reverse_proxy provider:3000 {
-		header_up X-Hail-Trusted-Client-IP {remote_host}
+	# Registration v2 proof (spec/monitor-receiver.md): serves only the public
+	# verification document placed in ./registration, and 404 otherwise.
+	handle /.well-known/hail-monitor-registration {
+		header Cache-Control no-store
+		root * /srv/hail-registration
+		rewrite * /hail-monitor-registration.json
+		file_server
+	}
+	handle {
+		reverse_proxy provider:3000 {
+			header_up X-Hail-Trusted-Client-IP {remote_host}
+		}
 	}
 }
 
 {$WEB_CLIENT_DOMAIN} {
+	# Registration v2 proof (spec/monitor-receiver.md): serves only the public
+	# verification document placed in ./registration, and 404 otherwise.
+	handle /.well-known/hail-monitor-registration {
+		header Cache-Control no-store
+		root * /srv/hail-registration
+		rewrite * /hail-monitor-registration.json
+		file_server
+	}
 	@metadata path /.well-known/webfinger /health/ready /health/live
 	handle @metadata {
 		reverse_proxy provider:3000 {

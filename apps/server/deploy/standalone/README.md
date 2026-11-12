@@ -116,27 +116,29 @@ Haili-specific `deploy/public` configuration, which trusts only its host tunnel.
 ## 3. Account bootstrap and client APIs
 
 Server-only does not mean dependency-free signup. Current invitation admission
-uses the alpha signup signing configuration, including email and automatic monitor
-services, even for CLI signup. Arrange those services, then set:
+uses the alpha signup signing configuration, including the shared monitor and its
+email receiver, even for CLI signup. You do not run an email service: register
+your provider with the shared monitor following its
+[self-service provider registration](../../../plc-monitor/deploy/public/provider-registration.md).
+It proves you control this deployment's hostnames (its Caddy serves the
+verification document from the `registration/` directory), emails a code to your
+operator address, and then issues both credentials. Set the results:
 
 ```dotenv
 PUBLIC_SELF_SERVICE_ONBOARDING=true
-SIGNUP_EMAIL_ORIGIN=https://alerts.monitor.example.com
-SIGNUP_EMAIL_TOKEN=<independent 32-byte base64url secret>
-SIGNUP_MONITOR_API_ORIGIN=https://enroll.monitor.example.com
-SIGNUP_MONITOR_TOKEN=<credential issued by monitor provider registration>
-SIGNUP_MONITOR_PUBLIC_KEY=did:key:z...
+SIGNUP_EMAIL_ORIGIN=<receiverOrigin>
+SIGNUP_EMAIL_TOKEN=<receiverToken>
+SIGNUP_MONITOR_API_ORIGIN=<apiOrigin>
+SIGNUP_MONITOR_TOKEN=<token>
+SIGNUP_MONITOR_PUBLIC_KEY=<monitorPublicKey>
 PUBLIC_ALPHA_SIGNUP=true
 ALPHA_SIGNUP_INVITE_KEY=<independent 32-byte base64url secret>
-ALPHA_SIGNUP_MONITOR_ORIGIN=https://monitor.example.com
+ALPHA_SIGNUP_MONITOR_ORIGIN=<monitorOrigin>
 ```
 
-See the [monitor deployment guide](../../../plc-monitor/deploy/public/README.md) if you operate that service.
-For a shared monitor, follow its [self-service provider registration](../../../plc-monitor/deploy/public/provider-registration.md)
-to obtain your own credential and monitor key/origins. Registration verifies control
-of your provider API and alert-receiver origins; user security-email verification
-still occurs during signup. Do not generate an unrelated token and expect the monitor
-to accept it, or reuse another provider's credential.
+Users' security-email verification still occurs during signup. Do not reuse
+another provider's credentials. If you operate your own monitor and receiver
+instead, see the [monitor deployment guide](../../../plc-monitor/deploy/public/README.md).
 Then create the [first administrator](#first-administrator) below.
 No reference-client process is needed for provider CLI commands or bearer API use;
 the browser passkey and dashboard steps require adding the web client.

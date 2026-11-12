@@ -101,6 +101,8 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Holds only the public monitor-registration document while registering.
+      - ./registration:/srv/hail-registration:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

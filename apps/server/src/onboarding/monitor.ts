@@ -10,7 +10,7 @@ import { clientAddress, FixedWindowRateLimit } from "../http/rate-limit.js";
 import { verifyOnboardingMonitorAttestation } from "../migration/monitor-attestation.js";
 import { boundedTransferBody } from "../migration/wire.js";
 import { plcStateDigest } from "../plc/read-evidence.js";
-import { SignupEmailError, signupIdentity, type SignupEmailClient, type SignupIdentity } from "./email.js";
+import { bindingRequest, SignupEmailError, signupIdentity, type SignupEmailClient, type SignupIdentity } from "./email.js";
 
 export interface SignupMonitorConfig { apiOrigin: string; token: string; publicKey: string; }
 export class SignupMonitorError extends Error {
@@ -91,7 +91,7 @@ export class SignupMonitorService {
     const identity = await signupIdentity(this.sql, accountId, token);
     if (!identity) throw new SignupMonitorError(403);
     if (identity.monitor_public_key !== this.monitor.publicKey) throw new SignupMonitorError(503);
-    await this.email.post("bind", { signupId, did: identity.did, operationCid: identity.operation_cid, hailAddress: identity.canonical_address }, token);
+    await this.email.post("bind", bindingRequest(signupId, identity), token);
     const result = await this.monitor.enroll(identity, signupId, token);
     await this.sql`INSERT INTO account_monitor_bindings(account_id,did,operation_cid,monitor_public_key,serving_generation)
       SELECT a.id,a.did,${identity.operation_cid},${this.monitor.publicKey},g.generation FROM provider_accounts a

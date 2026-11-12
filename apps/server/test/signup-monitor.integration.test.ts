@@ -1,5 +1,6 @@
 import { cleanMonitorReceiver } from "../../plc-monitor/src/receiver-lifecycle.js";
 import { EnrollmentProviders } from "../../plc-monitor/src/providers.js";
+import { ReceiverClient } from "../../plc-monitor/src/receiver-provisioning.js";
 import { AccountLifecycle } from "../src/accounts/lifecycle.js";
 import { cleanAccountMonitor } from "../src/accounts/monitor-cleanup.js";
 import { exerciseCustomDomainPublication } from "./client-support/custom-domain-publication.js";
@@ -56,10 +57,9 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
   const env: Env = { EMAIL: { async send(message) {
     if (message.from.email.startsWith("security@") && failAlert) throw new Error("Simulated email outage");
     emailMessages.push(message); return { messageId: randomUUID() };
-  } }, SIGNUP_SENDER: "welcome@notify.example.com", SIGNUP_ORIGIN: providerOrigin, SIGNUP_EMAIL_TOKEN: emailToken,
+  } }, SIGNUP_SENDER: "welcome@notify.example.com",
     ALERT_SENDER: "security@notify.example.com", ALERT_RECIPIENT: "operator@example.com", MONITOR_PUBLIC_KEY: signer.publicDidKey,
-    HEARTBEAT_TOKEN: "unused", BACKUP_TOKEN: "unused", PROVIDER_HEALTH_URL: `${providerOrigin}/health/ready`,
-    HAIL_PRODUCTION_MONITOR: { get: async () => null, put: async () => {} }, ALERT_DEDUPLICATOR: null as never };
+    ALERT_DEDUPLICATOR: null as never };
   const receiver = new AlertDeduplicator({ storage }, env);
   env.ALERT_DEDUPLICATOR = { idFromName: name => name, get: () => ({ fetch: request => receiver.fetch(request) }) };
   let receiverAvailable = true;
@@ -104,7 +104,12 @@ it.skipIf(!process.env.DATABASE_URL).each([{packageFlow:false,publicSignup:false
     expect(registered.state).toBe("address-staged"); expect(logs.size).toBe(1);
 
     const providers = new EnrollmentProviders(monitorDb.sql);
-    await providers.create(providerOrigin, alertOrigin, monitorToken);
+    // Register the provider at the shared receiver as the monitor does (spec/monitor-receiver.md).
+    const created = await providers.create(providerOrigin, alertOrigin, monitorToken);
+    await providers.importReceiver(created.id, emailToken, null);
+    await new ReceiverClient(signer, alertOrigin, { post: async (url, bytes, headers) =>
+      worker.fetch(new Request(url, { method: "POST", headers, body: Uint8Array.from(bytes) }), env) })
+      .provision((await providers.receiverRecord(created.id))!);
     let monitor = new PlcMonitor(monitorDb.sql, monitorPlc);
     let api = createMonitorEnrollmentApi({ monitorOrigin, hostname: "127.0.0.1", port: 3001 }, monitor, signer, providers, receiverFetch);
     let loseMonitorReply = false, tamperSignature = false, monitorCalls = 0;

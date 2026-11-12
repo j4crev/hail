@@ -109,7 +109,13 @@ Configure the monitor's protected environment with:
 MONITOR_API_HOST=0.0.0.0
 MONITOR_API_PORT=3001
 MONITOR_API_ORIGIN=https://enroll.monitor.example.com
+# The shared receiver for every registered provider (spec/monitor-receiver.md).
+MONITOR_RECEIVER_ORIGIN=https://alerts.monitor.example.com
 ```
+
+Provider registration returns `503` until `MONITOR_RECEIVER_ORIGIN` is set. The
+receiver must pin this monitor's public key; the monitor provisions providers there
+with signed requests.
 
 `MONITOR_ORIGIN` remains the monitor identity origin used in signed attestations.
 `PLC_DIRECTORY_URL` must be exactly `https://plc.directory` when the API is enabled;
@@ -123,9 +129,11 @@ ports**. Before deployment, review HTTPS termination, authenticated ingress and
 any loopback container-port mapping. Never expose the plaintext listener or put
 the service secret in browser code, URLs or logs.
 
-On the provider, retain its existing signup-email configuration and add:
+On the provider, set the values returned by registration:
 
 ```dotenv
+SIGNUP_EMAIL_ORIGIN=<receiverOrigin>
+SIGNUP_EMAIL_TOKEN=<receiverToken>
 SIGNUP_MONITOR_API_ORIGIN=https://enroll.monitor.example.com
 SIGNUP_MONITOR_TOKEN=<individual credential returned by registration>
 SIGNUP_MONITOR_PUBLIC_KEY=did:key:z...
@@ -138,8 +146,9 @@ require signup email and strict public PLC authority; leaving all three empty
 keeps the provider orchestration endpoint disabled.
 
 Providers use the [self-service registration guide](provider-registration.md) to
-prove control of their provider and alert-receiver HTTPS origins and obtain an
-individual credential. Credentials are stored hashed in the monitor database.
+prove control of their provider (and web) HTTPS origins, verify an operator email,
+and obtain individual monitor and receiver credentials. Credentials are stored
+hashed in the monitor database and the receiver.
 Disabling a provider credential leaves its existing monitoring and alerts active.
 This version serves Hail managed enrollment across providers; it does not add
 arbitrary DID subscriptions or replace the owner-signed genesis requirements.

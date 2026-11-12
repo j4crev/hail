@@ -6,66 +6,13 @@ credentials. Generic public DID subscriptions, annual renewal/expiry,
 and self-service replacement of an existing provider registration remain outside
 this version. Same-operator monitoring retains its reduced-assurance label.
 
-## Self-service registration v1
+## Self-service registration
 
-The public verification document has a [JSON schema](schemas/monitor-provider-registration-v1.json)
-and a [fixed hash/field vector](vectors/monitor-provider-registration.json).
-
-`POST /api/v1/providers/register` accepts uncoded `application/json`, at most
-4096 bytes, with exactly `providerOrigin`, `alertOrigin`, `registrationSecret`,
-and `expiresAt`. Origins are canonical HTTPS DNS origins on port 443 without
-paths, credentials, queries or fragments. The private registration secret is a
-random 32-byte unpadded base64url string (43 characters). `expiresAt` is an integer
-Unix timestamp, in the future and no more than one hour ahead.
-
-The provider operator publishes the same JSON document at
-`/.well-known/hail-monitor-registration` on **both** origins:
-
-```json
-{
-  "type": "hail.monitor-provider-registration",
-  "version": 1,
-  "monitorApiOrigin": "https://enroll.monitor.example",
-  "providerOrigin": "https://svr.provider.example",
-  "alertOrigin": "https://alerts.provider.example",
-  "registrationHash": "SHA256_OF_PRIVATE_REGISTRATION_SECRET_AS_BASE64URL",
-  "expiresAt": 2000000000
-}
-```
-
-`registrationHash` is unpadded base64url SHA-256 of the UTF-8 secret string, not
-its decoded bytes. The monitor injects its configured public API origin; callers
-cannot select a different monitor. Documents must match these exact fields and
-values, without extra fields or duplicate JSON keys. The monitor fetches a direct
-`200` from each origin, validates public-only DNS results, pins the connection to
-a validated address while preserving TLS hostname verification, rejects redirects,
-and bounds DNS, response time and response size. The registration secret is never
-sent to either verification-document endpoint. Publishing only its hash prevents a
-reader of the public document from exchanging that document for a credential.
-
-Success returns `200` with `providerId` (UUID), `providerOrigin`, `alertOrigin`,
-`token` (43-character private service credential), `apiOrigin`, `monitorOrigin`,
-`monitorPublicKey` (Ed25519 did:key), and `limits` containing `requestsPerMinute`,
-`activeIdentities`, `enrollmentsPerDay`. The API and identity origins may differ.
-The provider pins both monitor identity origin and signing key in its existing
-onboarding policy. Registration responses and requests must never be logged or
-cached. Credential files must be private; no credential goes to a DID user's browser.
-
-Reference credential issuance uses SHA-256 of a monitor Ed25519 signature over
-`hail.monitor-provider-credential.v1\0` followed by UTF-8 JSON encoding of the
-array `[apiOrigin, providerOrigin, alertOrigin, registrationHash]`, then base64url.
-This private derivation permits exact retries without storing a plaintext service
-credential. It is not a publicly verifiable proof or a client signature format.
-Only the token hash is retained. Exact retries of an enabled, unchanged registration
-return the same credential after rechecking origin control. Conflicting registration,
-disabled credentials, or an old registration after credential rotation fail closed;
-registration cannot resurrect them. Operator rotation/revocation is scoped to one
-provider and never silently stops its existing polling or alert delivery.
-
-Invalid input is `400`, excessive body `413`, unsupported encoding/type `415`,
-failed origin proof or conflicting registration `409`, capacity/rate refusal `429`,
-and unavailable service `503`. `429` includes `Retry-After`. Errors contain no
-credential or private configuration. Bodies have an overall read deadline.
+Registration is specified in [shared monitor receiver and registration v2](monitor-receiver.md).
+It proves control of the provider (and optional web) origin, verifies an operator
+email, and issues a monitor enrollment credential and a shared-receiver
+credential together. v1, which required each provider to run its own receiver,
+was removed.
 
 ## Managed enrollment authorization
 
@@ -122,8 +69,8 @@ Retain backups and old configuration for application rollback. Do not delete the
 new ownership tables as an ordinary rollback; old software cannot serve newly
 registered providers. The public worker rejects obsolete single-provider settings.
 
-Conformance coverage: `provider-registration.integration.test.ts` checks proof on
-both origins, public-proof theft, exact retries, expiry and revocation;
+Conformance coverage: `provider-registration.integration.test.ts` checks registration v2
+(see [monitor receiver](monitor-receiver.md#conformance-coverage));
 `providers.integration.test.ts` checks hashed credential rotation, independent
 limits, concurrent quota admission, ownership and preserved monitoring;
 `signup-monitor.integration.test.ts` verifies the existing end-to-end email binding,

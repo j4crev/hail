@@ -36,6 +36,17 @@ export async function signupIdentity(sql: SQL, accountId: string, token: string)
   return row;
 }
 
+/**
+ * The receiver bind request. The shared receiver derives the DID from the exact
+ * genesis and requires that it names this provider's Hail service
+ * (spec/monitor-receiver.md), so the retained genesis is always included.
+ */
+export function bindingRequest(signupId: string, identity: SignupIdentity) {
+  let operation = identity.operation;
+  while (typeof operation === "string") operation = JSON.parse(operation);
+  return { signupId, did: identity.did, operationCid: identity.operation_cid, hailAddress: identity.canonical_address, operation };
+}
+
 export class SignupEmailClient {
   constructor(private readonly config: SignupEmailConfig, private readonly request: typeof fetch = fetch) {
     const url = new URL(config.origin);
@@ -118,7 +129,7 @@ export function registerSignupEmailRoutes(app: Hono, sql: SQL, client: SignupEma
         // retained after owner signature verification and public read-back.
         const row = await signupIdentity(sql, input.accountId as string, token);
         if (!row) return context.json({ error: "Signup identity refused" }, 403);
-        return context.json(await client.post("bind", { signupId: input.signupId, did: row.did, operationCid: row.operation_cid, hailAddress: row.canonical_address }, token));
+        return context.json(await client.post("bind", bindingRequest(input.signupId as string, row), token));
       }
       return context.json(await client.post(step, input, token));
     } catch (error) {

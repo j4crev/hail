@@ -262,7 +262,7 @@ ALPHA_SIGNUP_MONITOR_ORIGIN=https://your-monitor.example
 ```
 
 The monitor identity origin must match signed attestations; it may differ from the
-API hostname. The receiver's `SIGNUP_ORIGIN` must match the browser/passkey origin.
+API hostname. The web origin registered with the shared receiver must match the browser/passkey origin.
 The [monitor guide](../../../plc-monitor/deploy/public/README.md#automatic-reduced-assurance-alpha-enrollment)
 defines matching settings and the authenticated email-binding contract. Recreate
 provider/GUI using the same Compose files after environment changes; a plain restart

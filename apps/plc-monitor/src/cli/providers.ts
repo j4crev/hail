@@ -1,26 +1,67 @@
 import { MonitorDatabase } from "../database.js";
 import { EnrollmentProviders } from "../providers.js";
+import { ReceiverClient } from "../receiver-provisioning.js";
+import { MonitorSigner } from "../signing.js";
 
 const [action, first, second, output] = Bun.argv.slice(2);
-const usage = "Usage: monitor:providers list | create PROVIDER_ORIGIN ALERT_ORIGIN PRIVATE_OUTPUT | rotate ID PRIVATE_OUTPUT | disable ID | enable ID | retire ID EXPECTED_ACTIVE_COUNT | import-legacy";
+const usage = "Usage: monitor:providers list | create PROVIDER_ORIGIN ALERT_ORIGIN PRIVATE_OUTPUT | rotate ID PRIVATE_OUTPUT | " +
+  "disable ID | enable ID | retire ID EXPECTED_ACTIVE_COUNT | import-legacy | provision ID | " +
+  "receiver-import ID SECRET_FILE WEB_ORIGIN|- | rotate-receiver ID PRIVATE_OUTPUT";
 if (!Bun.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-if (!["list", "create", "rotate", "disable", "enable", "retire", "import-legacy"].includes(action ?? "")) throw new Error(usage);
+if (!["list", "create", "rotate", "disable", "enable", "retire", "import-legacy", "provision", "receiver-import", "rotate-receiver"]
+  .includes(action ?? "")) throw new Error(usage);
 const db = new MonitorDatabase(Bun.env.DATABASE_URL);
+// Receiver changes are pushed with the monitor key (spec/monitor-receiver.md).
+async function receiverClient() {
+  if (!Bun.env.MONITOR_PRIVATE_KEY_FILE || !Bun.env.MONITOR_RECEIVER_ORIGIN)
+    throw new Error("MONITOR_PRIVATE_KEY_FILE and MONITOR_RECEIVER_ORIGIN are required to update the shared receiver");
+  return new ReceiverClient(await MonitorSigner.fromPrivateFile(Bun.env.MONITOR_PRIVATE_KEY_FILE), Bun.env.MONITOR_RECEIVER_ORIGIN);
+}
+async function provision(providers: EnrollmentProviders, id: string): Promise<boolean> {
+  const record = await providers.receiverRecord(id);
+  if (!record) return false;
+  await (await receiverClient()).provision(record);
+  await providers.markProvisioned(id);
+  return true;
+}
 try {
   await db.migrate();
   const providers = new EnrollmentProviders(db.sql);
   if (action === "list") {
-    console.info(JSON.stringify(await db.sql`SELECT id,provider_origin,alert_origin,enabled,
+    console.info(JSON.stringify(await db.sql`SELECT id,provider_origin,alert_origin,web_origin,operator_email,enabled,
+      receiver_token_hash IS NOT NULL AS receiver_credential,receiver_provisioned_at,
       requests_per_minute,max_identities,enrollments_per_day,retired_at,
       (SELECT count(*) FROM monitored_dids w WHERE w.enrollment_provider_id=p.id AND w.stopped_at IS NULL) AS active_identities
       FROM monitor_enrollment_providers p ORDER BY provider_origin`));
   } else if (action === "retire") {
     if (!first || !second || !/^(0|[1-9][0-9]*)$/.test(second) || output) throw new Error(usage);
-    console.info(JSON.stringify({ id: first, stopped: await providers.retire(first, Number(second)) }));
+    const stopped = await providers.retire(first, Number(second));
+    console.info(JSON.stringify({ id: first, stopped, receiverUpdated: await provision(providers, first) }));
   } else if (action === "disable" || action === "enable") {
     if (!first || second) throw new Error(usage);
     await providers.setEnabled(first, action === "enable");
-    console.info(JSON.stringify({ id: first, enabled: action === "enable" }));
+    console.info(JSON.stringify({ id: first, enabled: action === "enable", receiverUpdated: await provision(providers, first) }));
+  } else if (action === "provision") {
+    if (!first || second) throw new Error(usage);
+    if (!await provision(providers, first)) throw new Error("Provider has no receiver credential; use receiver-import or rotate-receiver");
+    console.info(JSON.stringify({ id: first, provisioned: true }));
+  } else if (action === "receiver-import") {
+    if (!first || !second || !output) throw new Error(usage);
+    const { readFile, stat } = await import("node:fs/promises");
+    const metadata = await stat(second);
+    if (!metadata.isFile() || metadata.mode & 0o077 || metadata.size > 256) throw new Error("Use a private secret file");
+    await providers.importReceiver(first, (await readFile(second, "utf8")).trim(), output === "-" ? null : output);
+    await provision(providers, first);
+    console.info(JSON.stringify({ id: first, provisioned: true }));
+  } else if (action === "rotate-receiver") {
+    if (!first || !second || output) throw new Error(usage);
+    const handle = await import("node:fs/promises").then(fs => fs.open(second, "wx", 0o600));
+    try {
+      const result = await providers.rotateReceiver(first);
+      await handle.writeFile(JSON.stringify(result) + "\n"); await handle.sync();
+      await provision(providers, first);
+      console.info(JSON.stringify({ id: first, credentialFile: second, provisioned: true }));
+    } finally { await handle.close(); }
   } else if (action === "import-legacy") {
     if (first) throw new Error(usage);
     const origin = Bun.env.MONITOR_ENROLLMENT_PROVIDER, alerts = Bun.env.MONITOR_ENROLLMENT_ALERT_ORIGIN,

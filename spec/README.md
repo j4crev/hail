@@ -44,7 +44,7 @@ Historical implementation/rollout notes do not override the current profile belo
 | Connections | Invitation, confirmation and control v1; [consent](connection-auth.md), [federation](connection-federation.md), [wire binding](connection-wire.md) |
 | Shared conversations | Descriptor v1, Envelope v4; [shared conversations](shared-conversations.md) |
 | Custody | [Account onboarding](account-onboarding.md), [managed custody](managed-custody.md); [reduced-assurance alpha](alpha-onboarding.md) is an explicitly weaker deployment profile; [provider service accounts](provider-service-accounts.md) are provider-owned reserved addresses, never user accounts |
-| Reference monitor service | Provider registration, scoped enrollment, management handoff and signed receiver lifecycle v1 in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
+| Reference monitor service | Provider registration v2 and the [shared receiver](monitor-receiver.md), scoped enrollment, management handoff and signed receiver lifecycle v1 in [monitor providers](monitor-providers.md); [incident capabilities and owner-signed recovery](monitor-incidents.md) |
 | Client synchronization | [Hail JMAP v1](jmap.md), [drafts](jmap-drafts.md), [account collections](jmap-collections.md) and [typed operations](jmap-operations.md); web/CLI mailbox workflows use JMAP; [connected events and encrypted Web Push](jmap-events.md); push capability requires VAPID configuration |
 | Transfer | Handshake v1, portable snapshot v11, managed snapshot v12, connection checkpoint v3, conversation checkpoint v1; [transfer formats](transfer-formats.md), [logical history schema](account-history.md), [connection portability](connection-portability.md) |
 

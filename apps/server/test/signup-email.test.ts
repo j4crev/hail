@@ -37,13 +37,16 @@ it("binds only the alpha genesis retained for the same signup capability, never 
   const f = fixture(), accountId = crypto.randomUUID(), input = { signupId: f.signupId, accountId };
   expect((await f.post("bind", { ...input, did: `did:plc:${"a".repeat(24)}` })).status).toBe(400);
   expect((await f.post("bind", input)).status).toBe(403); expect(f.transport).not.toHaveBeenCalled();
-  const row = { did: `did:plc:${"a".repeat(24)}`, operation_cid: "bafyreifixture", signup_token_hash: tokenHash(f.token) };
+  const operation = { type: "plc_operation", prev: null, sig: "fixture" };
+  // Older rows can hold the JSONB genesis as an encoded string; the receiver gets the object.
+  const row = { did: `did:plc:${"a".repeat(24)}`, operation_cid: "bafyreifixture", signup_token_hash: tokenHash(f.token),
+    operation: JSON.stringify(operation) };
   f.sql.mockResolvedValue([row]);
   expect((await f.post("bind", input, { Authorization: `Bearer racr_${encodeBase64Url(randomBytes(32))}` })).status).toBe(403);
   f.transport.mockResolvedValue(Response.json({ bound: true, did: row.did, operationCid: row.operation_cid }));
   expect((await f.post("bind", input)).status).toBe(200);
   expect(JSON.parse(f.transport.mock.calls[0]![1]!.body as string)).toEqual({
-    signupId: f.signupId, signupHash: encodeBase64Url(tokenHash(f.token)), did: row.did, operationCid: row.operation_cid,
+    signupId: f.signupId, signupHash: encodeBase64Url(tokenHash(f.token)), did: row.did, operationCid: row.operation_cid, operation,
   });
   const query = f.sql.mock.calls[0]![0] as unknown as TemplateStringsArray;
   expect(query.join("?")).toContain("preparation.monitor_assurance='reduced-assurance-alpha-v1'");

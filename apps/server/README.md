@@ -52,8 +52,9 @@ logged. Rotating the signing key invalidates outstanding unadmitted invitations.
 
 Enable the existing public alpha signup, passkeys, GUI and signup email service.
 Deploy the updated email Worker before using email invitations; its authenticated
-`/signup-email/invite` endpoint uses the existing `SIGNUP_EMAIL_TOKEN`, sender and
-pinned `SIGNUP_ORIGIN` (which must equal the browser/passkey origin). Other server
+`/signup-email/invite` endpoint uses the provider's receiver credential
+(`SIGNUP_EMAIL_TOKEN`), and invitation links must use the web origin registered with
+the shared monitor (which must equal the browser/passkey origin). Other server
 implementers can supply that same small email-service contract. No new email
 vendor or client-visible service credential is required.
 
