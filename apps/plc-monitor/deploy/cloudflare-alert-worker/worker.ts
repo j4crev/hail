@@ -2,24 +2,28 @@ import { RECEIVER_LIFECYCLE_CONTEXT, RECEIVER_LIFECYCLE_PATH, checkReceiverLifec
 import { alertMessage } from "./alert-message.js";
 import { base58btc } from "multiformats/bases/base58";
 import { parseJsonWithoutDuplicateKeys } from "../../src/strict-json.js";
-import { pruneSignupEmail, sendEmail, signupEmail, signupEmailPaths,
-  type DurableStorage, type EmailEnvironment, type Recipient } from "./signup-email.js";
-import { authenticated, hash, boundedBody } from "../../src/http.js";
+import { providerForToken, provisionProvider, pruneSignupEmail, sendEmail, sendOperatorVerification, signupEmail, signupEmailPaths,
+  signupKey, type DurableStorage, type EmailEnvironment, type Recipient } from "./signup-email.js";
+import { OPERATOR_VERIFICATION_CONTEXT, OPERATOR_VERIFICATION_PATH, RECEIVER_PROVIDER_CONTEXT, RECEIVER_PROVIDER_PATH,
+  checkOperatorVerification, checkReceiverProviderRecord } from "../../src/receiver-provider-wire.js";
+import { hash, boundedBody } from "../../src/http.js";
 import { EMAIL_BINDING_CONTEXT, SIGNUP_ALERT_PATH, SIGNUP_BINDING_PATH, checkEmailBindingQuery } from "../../src/email-binding.js";
 
 const context = new TextEncoder().encode("hail.plc-monitor-alert.v1\0");
 const categories = new Set(["unexpected-operation", "coverage-lost", "invalid-operation-log", "export-gap", "onboarding-enrollment", "operation-status", "monitoring-restored"]);
 
+// One shared receiver for every registered provider (spec/monitor-receiver.md).
 export interface Env extends EmailEnvironment {
+  /** The deployment operator: legacy unmapped alerts and the optional health checks below. */
   ALERT_RECIPIENT:string;
   ALERT_SENDER:string;
-  BACKUP_TOKEN:string;
-  HEARTBEAT_TOKEN:string;
-  HAIL_PRODUCTION_MONITOR:{get(key:string):Promise<string|null>;put(key:string,value:string):Promise<void>};
   MONITOR_PUBLIC_KEY:string;
-  PROVIDER_HEALTH_URL:string;
   ALERT_DEDUPLICATOR:{idFromName(name:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}};
-  SIGNUP_EMAIL_TOKEN?:string;
+  // Optional health checks for the deployment operator; each is off unless configured.
+  HAIL_PRODUCTION_MONITOR?:{get(key:string):Promise<string|null>;put(key:string,value:string):Promise<void>};
+  HEARTBEAT_TOKEN?:string;
+  BACKUP_TOKEN?:string;
+  PROVIDER_HEALTH_URL?:string;
 }
 interface DurableState {storage:DurableStorage}
 
@@ -34,11 +38,23 @@ export class AlertDeduplicator {
   async fetch(request:Request):Promise<Response>{
     if(request.method!=="POST")return new Response(null,{status:405});
     const path=new URL(request.url).pathname;
-    const bytes=await boundedBody(request,signupEmailPaths.has(path)||path==="/binding"?4096:65_536);
+    const bytes=await boundedBody(request,signupEmailPaths.has(path)||path==="/binding"||path===RECEIVER_PROVIDER_PATH||path===OPERATOR_VERIFICATION_PATH?4096:65_536);
     if(!bytes)return new Response(null,{status:413});
     let alert:Record<string,unknown>;
     try{alert=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;}catch{return new Response(null,{status:400});}
-    if(signupEmailPaths.has(path))return signupEmail(path,alert,this.state.storage,this.env);
+    if(signupEmailPaths.has(path)){
+      const provider=await providerForToken(this.state.storage,request.headers.get("X-Hail-Provider-Token-Hash")??"");
+      if(!provider)return new Response(null,{status:401});
+      return signupEmail(path,alert,this.state.storage,this.env,provider);
+    }
+    if(path===RECEIVER_PROVIDER_PATH){
+      try{checkReceiverProviderRecord(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
+      return provisionProvider(alert,this.state.storage,this.env);
+    }
+    if(path===OPERATOR_VERIFICATION_PATH){
+      try{checkOperatorVerification(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
+      return sendOperatorVerification(alert,this.state.storage,this.env);
+    }
     if(path==="/lifecycle"){
       try{checkReceiverLifecycle(alert,Math.floor(Date.now()/1000));}catch{return new Response(null,{status:400});}
       return this.state.storage.transaction(async storage=>{
@@ -52,7 +68,7 @@ export class AlertDeduplicator {
           if(!recipient&&!stopped)return new Response(null,{status:409});
           await storage.put(`stopped-monitoring:${alert.did}`,alert.operationCid);
           await storage.delete(`recipient:${alert.did}`);
-          if(recipient)await storage.delete(`signup:${recipient.signupId}`);
+          if(recipient)await storage.delete(signupKey(recipient.providerId,recipient.signupId));
         }
         return new Response(null,{status:204});
       });
@@ -100,10 +116,10 @@ export class AlertDeduplicator {
 }
 
 async function recordHealth(env:Env,name:string,ok:boolean,detail:string):Promise<void>{
-  const key=`health:${name}`,next=ok?"ok":"down",previous=await env.HAIL_PRODUCTION_MONITOR.get(key);
+  const store=env.HAIL_PRODUCTION_MONITOR!,key=`health:${name}`,next=ok?"ok":"down",previous=await store.get(key);
   if(previous!==next){
     if(next==="down"||previous==="down")await email(env,`[Hail ops] ${name} ${next}`,`${name} is ${next}.\n\n${detail}`);
-    await env.HAIL_PRODUCTION_MONITOR.put(key,next);
+    await store.put(key,next);
   }
 }
 
@@ -129,32 +145,41 @@ export default {
     const url=new URL(request.url);
     if(signupEmailPaths.has(url.pathname)){
       if(request.method!=="POST")return new Response(null,{status:405});
-      if(!env.SIGNUP_EMAIL_TOKEN)return new Response(null,{status:503});
-      if(!await authenticated(request,env.SIGNUP_EMAIL_TOKEN))return new Response(null,{status:401});
+      // Each provider authenticates with its own receiver credential; only its hash reaches storage.
+      const token=/^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("authorization")??"")?.[1];
+      if(!token)return new Response(null,{status:401});
       if(request.headers.get("content-type")!=="application/json"||request.headers.has("content-encoding"))return new Response(null,{status:415});
       const bytes=await boundedBody(request,4096);if(!bytes)return new Response(null,{status:413});
       const id=env.ALERT_DEDUPLICATOR.idFromName("hail-monitor-alerts");
       try{return await env.ALERT_DEDUPLICATOR.get(id).fetch(new Request(`https://deduplicator.internal${url.pathname}`,{
-        method:"POST",headers:{"Content-Type":"application/json"},body:Uint8Array.from(bytes).buffer}));}
+        method:"POST",headers:{"Content-Type":"application/json","X-Hail-Provider-Token-Hash":await hash(token)},body:Uint8Array.from(bytes).buffer}));}
       catch{return new Response(null,{status:503,headers:{"Cache-Control":"no-store"}});}
     }
     if(request.method==="POST"&&url.pathname==="/heartbeat"){
-      if(!env.HEARTBEAT_TOKEN||request.headers.get("authorization")!==`Bearer ${env.HEARTBEAT_TOKEN}`)return new Response(null,{status:401});
+      if(!env.HAIL_PRODUCTION_MONITOR||!env.HEARTBEAT_TOKEN||request.headers.get("authorization")!==`Bearer ${env.HEARTBEAT_TOKEN}`)return new Response(null,{status:401});
       await env.HAIL_PRODUCTION_MONITOR.put(heartbeatKey,String(Date.now()));
       return new Response(null,{status:204});
     }
     if(request.method==="POST"&&url.pathname==="/backup-heartbeat"){
-      if(!env.BACKUP_TOKEN||request.headers.get("authorization")!==`Bearer ${env.BACKUP_TOKEN}`)return new Response(null,{status:401});
+      if(!env.HAIL_PRODUCTION_MONITOR||!env.BACKUP_TOKEN||request.headers.get("authorization")!==`Bearer ${env.BACKUP_TOKEN}`)return new Response(null,{status:401});
       await env.HAIL_PRODUCTION_MONITOR.put(backupKey,String(Date.now()));
       return new Response(null,{status:204});
     }
     const lifecycleQuery=url.pathname===RECEIVER_LIFECYCLE_PATH,bindingQuery=url.pathname===SIGNUP_BINDING_PATH,consumer=url.pathname===SIGNUP_ALERT_PATH;
-    if(request.method!=="POST"||url.pathname!=="/hail"&&!consumer&&!bindingQuery&&!lifecycleQuery)return new Response(null,{status:404});
+    const provisioning=url.pathname===RECEIVER_PROVIDER_PATH||url.pathname===OPERATOR_VERIFICATION_PATH;
+    if(request.method!=="POST"||url.pathname!=="/hail"&&!consumer&&!bindingQuery&&!lifecycleQuery&&!provisioning)return new Response(null,{status:404});
     if(request.headers.get("content-type")!=="application/json")return new Response(null,{status:415});
-    const bytes=await boundedBody(request,bindingQuery||lifecycleQuery?4096:65_536);if(!bytes)return new Response(null,{status:413});
+    const bytes=await boundedBody(request,bindingQuery||lifecycleQuery||provisioning?4096:65_536);if(!bytes)return new Response(null,{status:413});
     const key=request.headers.get("x-hail-monitor-key"),encoded=request.headers.get("x-hail-monitor-signature");
+    const domain=lifecycleQuery?RECEIVER_LIFECYCLE_CONTEXT:bindingQuery?EMAIL_BINDING_CONTEXT:url.pathname===RECEIVER_PROVIDER_PATH?RECEIVER_PROVIDER_CONTEXT:
+      url.pathname===OPERATOR_VERIFICATION_PATH?OPERATOR_VERIFICATION_CONTEXT:null;
     if(key!==env.MONITOR_PUBLIC_KEY||!encoded||!signature(encoded)||!await verify(bytes,encoded,key,
-      lifecycleQuery?new TextEncoder().encode(RECEIVER_LIFECYCLE_CONTEXT):bindingQuery?new TextEncoder().encode(EMAIL_BINDING_CONTEXT):context))return new Response(null,{status:401});
+      domain?new TextEncoder().encode(domain):context))return new Response(null,{status:401});
+    if(provisioning){
+      const id=env.ALERT_DEDUPLICATOR.idFromName("hail-monitor-alerts");
+      return env.ALERT_DEDUPLICATOR.get(id).fetch(new Request(`https://deduplicator.internal${url.pathname}`,{method:"POST",
+        headers:{"Content-Type":"application/json"},body:Uint8Array.from(bytes).buffer}));
+    }
     let alert:Record<string,unknown>;
     try{alert=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;}catch{return new Response(null,{status:400});}
     if(!alert||typeof alert!=="object"||Array.isArray(alert))return new Response(null,{status:400});
@@ -180,17 +205,26 @@ export default {
     return env.ALERT_DEDUPLICATOR.get(id).fetch(new Request(`https://deduplicator.internal/alert${consumer?"/signup":""}`,{method:"POST",
       headers:{"Content-Type":"application/json"},body:Uint8Array.from(bytes).buffer}));
   },
+  // The deployment operator's own checks. Each runs only when configured.
   async scheduled(_controller:unknown,env:Env):Promise<void>{
-    let providerOk=false,providerDetail="health request failed";
-    try{const response=await fetch(env.PROVIDER_HEALTH_URL,{signal:AbortSignal.timeout(10_000)});
-      providerDetail=`${env.PROVIDER_HEALTH_URL} returned HTTP ${response.status}`;providerOk=response.ok;}
-    catch(error){providerDetail=`${env.PROVIDER_HEALTH_URL} failed: ${error instanceof Error?error.message:"unknown error"}`;}
-    await recordHealth(env,"haili provider",providerOk,providerDetail);
-    const heartbeat=Number(await env.HAIL_PRODUCTION_MONITOR.get(heartbeatKey)),age=Date.now()-heartbeat;
-    await recordHealth(env,"PLC monitor",Number.isFinite(heartbeat)&&heartbeat>0&&age<=staleAfterMs,
-      heartbeat>0?`Last authenticated heartbeat was ${Math.floor(age/1000)} seconds ago.`:"No authenticated heartbeat has been received.");
-    const backup=Number(await env.HAIL_PRODUCTION_MONITOR.get(backupKey)),backupAge=Date.now()-backup;
-    await recordHealth(env,"provider backup",Number.isFinite(backup)&&backup>0&&backupAge<=backupStaleAfterMs,
-      backup>0?`Last verified encrypted backup was ${Math.floor(backupAge/3_600_000)} hours ago.`:"No verified backup heartbeat has been received.");
+    const store=env.HAIL_PRODUCTION_MONITOR;
+    if(!store)return;
+    if(env.PROVIDER_HEALTH_URL){
+      let providerOk=false,providerDetail="health request failed";
+      try{const response=await fetch(env.PROVIDER_HEALTH_URL,{signal:AbortSignal.timeout(10_000)});
+        providerDetail=`${env.PROVIDER_HEALTH_URL} returned HTTP ${response.status}`;providerOk=response.ok;}
+      catch(error){providerDetail=`${env.PROVIDER_HEALTH_URL} failed: ${error instanceof Error?error.message:"unknown error"}`;}
+      await recordHealth(env,"haili provider",providerOk,providerDetail);
+    }
+    if(env.HEARTBEAT_TOKEN){
+      const heartbeat=Number(await store.get(heartbeatKey)),age=Date.now()-heartbeat;
+      await recordHealth(env,"PLC monitor",Number.isFinite(heartbeat)&&heartbeat>0&&age<=staleAfterMs,
+        heartbeat>0?`Last authenticated heartbeat was ${Math.floor(age/1000)} seconds ago.`:"No authenticated heartbeat has been received.");
+    }
+    if(env.BACKUP_TOKEN){
+      const backup=Number(await store.get(backupKey)),backupAge=Date.now()-backup;
+      await recordHealth(env,"provider backup",Number.isFinite(backup)&&backup>0&&backupAge<=backupStaleAfterMs,
+        backup>0?`Last verified encrypted backup was ${Math.floor(backupAge/3_600_000)} hours ago.`:"No verified backup heartbeat has been received.");
+    }
   },
 };

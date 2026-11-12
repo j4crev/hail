@@ -116,8 +116,8 @@ retains bound email destinations, deduplication records and operational state.
 New signups use new DIDs and signup IDs, so they do not reuse those bindings.
 Preserve replay-suppression records; bulk deletion could allow old signed alerts
 to be delivered again. Retiring old bound email records, rotating receiver
-secrets, or changing availability checks is a separate scoped receiver task. Keep the receiver's `SIGNUP_ORIGIN` on the
-browser origin (`https://haili.app`); its provider-health URL may target
+secrets, or changing availability checks is a separate scoped receiver task. Keep Haili's registered web origin at the
+receiver on the browser origin (`https://haili.app`); its provider-health URL may target
 `https://svr.haili.app/health/ready` or the deliberately retained browser-host
 health route.
 Do not claim that a monitor database reset erased those external records.

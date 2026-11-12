@@ -35,6 +35,34 @@ export class EnrollmentProviders {
     if (!rows.length) throw new Error("Unknown provider");
     return { id, token };
   }
+  /** The record the shared receiver holds for this provider; null before it has a receiver credential. */
+  async receiverRecord(id: string) {
+    const row = (await this.sql<{ id: string; provider_origin: string; web_origin: string | null; receiver_token_hash: string | null;
+      enabled: boolean; retired_at: Date | null }[]>`SELECT id,provider_origin,web_origin,receiver_token_hash,enabled,retired_at
+      FROM monitor_enrollment_providers WHERE id=${id}`)[0];
+    if (!row) throw new Error("Unknown provider");
+    if (!row.receiver_token_hash) return null;
+    return { providerId: row.id, providerOrigin: row.provider_origin, webOrigin: row.web_origin,
+      tokenHash: row.receiver_token_hash, enabled: row.enabled && !row.retired_at };
+  }
+  async markProvisioned(id: string) {
+    await this.sql`UPDATE monitor_enrollment_providers SET receiver_provisioned_at=clock_timestamp() WHERE id=${id}`;
+  }
+  /** Adopts a provider's existing receiver secret (pre-v2 migration). Only its hash is kept. */
+  async importReceiver(id: string, secret: string, webOrigin: string | null) {
+    decodeBase64Url(secret, 32);
+    if (webOrigin !== null) canonicalOrigin(webOrigin);
+    const rows = await this.sql`UPDATE monitor_enrollment_providers SET receiver_token_hash=${await hash(secret)},
+      web_origin=${webOrigin},receiver_provisioned_at=NULL WHERE id=${id} AND retired_at IS NULL AND receiver_token_hash IS NULL RETURNING id`;
+    if (!rows.length) throw new Error("Unknown provider, or it already has a receiver credential");
+  }
+  async rotateReceiver(id: string) {
+    const token = randomBytes(32).toString("base64url");
+    const rows = await this.sql`UPDATE monitor_enrollment_providers SET receiver_token_hash=${await hash(token)},receiver_provisioned_at=NULL
+      WHERE id=${id} AND retired_at IS NULL RETURNING id`;
+    if (!rows.length) throw new Error("Unknown provider");
+    return { id, receiverToken: token };
+  }
   async setEnabled(id: string, enabled: boolean) {
     if (!(await this.sql`UPDATE monitor_enrollment_providers SET enabled=${enabled} WHERE id=${id} AND retired_at IS NULL RETURNING id`).length)
       throw new Error("Unknown provider");

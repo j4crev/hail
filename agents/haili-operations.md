@@ -116,6 +116,32 @@ Replacing `admin@haili.app` with a service account would release the address and
 create a new DID, so it is a deliberate operator decision, not part of a routine
 application release.
 
+## Shared receiver migration (registration v2)
+
+[Registration v2](../spec/monitor-receiver.md) turns `alerts.plcmonitor.us` into
+the shared receiver for every provider. Haili keeps its existing
+`SIGNUP_EMAIL_TOKEN`, imported as its receiver credential. Roll out in this order:
+
+1. Onboard `notify.racrproto.com` as a Cloudflare Email Sending domain and verify
+   delivery to an operator mailbox.
+2. Deploy the monitor with migration 11 and `MONITOR_RECEIVER_ORIGIN=https://alerts.plcmonitor.us`
+   (add it to the monitor's enrollment overlay). Back up first.
+3. Deploy the Worker with the new vars (`notify.racrproto.com` senders,
+   `LEGACY_RECIPIENT_PROVIDER_ORIGIN=https://svr.haili.app`) and delete the
+   `SIGNUP_EMAIL_TOKEN` Worker secret.
+4. Immediately import Haili's receiver credential, from a private file holding the
+   provider's current `SIGNUP_EMAIL_TOKEN`:
+   `monitor:providers receiver-import <haili provider id> <file> https://haili.app`.
+   This provisions Haili and assigns existing recipients to it. Then remove
+   `LEGACY_RECIPIENT_PROVIDER_ORIGIN` and redeploy the Worker.
+5. Deploy the provider release that sends the genesis with each bind.
+
+Between steps 3 and 5, new signups cannot complete the email-binding step (the
+new Worker requires the genesis; the old provider does not send it). Existing
+accounts, alerts and invitations keep working once step 4 is done. Keep steps 3–5
+close together. Rolling the Worker back after step 4 would divert bound users'
+alerts; roll forward instead.
+
 ## Pre-launch development policy — developers and agents
 
 **Build the intended system, not compatibility layers for our test data.** Hail

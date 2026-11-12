@@ -35,6 +35,26 @@ integration("provider enrollment isolation and capacity", () => {
     await providers.setEnabled(b.id, false);
     await expect(providers.authenticate(request(rotated.token))).rejects.toMatchObject({ status: 403 });
   });
+  it("imports an existing receiver secret once, rotates it, and reflects retirement in the receiver record", async () => {
+    const { hash } = await import("../src/http.js");
+    const a = await provider(), secret = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+    expect(await providers.receiverRecord(a.id)).toBeNull();
+    await expect(providers.importReceiver(a.id, "not-a-secret", null)).rejects.toThrow();
+    await expect(providers.importReceiver(a.id, secret, "http://web.example")).rejects.toThrow();
+    await providers.importReceiver(a.id, secret, "https://web.example");
+    expect(await providers.receiverRecord(a.id)).toEqual({ providerId: a.id, providerOrigin: a.providerOrigin,
+      webOrigin: "https://web.example", tokenHash: await hash(secret), enabled: true });
+    await expect(providers.importReceiver(a.id, secret, null)).rejects.toThrow("already has");
+    const stored = (await db.sql`SELECT * FROM monitor_enrollment_providers WHERE id=${a.id}`)[0];
+    expect(JSON.stringify(stored)).not.toContain(secret);
+    await providers.markProvisioned(a.id);
+    const rotated = await providers.rotateReceiver(a.id);
+    expect((await providers.receiverRecord(a.id))!.tokenHash).toBe(await hash(rotated.receiverToken));
+    expect((await db.sql`SELECT receiver_provisioned_at FROM monitor_enrollment_providers WHERE id=${a.id}`)[0].receiver_provisioned_at).toBeNull();
+    await providers.retire(a.id, 0);
+    expect(await providers.receiverRecord(a.id)).toMatchObject({ enabled: false });
+    await expect(providers.rotateReceiver(a.id)).rejects.toThrow("Unknown provider");
+  });
   async function identity(origin: string) {
     const key = await P256Keypair.create();
     const operation = await signOperation({ type: "plc_operation", prev: null, rotationKeys: [key.did()],

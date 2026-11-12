@@ -1,6 +1,7 @@
 import { ReceiverLifecycleClient, cleanMonitorReceiver } from "../receiver-lifecycle.js";
 import { SourceAdmission } from "../admission.js";
 import { createProviderRegistrationApi } from "../provider-registration.js";
+import { ReceiverClient } from "../receiver-provisioning.js";
 import { EnrollmentProviders } from "../providers.js";
 import { IncidentCapabilities } from "../incident-capabilities.js";
 import { IncidentService, createIncidentApi } from "../incidents.js";
@@ -32,7 +33,9 @@ const receiver = new ReceiverLifecycleClient(signer);
 const notifier = new MonitorNotifier(database.sql, signer, new PinnedHttpsAlertTransport(), () => new Date(), incidents);
 if (enrollment) {
   const providers = new EnrollmentProviders(database.sql);
-  const registration = createProviderRegistrationApi(providers, signer, enrollment.monitorOrigin, undefined, enrollment.apiOrigin);
+  // Registration v2 requires the shared receiver (spec/monitor-receiver.md).
+  const sharedReceiver = Bun.env.MONITOR_RECEIVER_ORIGIN ? new ReceiverClient(signer, Bun.env.MONITOR_RECEIVER_ORIGIN) : undefined;
+  const registration = createProviderRegistrationApi(providers, signer, enrollment.monitorOrigin, sharedReceiver, undefined, enrollment.apiOrigin);
   const api = createMonitorEnrollmentApi(enrollment, monitor, signer, providers);
   const admission = new SourceAdmission();
   Bun.serve({ hostname: enrollment.hostname, port: enrollment.port, maxRequestBodySize: 32_768,

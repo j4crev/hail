@@ -4,6 +4,7 @@ import { base58btc } from "multiformats/bases/base58";
 import { encodeDeterministic, type HailValue } from "@racrproto/codec";
 import { RECEIVER_LIFECYCLE_CONTEXT } from "./receiver-lifecycle-wire.js";
 import { EMAIL_BINDING_CONTEXT } from "./email-binding.js";
+import { OPERATOR_VERIFICATION_CONTEXT, RECEIVER_PROVIDER_CONTEXT } from "./receiver-provider-wire.js";
 
 const ALERT_CONTEXT = new TextEncoder().encode("hail.plc-monitor-alert.v1\0");
 const COVERAGE_CONTEXT = new TextEncoder().encode("hail.independent-plc-monitor.v1\0");
@@ -44,6 +45,19 @@ export class MonitorSigner {
 
   registrationToken(bytes: Uint8Array): string {
     return createHash("sha256").update(this.sign(new TextEncoder().encode("hail.monitor-provider-credential.v1\0"), bytes)).digest("base64url");
+  }
+
+  /** Receiver credential, derived like the monitor credential under a separate context. */
+  receiverToken(bytes: Uint8Array): string {
+    return createHash("sha256").update(this.sign(new TextEncoder().encode("hail.monitor-receiver-credential.v1\0"), bytes)).digest("base64url");
+  }
+
+  signReceiverProvider(bytes: Uint8Array): Uint8Array {
+    return this.sign(new TextEncoder().encode(RECEIVER_PROVIDER_CONTEXT), bytes);
+  }
+
+  signOperatorVerification(bytes: Uint8Array): Uint8Array {
+    return this.sign(new TextEncoder().encode(OPERATOR_VERIFICATION_CONTEXT), bytes);
   }
 
   signReceiverLifecycle(bytes: Uint8Array): Uint8Array {

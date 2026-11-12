@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hail monitor provider origin-verification document v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "version", "monitorApiOrigin", "providerOrigin", "registrationHash", "expiresAt"],
+  "properties": {
+    "type": { "const": "hail.monitor-provider-registration" },
+    "version": { "const": 2 },
+    "monitorApiOrigin": { "type": "string", "format": "uri", "pattern": "^https://[^/:?#@]+$" },
+    "providerOrigin": { "type": "string", "format": "uri", "pattern": "^https://[^/:?#@]+$" },
+    "webOrigin": { "type": "string", "format": "uri", "pattern": "^https://[^/:?#@]+$" },
+    "registrationHash": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "expiresAt": { "type": "integer", "minimum": 1 }
+  },
+  "$comment": "Also enforce canonical HTTPS DNS origins, a webOrigin distinct from providerOrigin when present, public address validation, exact expected document values and a future expiry at most one hour ahead; see monitor-receiver.md."
+}
