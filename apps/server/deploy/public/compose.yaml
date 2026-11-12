@@ -59,6 +59,11 @@ services:
       ALPHA_SIGNUP_INVITE_KEY: ${ALPHA_SIGNUP_INVITE_KEY:-}
       ALPHA_SIGNUP_MONITOR_ORIGIN: ${ALPHA_SIGNUP_MONITOR_ORIGIN:-}
       PUBLIC_SELF_SERVICE_ONBOARDING: ${PUBLIC_SELF_SERVICE_ONBOARDING:-false}
+      # Optional inbound email bridge (spec/email-bridge.md); empty keeps it off.
+      EMAIL_BRIDGE_DOMAIN: ${EMAIL_BRIDGE_DOMAIN:-}
+      EMAIL_BRIDGE_INTAKE_TOKEN: ${EMAIL_BRIDGE_INTAKE_TOKEN:-}
+      EMAIL_BRIDGE_SENDER: ${EMAIL_BRIDGE_SENDER:-}
+      EMAIL_BRIDGE_CATEGORY: ${EMAIL_BRIDGE_CATEGORY:-}
       # Operator-approved same-provider custody, including connection preservation.
       PUBLIC_CUSTODY_TRANSITIONS: "true"
       PUBLIC_MANAGED_TRANSFER: ${PUBLIC_MANAGED_TRANSFER:-false}
