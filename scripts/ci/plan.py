@@ -20,6 +20,9 @@ COMPONENTS = {
     "apps/cli/": {"cli", "database-server"},
     "apps/plc-monitor/": {"monitor", "database-monitor", "database-server", "monitor-image"},
     "packages/hail-codec-go/": {"codec-go"},
+    # Verified with the shared TypeScript libraries. Nothing imports it yet;
+    # widen this when the provider's converter does.
+    "packages/hail-email-bridge/": {"codec-ts"},
 }
 
 

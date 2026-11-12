@@ -30,6 +30,10 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected("apps/content-builder/src/main.ts"), {"web"})
         self.assertEqual(self.selected("packages/hail-content-builder/src/core.ts"), set(JOBS))
 
+    def test_email_bridge_is_verified_with_shared_libraries(self):
+        self.assertEqual(self.selected("packages/hail-email-bridge/src/html.ts"), {"codec-ts"})
+        self.assertEqual(self.selected("packages/hail-email-bridge/package.json"), set(JOBS))
+
     def test_go_is_independent(self):
         self.assertEqual(self.selected("packages/hail-codec-go/codec.go"), {"codec-go"})
 
@@ -140,6 +144,7 @@ class GateTests(unittest.TestCase):
             "apps/content-builder/package.json", "packages/hail-content-builder/package.json",
             "apps/cli/package.json", "apps/plc-monitor/package.json",
             "packages/hail-codec-ts/package.json", "packages/hail-client-support/package.json",
+            "packages/hail-email-bridge/package.json",
         }, "Assign new workspaces to CI jobs and update the selection map")
 
 
