@@ -125,23 +125,64 @@ appears as one sender named "Email bridge".
 
 The same field would serve an RSS bridge later. It is defined once, generically.
 
-### D4. Body and image limits (**confirm** after measurement)
+### D4. Body and image limits (measured 2026-11-11; **confirm** the recommendation)
 
-Limits are set from data, not guessed. Phase 0 measures a corpus of real
-newsletters and picks limits near the 90th percentile.
+Measured on 83 real messages from 74 sender domains, with every remote image
+downloaded: 477 real images, plus 94 tracking pixels that were dropped.
 
-Starting hypothesis, to be replaced by measured values:
+| Finding | Value |
+| --- | --- |
+| Messages converted | 83 of 83 |
+| Text blocks per message | median 18, 95th percentile 60, largest 153 |
+| CBOR items per message (limit 16,384) | largest 3,441 |
+| Text-only body size | 95th percentile 19 KiB, largest 50 KiB |
+| Images per message | median 4, 90th percentile 13, 95th 16, largest 46 |
+| Image formats | PNG 386, JPEG 47, static GIF 27, animated GIF 23, WebP 0 |
+| Image bytes | median 5 KiB, 90th percentile 240 KiB, 95th 1 MiB, largest 3.6 MiB |
+| Images over 2 megapixels | 12 |
 
-| Limit | Current | Hypothesis |
+How much each candidate rule set would bundle (the rest become links):
+
+| Rule set | Images bundled | Messages with every image bundled |
 | --- | ---: | ---: |
+| Today: PNG, 8 images, 192 KiB each | 56% | 38% |
+| Add JPEG | 62% | 50% |
+| Add JPEG, 24 images | 77% | 60% |
+| **Add JPEG, 24 images, 512 KiB each** | **79%** | **66%** |
+| The same plus static GIF | 82% | 68% |
+| 32 images, 1 MiB each, 4 MiB body | 82% | 70% |
+
+**Recommendation:** admit JPEG, raise image blocks from 8 to 24, and raise the
+per-image size from 192 KiB to 512 KiB. Leave everything else alone:
+
+| Limit | Current | Recommended |
+| --- | ---: | ---: |
+| Image formats | PNG | PNG, JPEG |
 | Image blocks per body | 8 | 24 |
 | Bytes per image | 192 KiB | 512 KiB |
-| Decoded pixels, total | 8 million | 24 million |
-| Complete body | 1 MiB | 4 MiB |
-| Compressed transfer ceiling | 2 MiB | 5 MiB |
+| Per-image dimensions and pixels | 2400 × 2400, 2 million | unchanged |
+| Decoded pixels, total | 8 million | unchanged |
+| Complete body | 1 MiB | unchanged |
+| Compressed transfer ceiling | 2 MiB | unchanged |
 
-Formats: add JPEG and static WebP, reusing the existing structural validators.
-GIF is deferred to D5.
+Why the body ceiling can stay: under the recommended rules the largest body in
+the corpus is 818 KiB and the 90th percentile is 442 KiB. The total-pixel budget
+never refused an image. So the cost of running a conforming provider does not
+rise, and the transfer ceiling and CBOR budgets need no change.
+
+What stays unbundled, and why it is not worth chasing yet:
+
+- **Oversized images (5%).** Mostly multi-megabyte PNG hero images. Only
+  transcoding would bring them in (D6).
+- **Animated GIF (5%)** and **static GIF (5%).** See D5. Static GIF would add
+  three points for a new validator in both codecs.
+- **Unavailable (5%).** Almost all were HTTP 403 or 406 refusals of the
+  measurement script's bare request. The real fetcher should send ordinary
+  browser-style `Accept` and `User-Agent` headers and be re-measured.
+- **WebP** did not occur at all, so it is not worth adding for the bridge.
+
+The earlier guess of a 4 MiB body and 24 million pixels was larger than the
+evidence supports and is withdrawn.
 
 Two rule changes considered here turned out not to need the protocol
 (decided 2026-11-11):
@@ -161,9 +202,10 @@ change.
 ### D5. GIF (**confirm**)
 
 Options: static GIF only with a bounded validator; animated GIF with frame and
-byte caps; or no GIF, with the bridge substituting a placeholder link.
-Recommended: no GIF in the first release. Animated GIFs are the largest objects
-in newsletters and need a new validator and renderer rules.
+byte caps; or no GIF, with the bridge substituting a link.
+Recommended: no GIF in the first release. In the measured corpus GIF is 10% of
+images, half of it animated. The animated ones include several of 2 MiB or
+more, which cannot fit a 1 MiB body at any setting.
 
 ### D6. No image transcoding in the first release (recommended)
 
@@ -219,13 +261,15 @@ user: Feed item, labelled as bridged email from <newsletter>
 
 ### Phase 0: measurement and decisions
 
-- [ ] Collect a corpus of at least 100 real newsletter messages across text-heavy,
-  retail and digest styles. Keep it out of the repository; commit only synthetic
-  fixtures derived from it.
+- [x] Collect a corpus of real messages across text-heavy, retail and digest
+  styles: 83 messages from 74 sender domains, kept outside the repository.
 - [x] Write a dry-run converter harness that reports, per message: image count,
   formats, bytes and dimensions per image, converted body size, and every
   dropped or degraded element. See `packages/hail-email-bridge/scripts/measure.ts`.
-- [ ] Record the distribution and choose D4 limits from it.
+- [x] Record the distribution and derive D4 limits from it. The corpus also
+  exposed two converter faults, now fixed with a regression test: `font-size:0`
+  on layout containers and `mso-hide:all` were wrongly treated as hidden
+  content, which emptied four messages.
 - [ ] Verify the Cloudflare Email Routing assumptions in D2 for the haili.app
   adapter.
 - [ ] Confirm D4, D5, D8 and D9 with the operator.
@@ -313,31 +357,43 @@ limits and new formats become a change to that one object.
 
 ### Phase 4: aliases and intake
 
-- [ ] Migration: aliases (account, local part, label, state, created, last
+Aliases and intake are implemented in `apps/server/src/bridge` with migration
+120 (2026-11-11). The routes are mounted only when `EMAIL_BRIDGE_DOMAIN` and
+`EMAIL_BRIDGE_INTAKE_TOKEN` are both set. The deployment Compose files do not
+pass those through yet, on purpose: until conversion and delivery exist,
+enabling intake would accept mail that is never delivered.
+
+- [x] Migration: aliases (account, local part, label, state, created, last
   received, message count) and an intake ledger keyed by alias plus
   `Message-ID` digest for duplicate rejection.
-- [ ] Alias local parts are random, lowercase, at least 50 bits, never reused
+- [x] Alias local parts are sixty random bits, lowercase base32, never reused
   after deletion.
-- [ ] Specify the intake contract (D2) in `spec/` as reference-provider policy:
-  check and submit requests, authentication, size and rate responses, and the
-  adapter rules. It names no vendor.
-- [ ] Implement the check and submit endpoints, authenticated with a dedicated
-  bearer token and never exposed on the public federation origin.
-- [ ] Contract tests that any adapter can be run against: live, unknown, paused
-  and over-limit aliases, oversize, duplicate, and provider-unavailable.
-- [ ] Enforce maximum message size, per-alias and per-account rate limits, and a
-  per-account alias cap.
-- [ ] Enforce a per-account storage ceiling for bridged content; reject at SMTP
-  time when exceeded.
+- [x] Specify the intake contract (D2) in [spec/email-bridge.md](../spec/email-bridge.md)
+  as reference-provider policy: check and submit requests, authentication, size
+  and rate responses, and the adapter rules. It names no vendor.
+- [x] Implement the check and submit endpoints, authenticated with a dedicated
+  bearer token. An adapter such as the Cloudflare one reaches them through the
+  provider's public hostname, so the token is the control; a deployment may
+  additionally restrict the path at its proxy.
+- [x] Integration tests for live, unknown, paused, deleted and over-limit
+  aliases, oversize, duplicates, concurrent resends and fenced accounts.
+- [ ] Package those cases as a contract suite an adapter can be run against,
+  including provider-unavailable.
+- [x] Enforce maximum message size, per-alias and per-account rate limits, a
+  per-account ceiling on mail awaiting conversion, and a per-account alias cap.
+- [ ] Enforce a per-account storage ceiling for delivered bridged content.
+- [ ] Make the intake and alias limits configurable; they are constants today.
+- [ ] Clean up content-free intake records after a retention period.
 - [ ] Verify DKIM from the raw message and record the result in `origin`.
 - [ ] Never generate a bounce or any outbound email. Refusal happens only as an
   SMTP-time rejection by the ingress adapter.
-- [ ] Durable queue between intake and conversion, with bounded retries and a
-  dead-letter state visible to the operator. The queue is the only interface
+- [ ] Worker for the durable queue between intake and conversion, with bounded
+  retries and a dead-letter state visible to the operator. The queue table and
+  its states exist; nothing consumes it yet. The queue is the only interface
   between the provider and the converter container (D7).
 - [ ] Provider revalidates every converted body with the codec and the D4
   limits before signing; a rejected result goes to dead-letter.
-- [ ] Integration tests against disposable PostgreSQL: unknown alias, paused
+- [x] Integration tests against disposable PostgreSQL: unknown alias, paused
   alias, deleted alias, duplicate delivery, oversize, rate limit, quota.
 
 ### Phase 5: bridge identity and delivery
