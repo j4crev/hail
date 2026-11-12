@@ -4,6 +4,7 @@ import type {AccountApiRepository,AccountApiSession,AccountApiScope} from '../ac
 import {GrantConflictError,type GrantRepository} from '../grants/repository.js';
 import {UserGrantError,type GrantService} from '../grants/service.js';
 import type {AccountMessaging} from '../accounts/messaging.js';
+import {referenceImages} from '../accounts/messaging.js';
 import type {AccountPublications} from '../accounts/publications.js';
 import {ConnectionError,type AccountConnections} from '../accounts/connections.js';
 import {PermissionError,type GrantPermissions} from '../accounts/permissions.js';
@@ -37,6 +38,10 @@ const required=(a:Record<string,unknown>,key:string,pattern?:RegExp)=>{
 const optional=(a:Record<string,unknown>,key:string,pattern?:RegExp)=>a[key]==null?null:required(a,key,pattern);
 const bool=(a:Record<string,unknown>,key:string,defaultValue=false)=>{if(a[key]===undefined)return defaultValue;if(typeof a[key]!=='boolean')throw new JmapError('invalidArguments');return a[key];};
 const input=(a:Record<string,unknown>,max=65536)=>{if(!object(a.input))throw new JmapError('invalidArguments');if(Buffer.byteLength(JSON.stringify(a.input))>max)throw new JmapError('requestTooLarge');return a.input;};
+// `images: "reference"` returns bundled image assets as digests instead of inline data.
+const images=<T extends {body:unknown}>(a:Record<string,unknown>,message:T):T=>{
+ const mode=optional(a,'images',/^(?:inline|reference)$/);return mode==='reference'?referenceImages(message):message;
+};
 const found=<T>(value:T|null|undefined):T=>{if(value==null)throw new JmapError('notFound');return value;};
 const need=<T>(value:T|undefined):T=>{if(value===undefined)throw new JmapError('serverUnavailable');return value;};
 function signed(value:unknown,max:number){
@@ -91,21 +96,21 @@ export class JmapOperations {
   }
   if(name==='HailMailbox/view'){
    scope(s,'messages:read');const m=need(d.messaging),view=required(a,'view');
-   const fields:Record<string,string[]>={inbox:['after'],inboxFeed:['after','channel','trash'],read:['sender','messageId'],sent:['after'],sentFeed:['after'],
-    sentSends:['after','trash'],sentSend:['kind','messageId','trash'],sentMessage:['messageId'],threads:['sender','messageId'],connectionInbox:['after'],connectionThread:['sender','messageId','offset'],
+   const fields:Record<string,string[]>={inbox:['after'],inboxFeed:['after','channel','trash','images'],read:['sender','messageId','images'],sent:['after'],sentFeed:['after'],
+    sentSends:['after','trash'],sentSend:['kind','messageId','trash'],sentMessage:['messageId','images'],threads:['sender','messageId'],connectionInbox:['after'],connectionThread:['sender','messageId','offset'],
     unreadCounts:[],conversations:['peer','after','trash'],settings:[],connectionAddress:['peer']};
    if(!fields[view])throw new JmapError('invalidArguments');argumentsOnly(a,['view',...fields[view]!]);
    const after=optional(a,'after'),trash=bool(a,'trash');
    if(view==='settings'||view==='inboxFeed'&&trash)browser(s);
    switch(view){
     case 'inbox':return m.inbox(s,after);
-    case 'inboxFeed':{const channel=a.channel??'all';if(typeof channel!=='string'||!['all','subscriptions','connections'].includes(channel))throw new JmapError('invalidArguments');return m.inboxFeed(s,after,channel as 'all'|'subscriptions'|'connections',trash);}
-    case 'read':return found(await m.read(s,required(a,'sender',DID),required(a,'messageId',ID)));
+    case 'inboxFeed':{const channel=a.channel??'all';if(typeof channel!=='string'||!['all','subscriptions','connections'].includes(channel))throw new JmapError('invalidArguments');const page=await m.inboxFeed(s,after,channel as 'all'|'subscriptions'|'connections',trash);return {...page,messages:page.messages.map(message=>images(a,message))};}
+    case 'read':return images(a,found(await m.read(s,required(a,'sender',DID),required(a,'messageId',ID))));
     case 'sent':return m.sent(s,after);
     case 'sentFeed':return m.sentFeed(s,after);
     case 'sentSends':return m.sentSends(s,after,undefined,trash);
     case 'sentSend':return found((await m.sentSends(s,null,{kind:required(a,'kind'),id:required(a,'messageId',ID)},trash)).messages[0]);
-    case 'sentMessage':return found(await m.sentMessage(s,required(a,'messageId',ID)));
+    case 'sentMessage':return images(a,found(await m.sentMessage(s,required(a,'messageId',ID))));
     case 'threads':return found(await m.thread(s,required(a,'sender',DID),required(a,'messageId',ID)));
     case 'connectionInbox':return m.connectionInbox(s,after);
     case 'connectionThread':return found(await m.connectionThread(s,required(a,'sender',DID),required(a,'messageId',ID),optional(a,'offset')));

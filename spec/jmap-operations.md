@@ -29,13 +29,13 @@ methods for synchronization. Reads do not mark messages read.
 | `view` | Selection arguments | Result |
 | --- | --- | --- |
 | `inbox` | `after?` | Delivered-message inventory and `next` |
-| `inboxFeed` | `after?`, `channel?` (`all`, `subscriptions`, `connections`; default `all`), `trash?` (default false) | Received presentation messages with decoded body, relationship/reply context and `next` |
-| `read` | `sender`, `messageId` | One received presentation message; missing/unauthorized copy is `notFound` |
+| `inboxFeed` | `after?`, `channel?` (`all`, `subscriptions`, `connections`; default `all`), `trash?` (default false), `images?` | Received presentation messages with decoded body, relationship/reply context and `next` |
+| `read` | `sender`, `messageId`, `images?` | One received presentation message; missing/unauthorized copy is `notFound` |
 | `sent` | `after?` | Per-envelope Sent inventory and `next` |
 | `sentFeed` | `after?` | Per-envelope Sent presentation records and `next` |
 | `sentSends` | `after?`, `trash?` | Logical Sent groups, preserving one item per publication/batch; `next` |
 | `sentSend` | `kind` (`category`, `connections`, `message`), `messageId`, `trash?` | One logical Sent item; connection group detail includes original recipients |
-| `sentMessage` | `messageId` | One retained per-envelope Sent message |
+| `sentMessage` | `messageId`, `images?` | One retained per-envelope Sent message |
 | `threads` | `sender`, `messageId` | Existing private-thread projection rooted at that message |
 | `connectionInbox` | `after?` | Connection conversation summaries and `next` |
 | `connectionThread` | `sender`, `messageId`, `offset?` | Connection/shared-thread presentation and continuation |
@@ -43,6 +43,15 @@ methods for synchronization. Reads do not mark messages read.
 | `conversations` | `peer?`, `after?`, `trash?` | Peer inventory when peer absent; peer messages when present; `trash` is only valid for the inventory |
 | `settings` | none | Trash/display preferences |
 | `connectionAddress` | `peer` | Authenticated account's retained address for that connection peer |
+
+`images` is `inline` (default) or `reference`. With `reference`, each bundled
+`header`/`image` asset in a returned body omits `data` and keeps its validated
+`digest` (`{algorithm: "sha-256", value}`); other assets are unchanged. The client
+then fetches each image's bytes separately with
+`GET /api/v1/account/images/{sender}/{messageId}/{digest-value}` (see
+[attachments](attachments.md#message-images)), so presentation data stays small
+and images can load and be cached independently. Any other value is
+`invalidArguments`.
 
 `inboxFeed` with `trash:true` and `settings` additionally require a browser
 session, preserving their existing policy. Bodies and decoded projections remain

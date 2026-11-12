@@ -119,6 +119,16 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
           'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(found.file.filename).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}`,
           'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Cache-Control':'private, no-store'}});
       }
+      if(action==='message-image'){
+        if(!session.scopes.includes('messages:read'))return problem(403,'MISSING_SCOPE');
+        if(!messaging)return problem(503);
+        if(query.size)return problem(400);
+        if(context.req.method!=='GET')return problem(405);
+        const found=await messaging.image(session,context.req.param('sender')!,context.req.param('messageId')!,context.req.param('digest')!);
+        if(!found)return problem(404);
+        return new Response(Uint8Array.from(found.bytes),{headers:{'Content-Type':found.mediaType,'Content-Length':String(found.bytes.length),
+          'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Cache-Control':'private, no-store'}});
+      }
       if (query.size && action !== "credential") return problem(400);
       const method = context.req.method;
       if(action==="sender-avatar"||action==="sender-avatar-image"){
@@ -331,5 +341,6 @@ export function registerAccountApiRoutes(app: Hono, accounts: AccountApiReposito
   app.all("/api/v1/account/senders/:sender/avatar",context=>handle(context,context.req.param("sender"),"sender-avatar"));
   app.all("/api/v1/account/senders/:sender/profile",context=>handle(context,context.req.param("sender"),"sender-profile"));
   app.all('/api/v1/account/attachments/:sender/:messageId/:digest',context=>handle(context,null,'attachment-download'));
+  app.all('/api/v1/account/images/:sender/:messageId/:digest',context=>handle(context,null,'message-image'));
   app.all("/api/v1/account/credentials", context => handle(context,null,"credential"));
 }

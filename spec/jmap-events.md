@@ -64,7 +64,10 @@ extend session idle time. A change racing a check may precede termination; no
 post-revocation data lookup is authorized by an old stream session alone.
 
 Reference-provider policy: at most two streams per account and 64 per process,
-separate from the ordinary four-request account limit; excess returns 429. Streams
+separate from the ordinary four-request account limit. A new stream for an account
+already holding two closes that account's oldest stream instead of being refused
+(an intermediary may keep a stream the client abandoned open until its lifetime
+ends); exceeding the process limit returns 429. Streams
 have a five-minute lifetime, read states every two seconds while waiting, and use
 backpressure rather than accumulating unbounded event queues. Disconnects and
 cancellation release stream slots. No persistent database connection or lock is

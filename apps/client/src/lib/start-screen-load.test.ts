@@ -24,7 +24,7 @@ it('opens Inbox at home and preserves other query parameters',async()=>{
 it.each(['subscriptions','connections'])('honors explicit %s navigation and pagination',async(view)=>{
   expect(await home(`/?view=${view}&after=cursor`)).toMatchObject({view,paged:true});
   expect(fixture.request).not.toHaveBeenCalledWith('HailMailbox/view',{view:'settings'});
-  expect(fixture.request.mock.calls[0]).toEqual(['HailMailbox/view',view==='connections'?{view:'connectionInbox',after:'cursor'}:{view:'inboxFeed',channel:'subscriptions',after:'cursor'},2_000_000]);
+  expect(fixture.request.mock.calls[0]).toEqual(['HailMailbox/view',view==='connections'?{view:'connectionInbox',after:'cursor'}:{view:'inboxFeed',channel:'subscriptions',images:'reference',after:'cursor'},2_000_000]);
 });
 it('keeps anonymous home and explicit sign-in return paths unchanged',async()=>{
   fixture.configured=false;

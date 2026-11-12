@@ -2,7 +2,7 @@ import {parseThread} from "$lib/threads.js";
 import { canaryAccount, senderAvatars } from "$lib/server/canary.js";
 import {senderSubscription} from "$lib/server/subscription.js";
 import { messageId } from "$lib/server/message-id.js";
-import { parseMessage } from "$lib/messages.js";
+import { messageImageSource, parseMessage } from "$lib/messages.js";
 import { error,isRedirect,redirect } from "@sveltejs/kit";
 import {AccountApiError} from "@racrproto/client-support/account-api";
 
@@ -13,13 +13,14 @@ export async function load({ params,cookies,url }: import("@sveltejs/kit").Reque
   // sender's first page of subscriptions, instead of one round trip each. The
   // thread and subscription are optional: their failures leave the message readable.
   const [result, threadResult, grants] = await client.jmapBatch([
-    ["HailMailbox/view",{view:"read",sender:params.sender,messageId:params.messageId}],
+    ["HailMailbox/view",{view:"read",sender:params.sender,messageId:params.messageId,images:"reference"}],
     ["HailMailbox/view",{view:"threads",sender:params.sender,messageId:params.messageId}],
     ...(managed ? [["HailGrant/list",{sender:params.sender}] as [string, Record<string, string>]] : []),
   ]);
   if (result instanceof AccountApiError) throw result;
   try {
-    const message=parseMessage(result!);
+    // Images arrive as references and load (and cache) separately from this data.
+    const message=parseMessage(result!,messageImageSource(params.sender!,params.messageId!));
     // The batched lookups were keyed by the requested identity; use them only for that message.
     const requested = message.sender === params.sender && message.messageId === params.messageId;
     if(message.sharedConversation&&!message.trashedAt)redirect(303,`/conversation/${encodeURIComponent(message.sender)}/${message.messageId}`);

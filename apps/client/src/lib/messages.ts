@@ -1,4 +1,4 @@
-import {renderBody, type MessageBlock, type MessageImage} from '@racrproto/content-builder/rendering';
+import {renderBody, type ImageSource, type MessageBlock, type MessageImage} from '@racrproto/content-builder/rendering';
 export {groupMessageBlocks,forwardedAttribution,type MessageBlock,type MessageBlockGroup,type MessageImage,type MessageSpan,type MessageLink} from '@racrproto/content-builder/rendering';
 import {parseAttachments} from '@racrproto/client-support/attachments';
 type JsonObject = Record<string, unknown>;
@@ -112,12 +112,13 @@ export function messageListSummary(message: Pick<MessageView,"blocks"|"paragraph
   return {title, preview: messagePreview({paragraphs: title ? message.paragraphs.slice(1) : message.paragraphs})};
 }
 
-export function parseBody(value:unknown) {
+export function parseBody(value:unknown,imageSource?:ImageSource) {
   const body=object(value,'body');
-  return {...renderBody(body),...(body.attachments===undefined?{}:{attachments:parseAttachments(body.attachments)})};
+  return {...renderBody(body,imageSource),...(body.attachments===undefined?{}:{attachments:parseAttachments(body.attachments)})};
 }
 
-export function parseMessage(value: unknown): MessageView {
+/** imageSource: URL for each image a view returned as a reference (`images: "reference"`). */
+export function parseMessage(value: unknown, imageSource?: ImageSource): MessageView {
   const message = object(value, "message");
   const body = object(message.body, "message body");
   let replyUntil:number|null=null;
@@ -131,7 +132,7 @@ export function parseMessage(value: unknown): MessageView {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(parent.messageId))throw new Error("Invalid reply parent");
     inReplyTo={sender:parent.sender,messageId:parent.messageId};
   }
-  const content=parseBody(body),relayed=relayedOrigin(body);
+  const content=parseBody(body,imageSource),relayed=relayedOrigin(body);
   let conversation:MessageView["conversation"];
   if(message.conversation!==undefined){
     const c=object(message.conversation,"conversation summary");
@@ -195,10 +196,10 @@ export interface SentMessageView extends Omit<MessageView,"deliveredAt"> {
   retryAt:number|null;
 }
 
-export function parseSentMessage(value:unknown):SentMessageView {
+export function parseSentMessage(value:unknown,imageSource?:ImageSource):SentMessageView {
   const sent=object(value,"sent message"),createdAt=text(sent.createdAt,"creation time"),state=text(sent.state,"delivery state");
   const [status]=parseSent({messages:[sent]});
-  const message=parseMessage({...sent,deliveredAt:createdAt});
+  const message=parseMessage({...sent,deliveredAt:createdAt},imageSource);
   const {deliveredAt:_,...view}=message;
   return {...view,createdAt,recipientAddress:sent.recipientAddress===null||sent.recipientAddress===undefined?null:text(sent.recipientAddress,"recipient address"),
     state:state as SentItem["state"],revision:status!.revision,reason:status!.reason,retryAt:status!.retryAt};
@@ -209,16 +210,20 @@ function nextCursor(value:unknown):string|null {
   return text(value,"next cursor");
 }
 
-export function parseInboxFeed(value:unknown) {
+/** referencedImages: the view was asked for `images: "reference"`. */
+export function parseInboxFeed(value:unknown,referencedImages=false) {
   const page=object(value,"inbox feed");
   if(!Array.isArray(page.messages))throw new Error("Invalid inbox feed");
-  return {messages:page.messages.map(parseMessage),next:nextCursor(page.next)};
+  return {messages:page.messages.map(entry=>{
+    const item=object(entry,"inbox item");
+    return parseMessage(item,referencedImages?messageImageSource(text(item.sender,"sender"),text(item.messageId,"message ID")):undefined);
+  }),next:nextCursor(page.next)};
 }
 
 export function parseSentFeed(value:unknown) {
   const page=object(value,"sent feed");
   if(!Array.isArray(page.messages))throw new Error("Invalid sent feed");
-  return {messages:page.messages.map(parseSentMessage),next:nextCursor(page.next)};
+  return {messages:page.messages.map(message=>parseSentMessage(message)),next:nextCursor(page.next)};
 }
 
 export function parseSentSend(value:unknown) {
@@ -248,4 +253,9 @@ export function parseSentSends(value:unknown) {
   const page=object(value,"sent sends");
   if(!Array.isArray(page.messages))throw new Error("Invalid sent sends");
   return {messages:page.messages.map(parseSentSend),next:nextCursor(page.next)};
+}
+
+/** Cacheable same-origin URL for one image of a message (see routes/media/images). */
+export function messageImageSource(sender:string,messageId:string):ImageSource {
+  return ({digest})=>`/media/images/${encodeURIComponent(sender)}/${encodeURIComponent(messageId)}/${digest}`;
 }

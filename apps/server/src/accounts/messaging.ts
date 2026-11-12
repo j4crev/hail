@@ -5,7 +5,7 @@ import {conversations} from "./conversations.js";
 import {messageThread} from "./message-threads.js";
 import {sentSends} from "./sent-sends.js";
 import { createHash } from "node:crypto";
-import { decodePayload,encodePayload,encodeBase64Url,fromDiagnosticJson,inspectSignedPayload,toDiagnosticJson,type DiagnosticJson } from "@racrproto/codec";
+import { decodeBase64Url,decodePayload,encodePayload,encodeBase64Url,fromDiagnosticJson,inspectSignedPayload,toDiagnosticJson,type DiagnosticJson } from "@racrproto/codec";
 import type { SQL } from "bun";
 import { BODY_MAX_BYTES,bodyFromDocument,bodyFromText,validateBodyBytes } from "../bodies/service.js";
 import type { BodyRepository } from "../bodies/repository.js";
@@ -26,6 +26,30 @@ const PAGE_SIZE=5;
 export function messageParent(envelope:import("@racrproto/codec").HailEnvelope) {
   const parent=envelope.in_reply_to??(envelope.authorization.type==="reply"?{sender:envelope.to,message_id:envelope.authorization.reply_to}:null);
   return parent?{sender:parent.sender,messageId:parent.message_id}:null;
+}
+
+type BundledImage={role?:unknown;loading?:unknown;media_type?:unknown;data?:unknown;digest?:{algorithm?:unknown;value?:unknown};[key:string]:unknown};
+// Bundled header/image assets of a decoded body. Ingest validated each asset's
+// SHA-256 `digest` against its bytes, so the digest identifies the image.
+const bundledImages=(body:unknown):BundledImage[]=>{
+  const manifest=(body as {assets?:{assets?:unknown}})?.assets?.assets;
+  return Array.isArray(manifest)?manifest.filter((asset):asset is BundledImage=>!!asset&&typeof asset==='object'&&
+    ['header','image'].includes((asset as BundledImage).role as string)&&(asset as BundledImage).loading==='bundled'&&typeof (asset as BundledImage).data==='string'&&
+    (asset as BundledImage).digest?.algorithm==='sha-256'&&typeof (asset as BundledImage).digest?.value==='string'):[];
+};
+/**
+ * Presentation form for clients that fetch message images separately: each bundled
+ * header/image asset omits `data` and keeps its SHA-256 `digest`, which selects it
+ * in {@link AccountMessaging.image}.
+ */
+export function referenceImages<T extends {body:unknown}>(message:T):T {
+  const images=new Set(bundledImages(message.body));
+  if(!images.size)return message;
+  const body=message.body as {assets:{assets:BundledImage[]}};
+  return {...message,body:{...body,assets:{...body.assets,assets:body.assets.assets.map(asset=>{
+    if(!images.has(asset))return asset;
+    const {data:_data,...rest}=asset;return rest;
+  })}}};
 }
 
 export function bodyDocument(bytes:Uint8Array) {
@@ -68,6 +92,16 @@ export class AccountMessaging {
     // The message lookup is the authorization boundary, including Trash retention.
     const payload=fromDiagnosticJson(`hail.body.${body.profile}` as 'hail.body.spt-1',message.body);
     return this.attachments.download(encodePayload(`hail.body.${body.profile}` as 'hail.body.spt-1',payload),digest,index);
+  }
+  /** One bundled header/image asset of a visible message, selected by content digest. */
+  async image(session:AccountApiSession,sender:string,id:string,digest:string){
+    if(!/^[A-Za-z0-9_-]{43}$/.test(digest))return null;
+    const message=sender===session.did?await this.sentMessage(session,id):await this.read(session,sender,id);
+    if(!message)return null;
+    // The message lookup is the authorization boundary, including Trash retention.
+    const asset=bundledImages(message.body).find(asset=>asset.digest!.value===digest);
+    if(!asset||!['image/png','image/jpeg'].includes(asset.media_type as string))return null;
+    return {mediaType:asset.media_type as 'image/png'|'image/jpeg',bytes:decodeBase64Url(asset.data as string)};
   }
   async submit(sender:string,id:string){
     try{return await this.submitEnvelope(sender,id);}catch(error){if(error instanceof EnvelopeAuthorizationError)throw new UserGrantError(409,error.message);throw error;}
