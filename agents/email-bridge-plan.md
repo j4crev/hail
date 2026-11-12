@@ -125,7 +125,7 @@ appears as one sender named "Email bridge".
 
 The same field would serve an RSS bridge later. It is defined once, generically.
 
-### D4. Body and image limits (measured 2026-11-11; **confirm** the recommendation)
+### D4. Body and image limits (measured and decided 2026-11-11)
 
 Measured on 83 real messages from 74 sender domains, with every remote image
 downloaded: 477 real images, plus 94 tracking pixels that were dropped.
@@ -152,10 +152,10 @@ How much each candidate rule set would bundle (the rest become links):
 | The same plus static GIF | 82% | 68% |
 | 32 images, 1 MiB each, 4 MiB body | 82% | 70% |
 
-**Recommendation:** admit JPEG, raise image blocks from 8 to 24, and raise the
-per-image size from 192 KiB to 512 KiB. Leave everything else alone:
+**Decision, implemented:** admit JPEG, raise image blocks from 8 to 24, and
+raise the per-image size from 192 KiB to 512 KiB. Everything else is unchanged:
 
-| Limit | Current | Recommended |
+| Limit | Before | Now |
 | --- | ---: | ---: |
 | Image formats | PNG | PNG, JPEG |
 | Image blocks per body | 8 | 24 |
@@ -192,12 +192,46 @@ Two rule changes considered here turned out not to need the protocol
 - **Linked images.** Image blocks still carry no destination. The bridge
   follows a linked image with a caption block linking to that destination.
 
-The same limits and the PNG-only rule are currently repeated in about ten
-places: both codecs, the renderer, the builder core and editor, the composer
-and the draft form. Changing them is one coordinated edit, so it waits for the
-measured numbers rather than being done twice. Exporting the limits from the
-codec as constants first would make that edit, and any later one, a single
-change.
+The limits now live in one place: the TypeScript codec exports
+`BUNDLED_IMAGE_LIMITS`, which the renderer and the bridge read, and the Go
+codec has matching constants.
+
+**Authoring is widened to match (decided 2026-11-11).** Organizations moving
+their newsletters to Hail should be able to compose what the bridge can
+deliver. The content builder and the simple composer's cover image now accept
+PNG or JPEG up to 512 KiB, and the builder up to 24 images.
+
+That required raising what a draft can hold, because drafts store images inline
+as base64url and a body at the 1 MiB ceiling is about 1.4 million JSON bytes:
+
+| Limit | Before | Now |
+| --- | ---: | ---: |
+| Builder body, as JSON | 360,000 bytes | 1,450,000 bytes |
+| Stored draft content (migration 121) | 400,000 bytes | 1,500,000 bytes |
+| One `HailDraft/get` response | 2 MiB | 6 MiB (still four maximum drafts) |
+| Simple-compose cover image in a draft | 192 KiB PNG | 512 KiB PNG or JPEG |
+
+The draft schema is part of both account-transfer formats, so the generated
+transfer schema changed in those draft fields. No format version changed, in
+line with the pre-launch policy. Consequences to keep in view:
+
+- A transfer snapshot is capped at 64 MiB with no pagination. Larger drafts mean
+  fewer of them fit before an export fails closed. Nothing limits how many
+  drafts or how many draft bytes an account holds.
+- The draft list still loads every draft's full content, four at a time.
+
+A fault surfaced while doing this: the codec's JSON input path measured a body's
+base64 text against the 1 MiB byte limit, so it rejected any body holding more
+than about 780 KiB of images even though the binary path accepted it. That path
+serves composing, forwarding and drafts. It now bounds the JSON form by its
+inflated size and applies the real limits after conversion.
+
+**Checked end to end** against the corpus with real downloads: all 83 messages
+assemble into codec-valid bodies, 82% of their images are bundled, the largest
+body is 838 KiB, and all 47 real JPEGs pass the structural validator. Two
+findings for the real fetcher: sending a browser-style `User-Agent` cut refused
+requests from 24 to 6, and the `Accept` header must ask for PNG and JPEG only,
+because many image hosts otherwise answer with WebP.
 
 ### D5. GIF (**confirm**)
 
@@ -287,18 +321,26 @@ user: Feed item, labelled as bridged email from <newsletter>
   forwarding drops it and records the email sender as provenance text.
 - [ ] Mention `origin` in the Internet-Draft body section when that section is
   next revised for the new limits.
-- [ ] Specify the new image formats, limits, alt-text marker and image-link rule
-  in [bodies](../spec/bodies.md) and [assets](../spec/assets.md).
-- [ ] Update the compressed-transfer ceiling in [bodies](../spec/bodies.md) and
-  [HTTP binding](../spec/http-binding.md), and CBOR budgets in
-  [encoding](../spec/encoding.md) if the larger body exceeds them.
-- [ ] Update `spec/hail.cddl`, the version inventory in `spec/README.md`, and the
-  Internet-Draft source if its body section states the old limits.
-- [ ] Implement in `packages/hail-codec-ts` and `packages/hail-codec-go`.
-- [ ] Add positive and negative vectors: each format, each limit boundary,
-  `origin` present/absent/malformed.
-- [ ] Update `packages/hail-content-builder` rendering and its compatibility
-  inventory so the composer and reader accept the new content.
+- [x] Specify JPEG and the new limits in [bodies](../spec/bodies.md) and
+  [assets](../spec/assets.md). No alt-text marker or image-link rule was needed.
+- [x] The body ceiling, compressed-transfer ceiling and CBOR budgets are
+  unchanged, so the HTTP binding and encoding specifications need no edit.
+- [x] Update `spec/hail.cddl` and the version inventory in `spec/README.md`.
+- [x] Implement in `packages/hail-codec-ts` and `packages/hail-codec-go`,
+  including a JPEG structure validator in each. The server's attachment check
+  now delegates to the codec's.
+- [x] Add vectors: a JPEG body, a full 24-image body, wrong-format bytes,
+  truncated JPEG, dimension mismatch, unsupported type, 25 image blocks and a
+  JPEG avatar. The per-image byte limit is covered by unit tests rather than a
+  vector, which would be over a megabyte of hex.
+- [x] Update the renderer in `packages/hail-content-builder` to accept the new
+  content.
+- [ ] Revise the Internet-Draft. It is pinned to specification snapshot
+  `7f05efc` and still correctly describes that snapshot; the next revision must
+  re-pin and carry the new limits, JPEG and `origin` together.
+- [x] Widen authoring (builder, composer, drafts) to match; see D4.
+- [ ] Decide on a per-account limit for draft count or draft bytes, given the
+  64 MiB transfer snapshot.
 - [ ] Record the email bridge in `spec/` as reference-provider policy, replacing
   "No interoperable bridge profile" with an accurate description.
 
@@ -352,8 +394,9 @@ limits and new formats become a change to that one object.
 - [ ] Tests for slow, redirecting and private-address image URLs against that
   fetcher.
 - [ ] Bound total fetch time per message.
-- [ ] Admit JPEG and WebP once the profile does, moving their structural
-  validators from `apps/server/src/bodies/image-attachments.ts` into the codec.
+- [x] Admit JPEG, validated by the codec.
+- [ ] The fetcher must send a browser-style `User-Agent` and an `Accept` header
+  naming only PNG and JPEG (see D4).
 
 ### Phase 4: aliases and intake
 
