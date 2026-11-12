@@ -1,4 +1,5 @@
 import {withAccountReads} from "$lib/server/account-reads.js";
+import {withClientAddress} from "$lib/server/client-address.js";
 import type { Handle } from "@sveltejs/kit";
 import {isAccountPath,loginPath} from "$lib/auth-routing.js";
 import {PROVIDER,isConfigured} from "$lib/server/canary.js";
@@ -12,7 +13,7 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
   if ((isAccountPath(event.url.pathname) || connectionInbox) && !isConfigured(event.cookies)) {
     return new Response(null,{status:303,headers:{location:loginPath(event.url),"cache-control":"no-store","referrer-policy":"no-referrer"}});
   }
-  const response = await (event.request.method === "GET" ? withAccountReads(() => resolve(event)) : resolve(event));
+  const response = await withClientAddress(event.request, () => event.request.method === "GET" ? withAccountReads(() => resolve(event)) : resolve(event));
   const ingestOrigin=sentryOrigin(publicEnv.PUBLIC_SENTRY_DSN);
   const initialCsp=response.headers.get('content-security-policy');
   if(initialCsp&&PROVIDER){

@@ -5,6 +5,7 @@ import {load as sentSend} from '$lib/server/mailbox/sent-send.js';
 import {canaryAccount} from '$lib/server/canary.js';
 import {mailboxScope} from '$lib/server/mailbox-scope.js';
 import {error, isRedirect, json} from '@sveltejs/kit';
+import {providerBusy} from '$lib/server/provider-busy.js';
 import {load as feed} from '$lib/server/mailbox/feed.js';
 import {load as sent} from '$lib/server/mailbox/sent.js';
 import {load as trash} from '$lib/server/mailbox/trash.js';
@@ -35,6 +36,9 @@ export const GET: import('./$types').RequestHandler = async event => {
   } catch (cause) {
     // Do not follow redirects as JSON, especially expired-session redirects.
     if (isRedirect(cause)) return json({redirect:cause.location,status:cause.status}, {headers:{'cache-control':'no-store'}});
+    // A busy or rate-limited provider is temporary: say when to retry instead of failing as a 500.
+    const retryAfter = providerBusy(cause);
+    if (retryAfter !== null) return json({message:'Your provider is busy. Please try again shortly.'}, {status:503, headers:{'cache-control':'no-store','retry-after':String(retryAfter)}});
     throw cause;
   }
 };

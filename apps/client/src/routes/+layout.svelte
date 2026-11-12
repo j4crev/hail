@@ -27,7 +27,7 @@
   $effect(()=>{if(!page.data.hasAccountSession)eventClient?.stop();});
   onMount(() => {
     const sync=new MailboxSync();
-    let pending=false,lastRefresh=0,queued=false,disposed=false,hintTimer:ReturnType<typeof setTimeout>|undefined;
+    let pending=false,lastRefresh=0,queued=false,disposed=false,baseline=true,hintTimer:ReturnType<typeof setTimeout>|undefined;
     const eligible=()=>page.data.hasAccountSession&&document.visibilityState==='visible';
     const hint=()=>{queued=true;if(hintTimer===undefined)hintTimer=setTimeout(()=>{hintTimer=undefined;void refresh(true).catch(()=>{});},Math.max(1000,10_000-(Date.now()-lastRefresh)));};
     const events=new MailboxEvents(hint);eventClient=events;
@@ -36,9 +36,13 @@
       if(pending||!force&&Date.now()-lastRefresh<10_000)return;
       pending=true;queued=false;lastRefresh=Date.now();
       try{
-        if(await sync.poll())window.dispatchEvent(new Event('hail:mailbox-changed'));
+        // The first poll only records where this freshly loaded page stands. Later
+        // polls reload counts, Aliases availability and mailbox pages only when
+        // something changed, so an idle tab costs the provider one cheap check.
+        const changed=await sync.poll()&&!baseline;baseline=false;
+        if(changed)window.dispatchEvent(new Event('hail:mailbox-changed'));
         if(!disposed&&eligible()&&sync.eventsSupported)events.start();else events.stop();
-        await invalidate('hail:counts');
+        if(changed)await invalidate('hail:counts');
       }finally{pending=false;if(queued&&!disposed)hint();}
     };
     const update=()=>{if(!eligible())events.stop();void refresh().catch(()=>{});};

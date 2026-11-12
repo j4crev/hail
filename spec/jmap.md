@@ -65,7 +65,12 @@ when its visible properties change. Core limits are:
 | collationAlgorithms | [] |
 
 The reference provider additionally allows 32 concurrent requests globally and
-120 requests per minute per source address. A request body has a 10-second read
+120 requests per minute per source address. A request refused by a concurrency
+limit returns 429 with no `Retry-After` before any method runs, so a client may
+repeat it after a short delay; the per-address limit returns 429 with
+`Retry-After`. A trusted web client making requests for a browser forwards that
+browser's address in `X-Hail-Trusted-Client-IP` on its private transport, so the
+per-address limit applies to each browser rather than to the web client server. A request body has a 10-second read
 budget; binary uploads have a 60-second read budget. Responses are private
 (`Cache-Control: no-store`). Uploaded bytes have a 100 MiB account quota and a
 24-hour lifetime. These are reference-provider storage policies. The [events URL](jmap-events.md) provides authenticated state-change streams.
