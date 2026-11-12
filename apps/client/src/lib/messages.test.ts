@@ -149,3 +149,15 @@ it('parses shared permission independently from a direct connection and rejects 
   expect(()=>parseMessage({...source,sharedConversation:{...shared,participants:[did('a'),did('b'),did('b')]}})).toThrow('Invalid shared conversation');
   expect(parseMessage({...source,sharedConversation:{...shared,state:'left'}}).sharedConversation?.state).toBe('left');
 });
+
+it('reads a relayed email origin and rejects malformed ones',async()=>{
+  const {relayedOrigin}=await import('./messages.js');
+  expect(relayedOrigin({})).toBeNull();
+  expect(relayedOrigin({origin:{type:'email',from_address:'editors@fieldnotes.example',from_name:'Field Notes',authentication:'dkim-aligned',received_at:1}}))
+    .toEqual({fromAddress:'editors@fieldnotes.example',fromName:'Field Notes',authenticated:true});
+  expect(relayedOrigin({origin:{type:'email',from_address:'news@sender.example',authentication:'none',received_at:1}}))
+    .toEqual({fromAddress:'news@sender.example',fromName:null,authenticated:false});
+  for(const origin of [null,{type:'rss',from_address:'a@b.example',authentication:'none'},{type:'email',from_address:'not an address',authentication:'none'},
+    {type:'email',from_address:'a@b.example',authentication:'pass'},{type:'email',from_address:'a@b.example',from_name:'  ',authentication:'none'}])
+    expect(()=>relayedOrigin({origin})).toThrow();
+});

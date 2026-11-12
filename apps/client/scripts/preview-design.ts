@@ -33,6 +33,8 @@ const senders = [
   {did:'did:plc:'+'c'.repeat(24),address:'essays@quietinternet.example.com'},
   {did:'did:plc:'+'d'.repeat(24),address:'studio@north.example.com'},
   {did:'did:plc:'+'e'.repeat(24),address:'alex@connections.example.com'},
+  // The provider's email bridge; its messages state the email they relay.
+  {did:'did:plc:'+'f'.repeat(24),address:'email@mail.example.test'},
 ];
 const connectionId = uuidV7();
 const messages = [
@@ -41,9 +43,12 @@ const messages = [
   {sender:senders[2], title:'A new chapter in the studio',text:'Sketches, experiments, and a first look at what we are making next.\n\nWe have spent the last few weeks exploring a new collection. Here is a little of the thinking behind it.',hours:24,read:true},
   {sender:senders[3], title:'Saturday at the market?',text:'Would you like to meet around ten? There is a new coffee stand I think you would like.',hours:2,connection:true},
   {sender:senders[3], title:'The photos turned out beautifully',text:'Thanks again for sending them over. That last one is my favorite.',hours:40,connection:true,read:true},
-].map(m => ({messageId:uuidV7(),sender:m.sender.did,senderAddress:m.sender.address,recipient:did,category:m.connection?null:'general',
-  kind:m.connection?'connection':'subscription',isRead:!!m.read,deliveredAt:date(m.hours),body:body(m.title,m.text,!!m.image),
-  ...(m.connection?{connection:{id:connectionId,epoch:1,active:true}}:{reply:{allowed:true,until:Math.floor(started/1000)+6*86400},replyAvailable:true})}));
+  // Last, so the indexes other fixtures use for connection messages are unchanged.
+  {sender:senders[4], title:'Issue 12: Café culture',text:'Welcome back. This week we visit three very different cafés, and one roastery.\n\nRead the full issue on our site.',hours:3,
+    origin:{type:'email',from_address:'editors@fieldnotes.example',from_name:'Field Notes',authentication:'dkim-aligned',received_at:Math.floor(started/1000)-10800}},
+].map(m => ({messageId:uuidV7(),sender:m.sender.did,senderAddress:m.sender.address,recipient:did,category:m.connection?null:'origin' in m?'email':'general',
+  kind:m.connection?'connection':'subscription',isRead:!!m.read,deliveredAt:date(m.hours),body:{...body(m.title,m.text,!!m.image),...('origin' in m?{origin:m.origin}:{})},
+  ...(m.connection?{connection:{id:connectionId,epoch:1,active:true}}:'origin' in m?{reply:{allowed:false},replyAvailable:false}:{reply:{allowed:true,until:Math.floor(started/1000)+6*86400},replyAvailable:true})}));
 // A second incoming reply makes the unread-count preview observable.
 const firstConnection=messages[3];
 const secondConnection={...firstConnection,messageId:uuidV7(),deliveredAt:date(1),body:body('Saturday at the market?','There is also a new bakery next door. We could stop there afterward.'),isRead:false};

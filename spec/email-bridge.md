@@ -213,6 +213,15 @@ approval; turning it off revokes that Grant. It therefore also appears, and can
 be revoked, under Subscriptions. While it is off, intake refuses every alias of
 the account, and existing aliases are kept.
 
+## Reference web client
+
+Following the reader requirements for a [relayed origin](bodies.md#relayed-origin),
+Feed, Trash and message views name the email sender, labelled "via email", and
+the message view names the bridge account as the Hail sender that relayed it
+and says whether the sender's domain signed the email. Reply is not offered.
+Unsubscribe is not offered either: it would revoke the Grant to the bridge and
+turn inbound email off for every alias; the view links to Aliases instead.
+
 ## Operator setup
 
 1. Create an ordinary local account for the bridge, give it a Sender Profile
@@ -233,8 +242,8 @@ through the same sender approval as any other publisher.
 ## Open items
 
 - Retention period for the content-free intake record, and for `dead` records.
-- Showing bridged messages in the Feed with the email sender and a relayed
-  label, without Reply.
+- Telling which alias a delivered message arrived through, so a message view
+  can offer to delete that alias.
 - A storage ceiling for delivered bridged content. Current storage accounting
   measures usage and does not limit it.
 - Whether aliases can continue after a provider transfer; see plan decision D8.

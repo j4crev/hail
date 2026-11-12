@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MessageSender from "$lib/MessageSender.svelte";
   import {mailboxView} from "$lib/mailbox-view.svelte.js";
   import MailboxRefresh from "$lib/MailboxRefresh.svelte";
   import {page} from "$app/state";
@@ -79,8 +80,8 @@
       {#each data.messages as message (message.sender+message.messageId)}
         <MessageListRow unreadCount={message.conversation?.unreadCount} inline={data.view === "connections"} imageLayout={data.view === "connections" ? "thumbnail" : "feature"} isRead={message.isRead} timestamp={message.deliveredAt} title={message.title} preview={message.preview} header={$showInboxHeaders ? message.header : null} selected={selected.includes(messageKey(message))}
           href={`/${data.view==='connections'?'conversation':'message'}/${encodeURIComponent(message.sender)}/${message.messageId}`}>
-          {#snippet leading()}<SelectionAvatar name={message.sender===data.account.did?'You':message.senderAddress??message.sender} avatar={message.avatar} selected={selected.includes(messageKey(message))} disabled={selectionLocked} label={`Select ${data.view==='connections'?'conversation with':'message from'} ${message.senderAddress??message.sender}, ${date(message.deliveredAt)}`} ontoggle={()=>toggle(message)} />{/snippet}
-          {#snippet sender()}{#if message.sender===data.account.did}You{:else}<ContactAddress owner={data.account.did} did={message.sender} address={message.senderAddress} />{/if}{/snippet}
+          {#snippet leading()}<SelectionAvatar name={message.sender===data.account.did?'You':message.relayed?(message.relayed.fromName??message.relayed.fromAddress):message.senderAddress??message.sender} avatar={message.relayed?null:message.avatar} selected={selected.includes(messageKey(message))} disabled={selectionLocked} label={`Select ${data.view==='connections'?'conversation with':'message from'} ${message.senderAddress??message.sender}, ${date(message.deliveredAt)}`} ontoggle={()=>toggle(message)} />{/snippet}
+          {#snippet sender()}{#if message.sender===data.account.did}You{:else}<MessageSender owner={data.account.did} did={message.sender} address={message.senderAddress} relayed={message.relayed} />{/if}{/snippet}
         </MessageListRow>
       {/each}
     {/if}
