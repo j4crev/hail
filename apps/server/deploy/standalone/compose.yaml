@@ -36,6 +36,10 @@ services:
       PUBLIC_ALPHA_SIGNUP: ${PUBLIC_ALPHA_SIGNUP:-false}
       ALPHA_SIGNUP_INVITE_KEY: ${ALPHA_SIGNUP_INVITE_KEY:-}
       ALPHA_SIGNUP_MONITOR_ORIGIN: ${ALPHA_SIGNUP_MONITOR_ORIGIN:-}
+      EMAIL_BRIDGE_DOMAIN: ${EMAIL_BRIDGE_DOMAIN:-}
+      EMAIL_BRIDGE_INTAKE_TOKEN: ${EMAIL_BRIDGE_INTAKE_TOKEN:-}
+      EMAIL_BRIDGE_SENDER: ${EMAIL_BRIDGE_SENDER:-}
+      EMAIL_BRIDGE_CATEGORY: ${EMAIL_BRIDGE_CATEGORY:-}
     depends_on:
       db:
         condition: service_healthy
@@ -46,6 +50,30 @@ services:
       retries: 12
       start_period: 20s
     networks: [edge, storage]
+
+  # Optional: the inbound email bridge's converter (spec/email-bridge.md). It
+  # parses untrusted mail and fetches image URLs, so it runs from the same image
+  # but apart from the provider: no keys, a database role limited to the intake
+  # queue, and its own outbound network. Start it with `--profile email-bridge`.
+  email-converter:
+    profiles: [email-bridge]
+    image: ${HAIL_PROVIDER_IMAGE:?set a verified provider image digest}
+    command: [bun, src/cli/email-bridge-converter.ts]
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 64
+    environment:
+      NODE_ENV: production
+      EMAIL_BRIDGE_CONVERTER_DATABASE_URL: postgresql://email_converter:${EMAIL_CONVERTER_DB_PASSWORD:-}@db:5432/hail
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [storage, bridge_egress]
 
   db:
     image: postgres:18.6-alpine
@@ -81,6 +109,8 @@ networks:
   edge:
   storage:
     internal: true
+  # Outbound only, for the email converter's image fetches and DKIM lookups.
+  bridge_egress:
 volumes:
   provider_db:
   caddy_data:

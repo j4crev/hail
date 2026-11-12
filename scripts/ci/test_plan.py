@@ -31,7 +31,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected("packages/hail-content-builder/src/core.ts"), set(JOBS))
 
     def test_email_bridge_is_verified_with_shared_libraries(self):
-        self.assertEqual(self.selected("packages/hail-email-bridge/src/html.ts"), {"codec-ts"})
+        self.assertEqual(self.selected("packages/hail-email-bridge/src/html.ts"),
+                         {"codec-ts", "server", "database-server", "images"})
         self.assertEqual(self.selected("packages/hail-email-bridge/package.json"), set(JOBS))
 
     def test_go_is_independent(self):
