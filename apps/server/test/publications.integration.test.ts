@@ -1,5 +1,5 @@
 import {AccountDrafts} from '../src/accounts/drafts.js';
-import {validateBody,pngAsset,semantics} from '@racrproto/content-builder/core';
+import {validateBody,imageAsset,semantics} from '@racrproto/content-builder/core';
 import builderFixture from '../../../packages/hail-content-builder/fixtures/text.json';
 import {createHash,randomBytes,randomUUID} from "node:crypto";
 import {SQL} from "bun";
@@ -170,7 +170,7 @@ it.skipIf(!process.env.DATABASE_URL)("snapshots category audiences, resumes exac
     // The reusable builder's validated body goes through real draft CAS, acceptance,
     // deterministic body storage, signing and recipient-specific publication work.
     const richSession={...session,passkey_credential_id:'fixture'},drafts=new AccountDrafts(db.sql),richId=uuidV7();
-    const asset=await pngAsset(new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')));
+    const asset=await imageAsset(new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')));
     const richBody=validateBody({version:1,profile:'spt-3',assets:{version:1,assets:[asset]},blocks:[{_type:'spt.image',asset:asset.id,alt:'One pixel',caption:'Bundled header'},...builderFixture.blocks]});
     const richContent={audience:'category',category:'general',connections:[],title:'',text:'',alt:'',caption:'',header:null,forward:null,allowReply:false,builder:{version:1,body:richBody}};
     await drafts.mutate(richSession,richId,'save',{revision:0,content:richContent});

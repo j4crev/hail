@@ -12,7 +12,7 @@ This is not RFC 8621 Email draft compatibility.
 ## Capability and authority
 
 `https://racrproto.com/ns/jmap/drafts` has Session capability
-`{version:1,mutableProperties:['content','isInTrash'],canCreate:true,canDestroy:true,maxGetBytes:2097152}`. It appears in the account's
+`{version:1,mutableProperties:['content','isInTrash'],canCreate:true,canDestroy:true,maxGetBytes:6291456}`. It appears in the account's
 accountCapabilities with `readOnly` reflecting message mutation authority and in primaryAccounts only when the
 caller has `messages:read` and a current passkey session. Ordinary scoped API
 credentials MUST NOT gain access to editable draft content by selecting JMAP.
@@ -59,7 +59,8 @@ Each method requires the Session accountId and rejects unknown arguments.
   (null means all). Always return id; duplicate requested IDs produce one object.
   Unknown IDs go in notFound; unknown properties fail with invalidArguments.
   Returns `{accountId,state,list,notFound}`. A complete get response is capped at
-  2,097,152 UTF-8 bytes, independent of the 50-object limit. The provider checks
+  6,291,456 UTF-8 bytes, independent of the 50-object limit. That is four drafts
+  at the storage limit. The provider checks
   stored projected content size before loading it into application memory and
   verifies final response size. Exceeding either limit returns requestTooLarge;
   clients may request metadata only, then fetch content in smaller ID batches.
@@ -127,7 +128,8 @@ Create entries contain draftId (an unused UUIDv7 editor/publication identifier)
 and content. Existing drafts or accepted Sent IDs cannot be overwritten by create.
 Update entries accept whole content and/or isInTrash; nested content patches are
 not supported. Content must satisfy the existing editable-content contract and
-the 400,000-byte storage limit. Invalid objects produce per-object
+the 1,500,000-byte storage limit, sized to hold a body at the protocol's 1 MiB
+ceiling with its bundled images as base64url. Invalid objects produce per-object
 invalidProperties errors without applying their patches. Content cannot change
 while remaining in Trash. Restore and content replacement may be atomic.
 

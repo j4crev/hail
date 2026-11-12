@@ -1,12 +1,13 @@
 import {isDeepStrictEqual} from 'node:util';
-import {draftIdPattern,parseDraftContent} from '@racrproto/client-support/drafts';
+import {DRAFT_CONTENT_BYTES,draftIdPattern,parseDraftContent} from '@racrproto/client-support/drafts';
 import {lockMessageAccount} from '../accounts/message-read.js';
 import type {SQL} from 'bun';
 import type {AccountApiSession} from '../accounts/repository.js';
 import {JmapChangeLog} from './change-log.js';
 import {JmapError,MAX_OBJECTS,argumentsOnly,object,canMutateMessages} from './common.js';
 export const HAIL_DRAFTS='https://racrproto.com/ns/jmap/drafts';
-export const MAX_DRAFT_GET_BYTES=2_097_152;
+/** Four maximum-size drafts and their envelopes fit one get response. */
+export const MAX_DRAFT_GET_BYTES=6_291_456;
 export const canReadDrafts=(session:AccountApiSession)=>session.scopes.includes('messages:read')&&!!session.passkey_credential_id;
 const uuid=(id:unknown)=>typeof id==='string'&&/^d_[0-9a-f]{32}$/.test(id)?`${id.slice(2,10)}-${id.slice(10,14)}-${id.slice(14,18)}-${id.slice(18,22)}-${id.slice(22)}`:null;
 const integer=(v:unknown,min:number,max:number)=>Number.isSafeInteger(v)&&Number(v)>=min&&Number(v)<=max;
@@ -94,13 +95,13 @@ export class JmapDrafts {
       if(args.ifTrashEnabled!==undefined&&args.ifTrashEnabled!==trashEnabled)throw new JmapError('stateMismatch');
       const created:Record<string,unknown>=Object.create(null),updated:Record<string,unknown>=Object.create(null),
         notCreated:Record<string,unknown>=Object.create(null),notUpdated:Record<string,unknown>=Object.create(null),notDestroyed:Record<string,unknown>=Object.create(null),destroyed:string[]=[];
-      const validContent=(value:unknown)=>{try{parseDraftContent(value);return Buffer.byteLength(JSON.stringify(value))<=400000;}catch{return false;}};
+      const validContent=(value:unknown)=>{try{parseDraftContent(value);return Buffer.byteLength(JSON.stringify(value))<=DRAFT_CONTENT_BYTES;}catch{return false;}};
       for(const [key,value] of Object.entries(create)){
         const data=value as Record<string,unknown>;
         if(Object.keys(data).some(k=>!['draftId','content'].includes(k))||typeof data.draftId!=='string'||!draftIdPattern.test(data.draftId)||!validContent(data.content)){
           notCreated[key]={type:'invalidProperties',properties:['draftId','content']};continue;
         }
-        if(!(await tx`SELECT octet_length(${JSON.stringify(data.content)}::text::jsonb::text)<=400000 AS valid`)[0]?.valid){notCreated[key]={type:'invalidProperties',properties:['content']};continue;}
+        if(!(await tx`SELECT octet_length(${JSON.stringify(data.content)}::text::jsonb::text)<=${DRAFT_CONTENT_BYTES} AS valid`)[0]?.valid){notCreated[key]={type:'invalidProperties',properties:['content']};continue;}
         const exists=await tx`SELECT 1 FROM account_message_drafts WHERE account_id=${session.account_id} AND id=${data.draftId}::uuid
           UNION ALL SELECT 1 FROM account_sent_items WHERE account_id=${session.account_id} AND id=${data.draftId}::uuid`;
         if(exists.length){notCreated[key]={type:'invalidProperties',properties:['draftId']};continue;}
@@ -123,7 +124,7 @@ export class JmapDrafts {
         if(!row){notUpdated[id]={type:'notFound'};continue;}
         const patch=update[id] as Record<string,unknown>;
         const invalid=Object.keys(patch).filter(k=>k==='content'?!validContent(patch[k]):k==='isInTrash'?typeof patch[k]!=='boolean':true);
-        if(Object.hasOwn(patch,'content')&&!invalid.includes('content')&&!(await tx`SELECT octet_length(${JSON.stringify(patch.content)}::text::jsonb::text)<=400000 AS valid`)[0]?.valid)invalid.push('content');
+        if(Object.hasOwn(patch,'content')&&!invalid.includes('content')&&!(await tx`SELECT octet_length(${JSON.stringify(patch.content)}::text::jsonb::text)<=${DRAFT_CONTENT_BYTES} AS valid`)[0]?.valid)invalid.push('content');
         if(invalid.length){notUpdated[id]={type:'invalidProperties',properties:invalid};continue;}
         if(patch.isInTrash===true&&!trashEnabled||Object.hasOwn(patch,'content')&&(patch.isInTrash??!!row.trashed_at)){
           notUpdated[id]={type:'forbidden'};continue;

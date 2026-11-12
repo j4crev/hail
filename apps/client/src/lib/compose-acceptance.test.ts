@@ -65,7 +65,7 @@ it('does not send when the forward source is missing',async()=>{
 it('limits new header uploads to subscribers while retaining rich connection text',async()=>{
   const body=new FormData();
   for(const [key,value] of Object.entries({publicationId:id,audience:'connections',title:'Hello',text:'**Rich text**',connection:targetId,alt:'A small image'}))body.set(key,value);
-  body.set('header',new File([Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ6kAAAAASUVORK5CYII=','base64'))],'header.png',{type:'image/png'}));
+  body.set('header',new File([Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'))],'header.png',{type:'image/png'}));
   const publish=()=>actions.publish({request:new Request('https://example.com/compose',{method:'POST',body}),cookies:{},url:new URL('https://example.com/compose')} as unknown as Parameters<typeof actions.publish>[0]);
   request.mockReset();
   expect(await publish()).toMatchObject({status:400,data:{error:'Images are available for subscriber publications only.'}});
@@ -94,9 +94,9 @@ it('hands validated builder content to the existing publication flow without Mar
 });
 
 it('publishes ordered inline images and rejects any unfinished image description',async()=>{
-  const {pngAsset}=await import('@racrproto/content-builder/core');
+  const {imageAsset}=await import('@racrproto/content-builder/core');
   const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64'));
-  const assets=[await pngAsset(png,true),await pngAsset(png,true)];
+  const assets=[await imageAsset(png,true),await imageAsset(png,true)];
   const text={_type:'block',style:'normal',children:[{_type:'span',text:'Newsletter',marks:[]}],markDefs:[]};
   const body={version:1,profile:'spt-3',assets:{version:1,assets},blocks:[text,{_type:'spt.image',asset:assets[0].id,alt:'First'},text,{_type:'spt.image',asset:assets[1].id,alt:'Second'}]};
   const form=new FormData();

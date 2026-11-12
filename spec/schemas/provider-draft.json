@@ -65,8 +65,8 @@
         },
         {
           "type": "string",
-          "maxLength": 262144,
-          "pattern": "^iVBORw0KGgo[A-Za-z0-9_-]*$"
+          "maxLength": 699051,
+          "pattern": "^(?:iVBORw0KGgo|_9j_)[A-Za-z0-9_-]*$"
         }
       ]
     },

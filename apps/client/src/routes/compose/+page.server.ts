@@ -1,13 +1,12 @@
 import {readDraft,saveDraft} from '$lib/server/jmap-drafts.js';
-import {parseBuilderDraft,validateBody,plainText} from '@racrproto/content-builder/core';
+import {imageAsset,parseBuilderDraft,validateBody,plainText} from '@racrproto/content-builder/core';
 import {formAttachments} from '$lib/server/attachments.js';
-import {parseDraft,draftIdPattern} from "@racrproto/client-support/drafts";
+import {DRAFT_HEADER_CHARACTERS,parseDraft,draftIdPattern} from "@racrproto/client-support/drafts";
 import {builderDraft} from '$lib/server/builder-draft.js';
 import {draftForm} from "$lib/server/draft-form.js";
 import {forwardSource, forwardBody} from "$lib/forward.js";
-import { createHash } from "node:crypto";
 import { error,fail,isRedirect,redirect } from "@sveltejs/kit";
-import { fromDiagnosticJson,type DiagnosticJson,encodeBase64Url, encodePayload, type HailSpt2Body, type HailSpt3Body } from "@racrproto/codec";
+import { BUNDLED_IMAGE_LIMITS,fromDiagnosticJson,type DiagnosticJson,encodePayload, type HailSpt2Body, type HailSpt3Body } from "@racrproto/codec";
 import { composeBlocks } from "$lib/compose.js";
 import { canaryAccount } from "$lib/server/canary.js";
 import { messageId } from "$lib/server/message-id.js";
@@ -92,12 +91,13 @@ export const actions={save:async({request,cookies,url})=>{
     const blocks=composeBlocks(title.trim(),text.trim());
     let body:Record<string,unknown>=builder?builder.body:{version:1,profile:"spt-2",blocks};
     if(!forwarding&&hasHeader){
-      if((header instanceof File&&header.size>0&&(header.type!=="image/png"||header.size>196608))||!alt.trim()||savedHeader.length>262144)return fail(400,{error:"Choose a bounded PNG and provide image alt text."});
+      const limits=BUNDLED_IMAGE_LIMITS.message;
+      if((header instanceof File&&header.size>0&&(!(limits.mediaTypes as readonly string[]).includes(header.type)||header.size>limits.bytes))||!alt.trim()||savedHeader.length>DRAFT_HEADER_CHARACTERS)
+        return fail(400,{error:"Choose a PNG or JPEG up to 512 KiB and provide image alt text."});
       const data=header instanceof File&&header.size>0?new Uint8Array(await header.arrayBuffer()):new Uint8Array(Buffer.from(savedHeader,"base64url"));
-      if(data.length<24||data.length>196608||Buffer.from(data.subarray(0,8)).toString("hex")!=="89504e470d0a1a0a")return fail(400,{error:"The header is not a valid PNG."});
-      const view=new DataView(data.buffer,data.byteOffset,data.byteLength),digest=new Uint8Array(createHash("sha256").update(data).digest());
-      body={version:1,profile:"spt-3",assets:{version:1,assets:[{id:"header",role:"header",media_type:"image/png",loading:"bundled",
-        size:data.length,digest:{algorithm:"sha-256",value:encodeBase64Url(digest)},width:view.getUint32(16),height:view.getUint32(20),data:encodeBase64Url(data)}]},
+      // The format comes from the bytes, which are validated structurally; the browser's declared type is only a first screen.
+      let asset;try{asset=await imageAsset(data);}catch{return fail(400,{error:"The cover image is not a valid PNG or JPEG within 2400 × 1200 pixels."});}
+      body={version:1,profile:"spt-3",assets:{version:1,assets:[asset]},
         blocks:[{_type:"spt.image",asset:"header",alt:alt.trim(),...(caption.trim()?{caption:caption.trim()}: {})},...blocks]};
     }
     if(forwarding){

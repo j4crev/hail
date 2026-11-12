@@ -135,11 +135,28 @@ integration('JMAP draft synchronization',()=>{
     const pending=await snapshot(a);await new MessageTrash(db.sql).saveSettings(a,false);
     expect((await jmap.changes(a,{sinceState:pending.state})).destroyed).toEqual([pending.list[0]!.id]);
   });
+  it('stores a draft holding a full-size cover image and enforces the header and storage limits',async()=>{
+    const a:AccountApiSession={...await account(),scopes:['messages:read','messages:write']},empty=await snapshot(a);
+    const cover={...content,audience:'category',alt:'Described'};
+    // 512 KiB of image is 699,051 base64url characters: more than the former 400,000-byte draft limit could hold.
+    const largest={...cover,header:'_9j_'+'A'.repeat(699_047)},tooLong={...cover,header:'iVBORw0KGgo'+'A'.repeat(699_041)};
+    const created=await jmap.set(a,{ifInState:empty.state,create:{ok:{draftId:uuidV7(),content:largest},long:{draftId:uuidV7(),content:tooLong},
+      gif:{draftId:uuidV7(),content:{...cover,header:'R0lGODlhAQABAIAAAAAAAP'}}}});
+    expect(Object.keys(created.created!)).toEqual(['ok']);
+    expect(Object.keys(created.notCreated!).sort()).toEqual(['gif','long']);
+    const stored=await jmap.get(a,{ids:[(created.created!.ok as {id:string}).id]});
+    expect((stored.list[0] as {content:{header:string}}).content.header).toHaveLength(699_051);
+    // The database enforces the storage limit independently of content parsing.
+    const insert=(bytes:number)=>db.sql`INSERT INTO account_message_drafts(account_id,id,content)
+      VALUES(${a.account_id},${uuidV7()},${JSON.stringify({text:'x'.repeat(bytes)})}::text::jsonb)`;
+    await insert(1_499_900);
+    await expect(insert(1_500_100)).rejects.toThrow();
+  });
   it('bounds draft content before transfer to the application and permits metadata-only reads',async()=>{
     const a=await account();
     // Storage-limit fixture deliberately bypasses content parsing, not triggers.
     for(let n=0;n<8;n++)await db.sql`INSERT INTO account_message_drafts(account_id,id,content)
-      VALUES(${a.account_id},${uuidV7()},${JSON.stringify({text:'x'.repeat(300000)})}::text::jsonb)`;
+      VALUES(${a.account_id},${uuidV7()},${JSON.stringify({text:'x'.repeat(900000)})}::text::jsonb)`;
     await expect(snapshot(a)).rejects.toMatchObject({type:'requestTooLarge'});
     const metadata=await jmap.get(a,{properties:['draftId','revision']});expect(metadata.list).toHaveLength(8);
     expect((await jmap.get(a,{ids:[metadata.list[0]!.id]})).list).toHaveLength(1);

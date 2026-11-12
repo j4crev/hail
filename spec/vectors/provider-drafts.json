@@ -421,6 +421,21 @@
           }
         }
       }
+    },
+    {
+      "name": "category-jpeg-cover-image",
+      "content": {
+        "audience": "category",
+        "category": "general",
+        "connections": [],
+        "title": "",
+        "text": "",
+        "alt": "A photograph",
+        "caption": "",
+        "allowReply": false,
+        "header": "_9j_4AAQSkZJRgABAQAAAQABAAD_2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD_2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD_wAARCAACAAIDAREAAhEBAxEB_8QAFAABAAAAAAAAAAAAAAAAAAAAB__EABQQAQAAAAAAAAAAAAAAAAAAAAD_xAAUAQEAAAAAAAAAAAAAAAAAAAAH_8QAFBEBAAAAAAAAAAAAAAAAAAAAAP_aAAwDAQACEQMRAD8AIi2L3__Z",
+        "forward": null
+      }
     }
   ],
   "invalid": [
@@ -902,6 +917,21 @@
             ]
           }
         }
+      }
+    },
+    {
+      "name": "gif-cover-image",
+      "content": {
+        "audience": "category",
+        "category": "general",
+        "connections": [],
+        "title": "",
+        "text": "",
+        "alt": "A photograph",
+        "caption": "",
+        "allowReply": false,
+        "header": "R0lGODlhAQABAIAAAAAAAP___yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+        "forward": null
       }
     }
   ]

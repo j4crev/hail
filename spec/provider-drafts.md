@@ -31,8 +31,9 @@ and bounded get batches, rejecting mixed-state pages.
 - `title`, `text`, `alt`, `caption`: strings, bounded respectively to 128,
   65,536, 1,024 and 1,024 **UTF-8 bytes**. Empty strings are allowed.
 - `allowReply`: boolean.
-- `header`: null or unpadded base64url PNG data, at most 262,144 characters
-  (192 KiB decoded); saving checks its PNG signature prefix. Full image/body
+- `header`: null or unpadded base64url PNG or JPEG data, at most 699,051
+  characters (512 KiB decoded); saving checks its PNG or JPEG signature prefix.
+  Full image/body
   validation remains mandatory at publication.
 - `forward`: null or exactly `{sender: PLC DID, messageId: UUIDv7}`.
 
@@ -107,7 +108,9 @@ up to 2048 UTF-8 bytes that is not yet a valid HTTPS URL. Every other CTA struct
 and resource constraint still applies. These draft-only allowances MUST NOT
 permit preview links, handoff or publication until the normal body validator
 accepts them. Its diagnostic
-JSON encoding MUST be at most 360,000 UTF-8 bytes. Attachments MUST remain in the
+JSON encoding MUST be at most 1,450,000 UTF-8 bytes. Bundled images are base64url
+text in this form, so that is what a body at the protocol's 1 MiB ceiling needs;
+the complete draft content is stored within a 1,500,000-byte limit. Attachments MUST remain in the
 host's `attachments` field, not inside the builder body. An empty text block array
 is permitted for an unfinished draft; sending still requires meaningful text under
 reference-provider/client policy.

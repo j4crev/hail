@@ -219,7 +219,7 @@ during rollback. Nothing private belongs in this directory or committed `.env`
 files.
 
 The reader supports headings, blockquotes, captions, lists, basic decorators,
-declared HTTPS links, and one bundled PNG header. Invited managed signup is
+declared HTTPS links, and bundled PNG or JPEG images. Invited managed signup is
 supported separately; post-signup browser recovery import, custody transitions
 and general attachments remain unavailable.
 Sender Profile v2 avatars appear in the inbox and message reader with initials
@@ -235,7 +235,7 @@ Deploy the provider and GUI together for this endpoint; an older provider yields
 initials. No database migration is needed. Fresh profile verification remains
 available for protocol operations that require it.
 The compose route publishes rich updates to all active subscribers
-in a selected category, optionally with one bundled PNG header. A category must be
+in a selected category, optionally with one bundled PNG or JPEG cover image of up to 512 KiB. A category must be
 selected before publishing; there is no individual subscription-recipient picker. The provider
 durably snapshots the audience and exposes refreshable work and delivery status.
 See [category publishing](../../docs/category-publishing.md) for alpha limits,

@@ -3,7 +3,7 @@
 This is a client integration contract and evidence record, not a new protocol
 profile. The authoritative wire vocabulary remains in `spec/bodies.md`,
 `spec/assets.md`, the codecs, and the conformance vectors. The current slice extends the original Phase 1 text/header vocabulary with
-up to eight inline PNG image blocks.
+up to 24 inline PNG or JPEG image blocks.
 
 ## Tested toolchain
 

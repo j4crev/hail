@@ -3,6 +3,10 @@ import {parseAttachments,type AttachmentMetadata} from './attachments.js';
 /** Provider-local editable compose state, never a signed message body. */
 export type DraftContent={builder?:BuilderDraft;attachments?:AttachmentMetadata[];audience:'category'|'connections';category:string;connections:string[];title:string;text:string;alt:string;caption:string;allowReply:boolean;header:string|null;forward:{sender:string;messageId:string}|null};
 export type Draft={id:string;revision:number;content:DraftContent;updatedAt:string;trashedAt:string|null};
+/** Stored draft content, as JSON bytes. Sized to hold a body at the protocol's 1 MiB ceiling with its images in base64url. */
+export const DRAFT_CONTENT_BYTES=1_500_000;
+/** A simple-compose cover image: 512 KiB of PNG or JPEG as unpadded base64url. */
+export const DRAFT_HEADER_CHARACTERS=699_051;
 export const draftIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function parseDraftContent(value:unknown):DraftContent {
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid draft');
@@ -14,7 +18,8 @@ export function parseDraftContent(value:unknown):DraftContent {
   if(!['category','connections'].includes(v.audience)||typeof v.allowReply!=='boolean'||
     (v.category!==''&&!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(v.category))||!Array.isArray(v.connections)||v.connections.length>100||
     v.connections.some(id=>typeof id!=='string'||!draftIdPattern.test(id))||new Set(v.connections).size!==v.connections.length)throw new Error('Invalid draft audience');
-  if(v.header!==null&&(typeof v.header!=='string'||v.header.length>262144||!/^iVBORw0KGgo[A-Za-z0-9_-]*$/.test(v.header)))throw new Error('Invalid draft PNG');
+  // PNG and JPEG signatures in base64url. Full image validation happens at publication.
+  if(v.header!==null&&(typeof v.header!=='string'||v.header.length>DRAFT_HEADER_CHARACTERS||!/^(?:iVBORw0KGgo|_9j_)[A-Za-z0-9_-]*$/.test(v.header)))throw new Error('Invalid draft image');
   if(v.forward!==null&&(!v.forward||typeof v.forward!=='object'||Object.keys(v.forward).sort().join(',')!=='messageId,sender'||
     typeof v.forward.sender!=='string'||!/^did:plc:[a-z2-7]{24}$/.test(v.forward.sender)||typeof v.forward.messageId!=='string'||!draftIdPattern.test(v.forward.messageId)))throw new Error('Invalid forward source');
   if(v.audience==='connections'&&(v.category||v.allowReply||v.header)||v.audience==='category'&&(v.connections.length||v.forward))throw new Error('Invalid draft audience fields');

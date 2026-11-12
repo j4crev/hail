@@ -1,7 +1,7 @@
-import {encodePayload, fromDiagnosticJson, encodeBase64Url, validatePngStructure, type DiagnosticJson, type HailSpt2TextBlock} from '@racrproto/codec/content';
+import {BUNDLED_IMAGE_LIMITS, encodePayload, fromDiagnosticJson, encodeBase64Url, validateJpegStructure, validatePngStructure, type DiagnosticJson, type HailSpt2TextBlock} from '@racrproto/codec/content';
 
 export type TextBlock = HailSpt2TextBlock;
-export type HeaderAsset = {id:string;role:'header'|'image';media_type:'image/png';loading:'bundled';size:number;digest:{algorithm:'sha-256';value:string};width:number;height:number;data:string};
+export type HeaderAsset = {id:string;role:'header'|'image';media_type:'image/png'|'image/jpeg';loading:'bundled';size:number;digest:{algorithm:'sha-256';value:string};width:number;height:number;data:string};
 export type ImageBlock = {_type:'spt.image';asset:string;alt:string;caption?:string};
 export type BuilderBody = {version:1;profile:'spt-2';blocks:TextBlock[]} | {version:1;profile:'spt-3';blocks:(ImageBlock|TextBlock)[];assets:{version:1;assets:HeaderAsset[]}};
 export type BuilderDraft = {version:1;body:BuilderBody};
@@ -9,7 +9,15 @@ export type PortableBlock = Record<string,unknown> & {_type:string;_key:string};
 export type PortableBundle = {version:1;blocks:PortableBlock[];assets:HeaderAsset[]};
 export type Diagnostic = {path:string;code:string;message:string};
 export const emptyBody = ():BuilderBody => ({version:1,profile:'spt-2',blocks:[]});
-const budget = (value:unknown,maximum=360000) => {if(new TextEncoder().encode(JSON.stringify(value)).length>maximum)throw new Error(`Content exceeds the ${maximum.toLocaleString('en-US')}-byte budget.`);};
+/**
+ * A body's diagnostic JSON carries image bytes as base64url, so a body at the
+ * protocol's 1 MiB ceiling needs about 1.4 million JSON bytes. The budget
+ * leaves room for that and stays inside the provider's 1,500,000-byte draft limit.
+ */
+export const BUILDER_BODY_JSON_BYTES = 1_450_000;
+/** Portable bundles add editor keys to every block and span. */
+export const PORTABLE_BUNDLE_JSON_BYTES = 1_600_000;
+const budget = (value:unknown,maximum=BUILDER_BODY_JSON_BYTES) => {if(new TextEncoder().encode(JSON.stringify(value)).length>maximum)throw new Error(`Content exceeds the ${maximum.toLocaleString('en-US')}-byte budget.`);};
 function object(value:unknown,path:string):Record<string,unknown> {
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error(`${path}: expected an object`);
   return value as Record<string,unknown>;
@@ -91,7 +99,7 @@ export function toPortable(body:BuilderBody):PortableBundle {
   })};
 }
 export function fromPortable(value:unknown,options:{draft?:boolean}={}):BuilderBody {
-  budget(value,1000000);
+  budget(value,PORTABLE_BUNDLE_JSON_BYTES);
   const bundle=object(value,'bundle');fields(bundle,['version','blocks','assets'],'bundle');
   if(bundle.version!==1||!Array.isArray(bundle.blocks)||!Array.isArray(bundle.assets))throw new Error('Expected a version 1 Portable Text bundle with blocks and bundled assets');
   const seen=new Set<string>();
@@ -119,12 +127,15 @@ export function fromPortable(value:unknown,options:{draft?:boolean}={}):BuilderB
   });
   return (options.draft?validateDraftBody:validateBody)(bundle.assets.length?{version:1,profile:'spt-3',blocks,assets:{version:1,assets:bundle.assets}}:{version:1,profile:'spt-2',blocks});
 }
-export async function pngAsset(data:Uint8Array,inline=false):Promise<HeaderAsset> {
-  if(data.length>196608)throw new Error('Choose a PNG up to 192 KiB.');
-  const {width,height}=validatePngStructure(data);
-  if(width>2400||height>(inline?2400:1200)||width*height>2000000)throw new Error(`Image must fit 2400 × ${inline?2400:1200} and 2,000,000 pixels.`);
+/** Builds a bundled message image from PNG or JPEG bytes. The format is read from the bytes, never from a filename. */
+export async function imageAsset(data:Uint8Array,inline=false):Promise<HeaderAsset> {
+  const limits=BUNDLED_IMAGE_LIMITS.message,maxHeight=inline?limits.height:limits.headerHeight;
+  if(data.length>limits.bytes)throw new Error(`Choose a PNG or JPEG up to ${limits.bytes/1024} KiB.`);
+  const jpeg=data[0]===0xff&&data[1]===0xd8;
+  const {width,height}=jpeg?validateJpegStructure(data):validatePngStructure(data);
+  if(width>limits.width||height>maxHeight||width*height>limits.pixels)throw new Error(`Image must fit ${limits.width} × ${maxHeight} and ${limits.pixels.toLocaleString('en-US')} pixels.`);
   const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',new Uint8Array(data)));
-  return {id:inline?'image-'+crypto.randomUUID():'header',role:inline?'image':'header',media_type:'image/png',loading:'bundled',size:data.length,digest:{algorithm:'sha-256',value:encodeBase64Url(digest)},width,height,data:encodeBase64Url(data)};
+  return {id:inline?'image-'+crypto.randomUUID():'header',role:inline?'image':'header',media_type:jpeg?'image/jpeg':'image/png',loading:'bundled',size:data.length,digest:{algorithm:'sha-256',value:encodeBase64Url(digest)},width,height,data:encodeBase64Url(data)};
 }
 /** Semantic equality ignores editor identity, annotation keys, span segmentation and mark order.
  * Text itself is exact (including Unicode and line breaks); assets remain byte-identical. */
