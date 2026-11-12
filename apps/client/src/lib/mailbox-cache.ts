@@ -5,6 +5,13 @@ export class MailboxCache {
   private size = 0;
   generation = 0;
   mutations = 0;
+  /**
+   * Whether the layout's change check currently vouches for cached entries: any
+   * mailbox change clears this cache, so an entry still here is as current as the
+   * last successful check. Views then show a cached entry without reloading it.
+   */
+  monitor: () => boolean = () => false;
+  current() {return !this.mutations && this.monitor();}
   private idleWaiters = new Set<()=>void>();
   beginMutation() {this.mutations++; this.clear();}
   endMutation() {

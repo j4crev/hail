@@ -1,11 +1,12 @@
 import type {AccountApiClient} from "@racrproto/client-support/account-api";
 
 // Resolve by verified DID, not the message's display address or historic Grant.
-export async function senderSubscription(client: Pick<AccountApiClient, "jmap" | "grant">, owner: string, sender: string) {
+// firstPage is an already fetched `HailGrant/list {sender}` result (e.g. from a batch).
+export async function senderSubscription(client: Pick<AccountApiClient, "jmap" | "grant">, owner: string, sender: string, firstPage?: Record<string, any>) {
   let after: string | null = null;
   const seen = new Set<string>();
   for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
-    const page = await client.jmap("HailGrant/list",{sender,...(after?{after}:{})});
+    const page: Record<string, any> = pageNumber === 0 && firstPage ? firstPage : await client.jmap("HailGrant/list",{sender,...(after?{after}:{})});
     if (!Array.isArray(page.grants) || page.next !== null && typeof page.next !== "string") throw new Error("Invalid subscriptions response");
     for (const row of page.grants) {
       if (row.localRole !== "grantor" || row.grantee !== sender || row.status !== "active") continue;
@@ -17,7 +18,7 @@ export async function senderSubscription(client: Pick<AccountApiClient, "jmap" |
     }
     if (page.next === null) return null;
     if (!page.next || seen.has(page.next)) throw new Error("Invalid subscriptions cursor");
-    after = page.next; seen.add(after);
+    const cursor: string = page.next; after = cursor; seen.add(cursor);
   }
   throw new Error("Subscription lookup limit reached");
 }

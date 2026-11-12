@@ -1,6 +1,7 @@
 <script lang="ts">
   import {MailboxEvents} from '$lib/jmap-events.js';
   import {MailboxSync} from '$lib/jmap-sync.js';
+  import {mailboxCache} from '$lib/mailbox-cache.js';
   import {mailboxCounts} from "$lib/mailbox-counts.js";
   const counts = $derived($mailboxCounts?.scope === page.data.mailboxScope ? $mailboxCounts?.counts : page.data.unreadCounts);
   import ToastHost from "$lib/ToastHost.svelte";
@@ -27,7 +28,7 @@
   $effect(()=>{if(!page.data.hasAccountSession)eventClient?.stop();});
   onMount(() => {
     const sync=new MailboxSync();
-    let pending=false,lastRefresh=0,queued=false,disposed=false,baseline=true,hintTimer:ReturnType<typeof setTimeout>|undefined;
+    let pending=false,lastRefresh=0,lastSuccess=0,lastFailure=0,queued=false,disposed=false,baseline=true,hintTimer:ReturnType<typeof setTimeout>|undefined;
     const eligible=()=>page.data.hasAccountSession&&document.visibilityState==='visible';
     const hint=()=>{queued=true;if(hintTimer===undefined)hintTimer=setTimeout(()=>{hintTimer=undefined;void refresh(true).catch(()=>{});},Math.max(1000,10_000-(Date.now()-lastRefresh)));};
     const events=new MailboxEvents(hint);eventClient=events;
@@ -39,16 +40,25 @@
         // The first poll only records where this freshly loaded page stands. Later
         // polls reload counts, Aliases availability and mailbox pages only when
         // something changed, so an idle tab costs the provider one cheap check.
-        const changed=await sync.poll()&&!baseline;baseline=false;
+        let changed;
+        try{changed=await sync.poll()&&!baseline;lastSuccess=Date.now();}catch(cause){lastFailure=Date.now();throw cause;}
+        baseline=false;
         if(changed)window.dispatchEvent(new Event('hail:mailbox-changed'));
         if(!disposed&&eligible()&&sync.eventsSupported)events.start();else events.stop();
         if(changed)await invalidate('hail:counts');
       }finally{pending=false;if(queued&&!disposed)hint();}
     };
     const update=()=>{if(!eligible())events.stop();void refresh().catch(()=>{});};
+    // While the live-event stream is open it announces each change, so the timed
+    // check is only a safety net: every five minutes rather than every 30 seconds.
+    const tick=()=>{if(eligible()&&events.connected&&Date.now()-lastRefresh<300_000)return;update();};
+    // Cached mailbox pages are current while checks succeed and nothing is waiting
+    // to be checked: recently, or continuously while live events announce changes.
+    mailboxCache.monitor=()=>!disposed&&eligible()&&lastSuccess>0&&lastSuccess>=lastFailure&&!queued&&
+      (events.connected||Date.now()-lastSuccess<40_000);
     window.addEventListener('focus',update);document.addEventListener('visibilitychange',update);
-    update();const timer=setInterval(update,30_000+Math.random()*5000);
-    return ()=>{disposed=true;events.stop();eventClient=undefined;clearTimeout(hintTimer);clearInterval(timer);window.removeEventListener('focus',update);document.removeEventListener('visibilitychange',update);};
+    update();const timer=setInterval(tick,30_000+Math.random()*5000);
+    return ()=>{disposed=true;mailboxCache.monitor=()=>false;events.stop();eventClient=undefined;clearTimeout(hintTimer);clearInterval(timer);window.removeEventListener('focus',update);document.removeEventListener('visibilitychange',update);};
   });
   let drawer = $state<HTMLDialogElement>();
   let drawerOpen = $state(false);

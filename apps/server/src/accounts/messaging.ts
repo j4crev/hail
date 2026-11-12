@@ -337,9 +337,20 @@ export class AccountMessaging {
 
   async thread(session:AccountApiSession,sender:string,id:string) {
     if(!DID.test(sender)||!ID.test(id))throw new UserGrantError(400,"Invalid message identity");
-    const root=sender===session.did?await this.sentMessage(session,id):await this.read(session,sender,id);
-    if(!root||"trashedAt" in root&&root.trashedAt)return null;
-    return messageThread(this.sql,session,{sender,messageId:id},sender===session.did?root.recipient:sender);
+    // Visibility only: the same boundary as read()/sentMessage() (Trash excluded),
+    // without loading and decoding the root body a second time.
+    const peer=sender===session.did?(await this.sql<{recipient_did:string}[]>`
+      SELECT envelope.recipient_did FROM sent_envelopes envelope JOIN detached_bodies body
+        ON body.sender_account_id=envelope.sender_account_id AND body.digest=envelope.body_digest
+      WHERE envelope.sender_did=${session.did} AND hail_sent_visible(envelope.sender_account_id,envelope.message_id) AND envelope.message_id=${id}`)[0]?.recipient_did:
+      (await this.sql<{sender_did:string}[]>`
+      SELECT message.sender_did FROM delivered_messages message
+      JOIN received_envelopes envelope USING(sender_did,message_id)
+      JOIN verified_body_contents body ON body.recipient_did=message.recipient_did AND body.sender_did=message.sender_did
+        AND body.digest=message.body_digest AND body.media_type=message.media_type AND body.profile=message.profile
+      WHERE message.recipient_did=${session.did} AND message.trashed_at IS NULL AND message.sender_did=${sender} AND message.message_id=${id}`)[0]?.sender_did;
+    if(!peer)return null;
+    return messageThread(this.sql,session,{sender,messageId:id},peer);
   }
 
   async status(session:AccountApiSession,id:string) {

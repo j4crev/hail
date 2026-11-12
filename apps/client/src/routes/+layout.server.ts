@@ -2,6 +2,7 @@ import {mailboxScope as scope} from "$lib/server/mailbox-scope.js";
 import {env} from "$env/dynamic/private";
 import {brandingFromEnvironment} from "$lib/branding.js";
 import {canaryAccount, isConfigured} from "$lib/server/canary.js";
+import {AccountApiError} from "@racrproto/client-support/account-api";
 
 export async function load({cookies, url, depends, untrack = <T>(fn:()=>T)=>fn()}) {
   depends("hail:mailbox");
@@ -18,9 +19,10 @@ export async function load({cookies, url, depends, untrack = <T>(fn:()=>T)=>fn()
     try {
       const {account, client} = await canaryAccount(cookies, url);
       accountAvatar = {did:account.did,src:`/media/avatars/${encodeURIComponent(account.did)}`};
-      const [counts, inbound] = await Promise.all([client.jmap("HailMailbox/view",{view:"unreadCounts"}),
-        client.jmap("HailEmailAlias/get",{summary:true}).catch(() => null)]);
-      inboundEmail = inbound?.available === true;
+      // One provider request for both; Aliases availability is optional.
+      const [counts, inbound] = await client.jmapBatch([["HailMailbox/view",{view:"unreadCounts"}],["HailEmailAlias/get",{summary:true}]]);
+      if (!counts || counts instanceof AccountApiError) throw counts;
+      inboundEmail = !(inbound instanceof AccountApiError) && inbound?.available === true;
       if (typeof counts.unseenConnections === "number" && Number.isSafeInteger(counts.unseenConnections) && counts.unseenConnections >= 0) unseenConnections = counts.unseenConnections;
       if (typeof counts.subscriptions === "number" && typeof counts.connections === "number" && Number.isSafeInteger(counts.subscriptions) && counts.subscriptions >= 0 && Number.isSafeInteger(counts.connections) && counts.connections >= 0) unreadCounts = {subscriptions:counts.subscriptions,connections:counts.connections};
     } catch {

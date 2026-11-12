@@ -21,6 +21,20 @@ it("forwards a valid browser address and reads the JMAP Session once per client"
   expect(request).toHaveBeenCalledTimes(3);
 });
 
+it("runs several account methods in one request and returns each method's failure separately",async()=>{
+  const request=vi.fn(async(url:string,init?:RequestInit)=>{
+    if(url.endsWith("/.well-known/jmap"))return json({primaryAccounts:{[capability]:"a_fixture"}});
+    const body=JSON.parse(String(init?.body));
+    expect(body.methodCalls.map(([name,args,tag]:[string,{accountId:string},string])=>[name,args.accountId,tag])).toEqual([
+      ["HailMailbox/view","a_fixture","account0"],["HailEmailAlias/get","a_fixture","account1"]]);
+    return json({methodResponses:[["HailMailbox/view",{accountId:"a_fixture",unread:1},"account0"],["error",{type:"forbidden"},"account1"]]});
+  });
+  vi.stubGlobal("fetch",request);
+  const [counts,aliases]=await AccountApiClient.fromSession(provider,token).jmapBatch([["HailMailbox/view",{view:"unreadCounts"}],["HailEmailAlias/get",{summary:true}]]);
+  expect(counts).toMatchObject({unread:1});expect(aliases).toBeInstanceOf(AccountApiError);expect(aliases).toMatchObject({status:403});
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
 it("never forwards an invalid address",async()=>{
   const request=vi.fn(async(url:string,init?:RequestInit)=>{
     expect(init?.headers).not.toHaveProperty("X-Hail-Trusted-Client-IP");

@@ -31,3 +31,9 @@ it("fails closed on identity mismatch, lookup failure, and repeated pagination",
   const api = client([]);api.request.mockRejectedValue(new Error("Offline"));
   await expect(senderSubscription(api as never, "owner", "sender")).rejects.toThrow("Offline");
 });
+it("uses an already fetched first page instead of requesting it again", async () => {
+  const api = client([]);
+  const first = {grants: [{grantId: "current", localRole: "grantor", grantee: "sender", status: "active"}], next: null};
+  expect(await senderSubscription(api as never, "owner", "sender", first)).toMatchObject({grantId: "current"});
+  expect(api.request).not.toHaveBeenCalled();
+});

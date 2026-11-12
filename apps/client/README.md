@@ -469,14 +469,20 @@ and refreshes authenticate through the existing provider session. The GUI-only
 HTTP responses remain `no-store`. Navigation data preloading is disabled inside
 the application to avoid a second cache outside mutation invalidation.
 
-Cached navigation renders immediately, then revalidates. The layout checks for
-mailbox changes with JMAP `/changes` roughly every 30–35 seconds, on focus and on
-live-event hints. Only when that check finds a change does it reload unread
-counts and Aliases availability and ask visible views to refresh; the first check
-after a page load only records a baseline. Visible views also refresh on focus
-(with a 30-second throttle) and as a fallback every two minutes. Failures back off
-to five minutes and leave a visible stale-data notice. A busy or rate-limited
-provider makes `/mailbox-data` answer 503 with `Retry-After`, and the view retries
+Cached navigation renders immediately. The layout checks for mailbox changes with
+JMAP `/changes` on focus, on live-event hints and on a timer: roughly every 30–35
+seconds, or every five minutes while the live-event stream is open (it announces
+each change, so the timer is only a safety net). One check is a single JMAP
+request covering every collection; the Session is reread only when a response's
+`sessionState` differs from it or after a failed check. Only when a check finds a
+change does it clear the navigation cache, reload unread counts and Aliases
+availability and ask visible views to refresh; the first check after a page load
+only records a baseline. A cached view therefore reloads on arrival only when the
+change check cannot vouch for it (no recent successful check, a failure since, or
+a change hint not yet checked). Visible views also refresh on focus (with a
+30-second throttle) and as a fallback every two minutes. Failures back off to five
+minutes and leave a visible stale-data notice. A busy or rate-limited provider
+makes `/mailbox-data` answer 503 with `Retry-After`, and the view retries
 automatically after that delay. Manual Refresh/Retry waits for this tab's own
 mailbox changes and repeats a read made stale by another change, so it ends in
 fresh content or a fresh failure. Selections, scrolled lists, expanded history and
@@ -486,8 +492,11 @@ history; reader refresh cannot interrupt an open reply.
 Server-side provider calls forward the browser address from
 `X-Hail-Trusted-Client-IP` (set by the trusted proxy), so provider per-address
 limits apply to each browser rather than to the GUI server. Each request's
-provider client reads the JMAP Session once and retries the provider's
-concurrency refusal (429 without `Retry-After`) briefly.
+provider client reads the JMAP Session once, alongside the account read, and
+retries the provider's concurrency refusal (429 without `Retry-After`) briefly.
+Loaders batch independent provider methods into one JMAP request: opening a
+message reads the message, its thread and the sender's subscriptions together,
+and `/mailbox-data` reads unread counts alongside the page's data.
 
 Desktop folders place a compact refresh icon alongside their heading and a
 conditional “Updates available” pill below it. On mobile folders, pending updates

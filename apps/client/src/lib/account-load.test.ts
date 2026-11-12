@@ -42,10 +42,11 @@ it("loads a new alpha account's empty inbox through the real session account cli
     const result=await load({url:new URL(provider+"/"),cookies,setHeaders:vi.fn()} as never);
     expect(result).toMatchObject({configured:true,account:{monitorVerificationMode:"reduced-assurance-alpha-v1",custodyProfile:"managed"},messages:[],next:null});
     expect(cookies.delete).not.toHaveBeenCalled();
-    expect(request.mock.calls.map(([url])=>url)).toEqual([
-      // The JMAP Session is read once per client, not before every method call.
-      provider+'/api/v1/account',provider+'/.well-known/jmap',provider+'/jmap',provider+'/jmap',
-    ]);
+    const urls=request.mock.calls.map(([url])=>url);
+    // The JMAP Session is read once per client, alongside the account read rather
+    // than after it, and not before every method call.
+    expect(urls.slice(0,2).sort()).toEqual([provider+'/.well-known/jmap',provider+'/api/v1/account']);
+    expect(urls.slice(2)).toEqual([provider+'/jmap',provider+'/jmap']);
     expect(request).toHaveBeenLastCalledWith(provider+'/jmap',expect.objectContaining({headers:expect.objectContaining({Cookie:`hail_session=${token}`})}));
   }finally{vi.unstubAllGlobals();}
 });

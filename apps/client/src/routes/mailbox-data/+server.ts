@@ -27,11 +27,13 @@ export const GET: import('./$types').RequestHandler = async event => {
     : detail ? detail[1] === 'message' ? message : conversation : sendDetail ? sentSend : sentDetail ? sentMessage : null;
   if (!loader) error(400);
   try {
+    // Counts are optional presentation data: read them alongside the page's own
+    // data rather than after it, and never let them fail the page.
+    // Only pages that show account data (and so the sidebar) carry counts.
+    const unread = loader === sentSend || loader === sentMessage ? null :
+      canaryAccount(event.cookies,url).then(({client}) => client.jmap('HailMailbox/view',{view:'unreadCounts'})).catch(() => null);
     const data = await loader({...event, url, params});
-    let counts = null;
-    if ('account' in data) {
-      try {const {client} = await canaryAccount(event.cookies,url); counts = await client.jmap('HailMailbox/view',{view:'unreadCounts'});} catch { /* Counts are optional presentation data. */ }
-    }
+    const counts = 'account' in data ? await unread : null;
     return json({data, counts, scope:mailboxScope(event.cookies)}, {headers:{'cache-control':'no-store'}});
   } catch (cause) {
     // Do not follow redirects as JSON, especially expired-session redirects.
