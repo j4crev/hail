@@ -521,16 +521,18 @@ empty-Feed prompt.
 - [x] Converter service in the standalone Compose file, behind the
   `email-bridge` profile: same image, 512 MiB limit, read-only, no ports, on the
   storage network plus an outbound-only network.
-- [ ] The same for the public Compose file, after checking the installed
-  `hail-provider-ops` wrapper (next item).
+- [x] The same for the production Compose file, also behind the profile.
 - [x] Database role script (`deploy/email-bridge/converter-role.sql`);
   integration test proves the role can convert but cannot read accounts, keys,
   aliases or messages, or insert or delete queue rows.
-- [ ] Confirm the installed `hail-provider-ops` wrapper restarts and verifies
-  the converter with the provider image. If the wrapper needs changing, that is
-  a separate reviewed installation, per the release rules.
-- [ ] Include the converter in health verification and in rollback: it must run
-  the same digest as the provider.
+- [x] `provider-ops.sh` pins the converter to the provider's release digest,
+  recreates it on deploy, rolls it back with the provider, stops it for a
+  release without it, and creates its role (`email-converter-role`). Tested with
+  stubs under `dash` (`test/provider-ops-email-converter.test.ts`).
+- [ ] Operator: install the updated wrapper through the existing reviewed
+  privileged process. Until then deploys ignore the converter.
+- [x] Include the converter in rollback, on the same digest as the provider. It
+  has no health endpoint; Compose waits for it to be running.
 - [ ] Provider keeps accepting and delivering native Hail messages when the
   converter is stopped; bridged mail queues and resumes.
 - [ ] DNS: MX and SPF-null records for the bridge subdomain. Document them per
