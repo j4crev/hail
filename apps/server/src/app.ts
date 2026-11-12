@@ -149,6 +149,7 @@ export function createApp(
   app.get("/api/v1/capabilities",async context=>{
     context.header("Cache-Control","no-store");
     try{return context.json({type:"racr.capabilities",version:1,
+      addressDomain:config.nativeAddressDomain??new URL(config.publicOrigin).hostname,
       features:{sharedConversations:Boolean(dependencies.jmap&&dependencies.accountApi?.publications&&dependencies.accountApi?.messaging),conversationControls:Boolean(dependencies.jmap&&dependencies.accountApi?.connections),inboxWait:Boolean(dependencies.jmap&&dependencies.accountApi?.messaging),conversations:Boolean(dependencies.jmap&&dependencies.accountApi?.messaging),connectionInvitations:Boolean(dependencies.jmap&&dependencies.accountApi?.connections)},
       signup:{available:Boolean(dependencies.selfServiceOnboarding),mode:registration?(await registration.read()).mode:null},
       passkeyRequired:["account browser-login","operator administration"]});}

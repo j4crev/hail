@@ -684,7 +684,7 @@ integration("private PLC transfer between disposable POC providers", () => {
         await withFreshServingGenerations(source.sql,()=>new TransferGrantSubmission(source.sql,resolver,oldBase,sourceRepo,sourceEncryptor,new TransferInvitationService(source.sql,resolver,oldBase),delivery).submit(signedGrant));
         if(targetError)throw targetError;
         const credentialAccount=await nextApi.account(),status=await nextApi.request("/transfers");
-        await writeFile(nextState,JSON.stringify({type:"racr.account-transfer",version:1,provider:credentialAccount.provider,accountId:credentialAccount.accountId,did:genesis.did,key:client.vault.identity.publicDidKey,destination:"https://target.example.com",grant:encodeSignedRecord(signedGrant),offer:status.offer}),{mode:0o600});
+        await writeFile(nextState,JSON.stringify({type:"racr.account-transfer",version:1,provider:credentialAccount.provider,accountId:credentialAccount.accountId,did:genesis.did,key:client.vault.identity.publicDidKey,destination:"https://target.example.com",destinationDomain:"target.example.com",grant:encodeSignedRecord(signedGrant),offer:status.offer}),{mode:0o600});
         expect((await selectTransferAddress(nextApi,`abandoned-${randomUUID()}`,join(ceremony,"vault.json"),nextState,secret)).requestAcknowledged).toBe(true);
         await exportTransferSnapshot(nextApi,nextState,nextSnapshot);
         await signAccountTransferCutover(join(ceremony,"vault.json"),nextState,nextSnapshot,join(ceremony,"abandon-consent.json"),join(ceremony,"abandon-operation.json"),join(ceremony,"abandon-binding.cose"),secret);

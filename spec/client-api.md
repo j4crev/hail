@@ -51,7 +51,11 @@ origin; `--provider` and `--account-id` are assertions, not overrides. A provide
 transfer does not forward the old credential to the new provider.
 
 Account operations use `/api/v1/account`; capabilities use
-`GET /api/v1/capabilities`. Requests carrying account access use
+`GET /api/v1/capabilities`. That unauthenticated response (`type: "racr.capabilities"`)
+includes `addressDomain`, the provider's native address domain, which may differ
+from its API host. Transfer clients read it from the destination provider and
+sign it as the grant's `destination_domain`; the source still verifies DNS
+delegation (see [transfer formats](transfer-formats.md#payload-field-schemas)). Requests carrying account access use
 `Authorization: Bearer <token>`. Clients MUST reject HTTP redirects for API calls,
 verify TLS, bound response sizes and keep secrets out of terminal output.
 Responses use `Content-Type: application/json`, without Content-Encoding or
@@ -276,11 +280,12 @@ independent of the passkey origin. Executable vectors live in
 `apps/server/test/media-tickets.test.ts`, `apps/client/src/lib/media-origin.test.ts`,
 and the built-client HTTP boundary test `apps/client/scripts/check-origin-separation.ts`.
 
-Unresolved interoperability decision: the current provider-transfer profile ties
-destination native domains to service hostnames and rejects delegated-domain
-source addresses. Separating the native address domain does not relax those
-checks or define a new transfer protocol. Such transfers remain unavailable until
-that profile, schemas and conformance vectors are updated together.
+Provider transfers support a native address domain separate from the service
+host: the grant's `destination_domain` names the destination address domain and
+the source verifies its `_hail-provider` delegation, as specified in
+[transfer formats](transfer-formats.md#payload-field-schemas). Transfer of an
+account whose address is on a hosted custom (delegated non-native) domain remains
+unsupported; sources refuse it before fencing.
 
 ## Reference-provider authentication integration
 

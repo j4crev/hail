@@ -14,7 +14,7 @@ try {
   await database.migrate();
   const fence = await new MigrationFenceService(database.sql,
     createHailDidResolver(config,database.sql),
-    config.hailServiceBase).begin(await readTransferRecord(requestFile),
+    config.hailServiceBase, undefined, config.nativeAddressDomain).begin(await readTransferRecord(requestFile),
       await readTransferRecord(selectionFile), await readTransferRecord(reservationFile));
   console.info(JSON.stringify({ did: fence.did, transferId: fence.transferId,
     destination: fence.destinationServiceBase, state: fence.state }));

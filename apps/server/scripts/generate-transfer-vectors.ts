@@ -38,6 +38,8 @@ function record(name:string,value:any,signed:any,key:any,role?:string,domain?:st
 const common={version:1,did,nonce:id(1),source_service_base:source,destination_service_base:destination,issued_at:now,expires_at:now+3600};
 async function portable(name:string,value:any,key:any){return record(name,value,await signHandshake(value,key.privateKey),key);}
 const grant=await portable('portable-grant',{...common,type:'hail.transfer-grant',destination_domain:'target.example.com'},identity);
+// Split-domain destination: addresses at example.org, API/federation at target.example.com.
+await portable('portable-grant-split-domain',{...common,type:'hail.transfer-grant',destination_domain:'example.org'},identity);
 const invitation=await portable('portable-invitation',{type:'hail.transfer-invitation',version:1,did,nonce:id(1),source_service_base:source,destination_service_base:destination,
   grant_digest:hash(grant.payloadBytes),challenge:new Uint8Array(32).fill(8),expires_at:now+3600},sender);
 const offerValue={...common,type:'hail.transfer-offer',transfer_id:id(2),grant_digest:hash(grant.payloadBytes),invitation_digest:hash(invitation.payloadBytes),
@@ -56,6 +58,7 @@ async function managed(name:string,value:any,key:any){
   return record(name,value,signed,key);
 }
 const mg=await managed('managed-grant',{...common,type:'hail.managed-transfer-grant',destination_domain:'target.example.com',owner_recovery_key:owner.didKey,source_identity_key:identity.didKey},owner);
+await managed('managed-grant-split-domain',{...common,type:'hail.managed-transfer-grant',destination_domain:'example.org',owner_recovery_key:owner.didKey,source_identity_key:identity.didKey},owner);
 const ack=await managed('managed-acknowledgement',{...common,type:'hail.managed-transfer-acknowledgement',grant_digest:hash(mg.payloadBytes),source_messaging_key:sender.didKey},sender);
 const moValue={...common,type:'hail.managed-transfer-offer',transfer_id:id(2),grant_digest:hash(mg.payloadBytes),acknowledgement_digest:hash(ack.payloadBytes),destination_rotation_key:rotation.did(),destination_identity_key:targetIdentity.didKey,destination_messaging_key:target.didKey};
 const mo=await managed('managed-offer',moValue,target);

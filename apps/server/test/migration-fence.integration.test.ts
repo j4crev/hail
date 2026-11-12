@@ -42,11 +42,16 @@ import { TransferDeliveryWorker } from "../src/migration/delivery-worker.js";
 import { registerTransferRoutes } from "../src/migration/routes.js";
 import { invitationWire, TRANSFER_MEDIA_TYPE } from "../src/migration/wire.js";
 import { decodeDeterministic } from "@racrproto/codec";
+import type { ProviderDiscovery } from "../src/discovery/delegation.js";
 import { DeliveryWorker } from "../src/delivery/worker.js";
 
 const integration = process.env.DATABASE_URL && process.env.TRANSFER_TARGET_DATABASE_URL ? describe : describe.skip;
 const sourceBase = "https://source.example.com/hail";
 const targetBase = "https://target.example.com/hail";
+// Both providers serve addresses on a domain separate from their service host.
+const sourceDomain = "source-mail.example.org";
+const targetDomain = "target-mail.example.org";
+const delegation: ProviderDiscovery = async (domain) => domain === targetDomain ? "target.example.com" : null;
 const remoteDid = `did:plc:${Array.from(randomBytes(24), (value) =>
   "abcdefghijklmnopqrstuvwxyz234567"[value % 32]).join("")}`;
 
@@ -98,7 +103,7 @@ integration("fenced transfer and concurrent cutover", () => {
   let originDelivery: TransferInvitationDelivery;
   let addressReservation: TransferAddressReservation;
   let targetPublisher: TransferFinalRequestPublisher;
-  const selectedAddress = `alice-${id}@target.example.com`;
+  const selectedAddress = `alice-${id}@${targetDomain}`;
 
   beforeAll(async () => {
     const { ProviderDatabase } = await import("../src/db/database.js");
@@ -131,7 +136,7 @@ integration("fenced transfer and concurrent cutover", () => {
       return { did, identityDidKey: keys.identityDidKey, messagingDidKey: keys.messagingDidKey,
         serviceBase: sourceBase, evidence };
     } };
-    fenceService = new MigrationFenceService(source.sql, resolver, sourceBase);
+    fenceService = new MigrationFenceService(source.sql, resolver, sourceBase, undefined, sourceDomain);
     const accounts = { getKey: async (_accountId: string, role: "plc-rotation" | "hail-identity" | "hail-messaging") => {
       const key = keys.keys.find((entry) => entry.role === role);
       if (!key) throw new Error("Missing key");
@@ -142,7 +147,7 @@ integration("fenced transfer and concurrent cutover", () => {
     await source.sql`
       INSERT INTO provider_accounts (id, tenant_id, canonical_address, did, onboarding_state,
         activated_at, activation_binding_digest, activation_verification_mode)
-      VALUES (${id}, ${randomUUID()}, ${`migration-${id}@source.example.com`}, ${did}, 'active', now(),
+      VALUES (${id}, ${randomUUID()}, ${`migration-${id}@${sourceDomain}`}, ${did}, 'active', now(),
         ${randomBytes(32)}, 'public')
     `;
     for (const key of keys.keys.filter((entry) => entry.role !== "hail-identity")) {
@@ -183,7 +188,7 @@ integration("fenced transfer and concurrent cutover", () => {
     `;
     const now = Math.floor(Date.now() / 1000);
     const sourceBinding: HailAddressBinding = { type: "hail.address-binding", version: 2,
-      address: `migration-${id}@source.example.com`, did, issued_at: now,
+      address: `migration-${id}@${sourceDomain}`, did, issued_at: now,
       key_id: `${did}#hail-identity` };
     const sourceCose = await signPayload("hail.address-binding", sourceBinding,
       createWebCryptoSigner(sourceBinding.key_id, identityPrivateKey));
@@ -231,12 +236,12 @@ integration("fenced transfer and concurrent cutover", () => {
     plaintext.fill(0);
     const transferGrant: TransferGrant = { type: "hail.transfer-grant", version: 1, did,
       nonce: randomUUID(), source_service_base: sourceBase, destination_service_base: targetBase,
-      destination_domain: "target.example.com",
+      destination_domain: targetDomain,
       issued_at: now, expires_at: now + 3600 };
     userGrant = await signHandshake(transferGrant, identityPrivateKey);
-    invitation = await new TransferInvitationService(source.sql, resolver, sourceBase)
+    invitation = await new TransferInvitationService(source.sql, resolver, sourceBase, undefined, delegation)
       .issue(userGrant, privateKey);
-    const preparedTarget = new PreparedMigrationTarget(target.sql, targetEncryption, targetBase);
+    const preparedTarget = new PreparedMigrationTarget(target.sql, targetEncryption, targetBase, false, targetDomain);
     const receiver = new TransferInvitationReceiver(target.sql, resolver, preparedTarget);
     addressReservation = new TransferAddressReservation(target.sql, resolver, preparedTarget);
     sourceRoutes = new Hono();
@@ -352,19 +357,32 @@ integration("fenced transfer and concurrent cutover", () => {
   it("does not replace the stored user grant with a provider-signed authorization", async () => {
     const payload: TransferGrant = { type: "hail.transfer-grant", version: 1, did,
       nonce: randomUUID(), source_service_base: sourceBase, destination_service_base: targetBase,
-      destination_domain: "target.example.com",
+      destination_domain: targetDomain,
       issued_at: Math.floor(Date.now() / 1000), expires_at: Math.floor(Date.now() / 1000) + 300 };
     const providerKey = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair;
     const forgery = await signHandshake(payload, providerKey.privateKey);
-    await expect(new TransferInvitationService(source.sql, resolver, sourceBase)
+    await expect(new TransferInvitationService(source.sql, resolver, sourceBase, undefined, delegation)
       .issue(forgery, providerKey.privateKey)).rejects.toThrow("signature is invalid");
     expect(await fenceService.get(did)).toBeNull();
+  });
+
+  it("refuses a user grant whose address domain is not delegated to the destination host", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const payload: TransferGrant = { type: "hail.transfer-grant", version: 1, did,
+      nonce: randomUUID(), source_service_base: sourceBase, destination_service_base: targetBase,
+      destination_domain: "elsewhere.example.org", issued_at: now, expires_at: now + 300 };
+    const unused = (await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"])) as CryptoKeyPair;
+    await expect(new TransferInvitationService(source.sql, resolver, sourceBase, undefined, delegation)
+      .issue(await signHandshake(payload, identityPrivateKey), unused.privateKey)).rejects.toThrow("not delegated");
+    const stored = await source.sql<{ grant_bytes: Uint8Array }[]>`
+      SELECT grant_bytes FROM provider_transfer_authorizations WHERE did = ${did}`;
+    expect(Buffer.from(stored[0]!.grant_bytes).equals(Buffer.from(userGrant.payloadBytes))).toBe(true);
   });
 
   it("accepts the exact user grant over the source endpoint and returns the same Offer on retry", async () => {
     const submit = new TransferGrantSubmission(source.sql, resolver, sourceBase,
       new OnboardingRepository(source.sql), encryption,
-      new TransferInvitationService(source.sql, resolver, sourceBase), originDelivery);
+      new TransferInvitationService(source.sql, resolver, sourceBase, undefined, delegation), originDelivery);
     const submissionRoutes = new Hono();
     registerTransferRoutes(submissionRoutes, new TransferInvitationReceiver(source.sql, resolver,
       new PreparedMigrationTarget(source.sql, encryption, sourceBase)), undefined, undefined,
@@ -391,7 +409,7 @@ integration("fenced transfer and concurrent cutover", () => {
       await expect(fenceService.begin(signedOffer, signedOffer, signedOffer)).rejects.toThrow("authenticated destination-origin");
       const pendingSubmission = new TransferGrantSubmission(source.sql, resolver, sourceBase,
         new OnboardingRepository(source.sql), encryption,
-        new TransferInvitationService(source.sql, resolver, sourceBase),
+        new TransferInvitationService(source.sql, resolver, sourceBase, undefined, delegation),
         { async deliver() { throw new Error("Destination connection unavailable"); } });
       const pendingRoutes = new Hono();
       registerTransferRoutes(pendingRoutes, new TransferInvitationReceiver(source.sql, resolver,
@@ -504,7 +522,7 @@ integration("fenced transfer and concurrent cutover", () => {
     } };
     const rotatedSelection = await signHandshake(selected, forgedKey.privateKey);
     await expect(new TransferAddressReservation(target.sql, rotatedResolver,
-      new PreparedMigrationTarget(target.sql, targetEncryption, targetBase))
+      new PreparedMigrationTarget(target.sql, targetEncryption, targetBase, false, targetDomain))
       .reserve(rotatedSelection)).rejects.toThrow("signature is invalid");
     const wrongDomain = await signHandshake({ ...selected, address: "alice@other.example.com" }, identityPrivateKey);
     await expect(addressReservation.reserve(wrongDomain)).rejects.toThrow("not for this provider");
@@ -526,7 +544,7 @@ integration("fenced transfer and concurrent cutover", () => {
       throw new Error("Target-to-source response temporarily ambiguous");
     } };
     registerTransferRoutes(clientFacingRoutes, new TransferInvitationReceiver(target.sql, resolver,
-      new PreparedMigrationTarget(target.sql, targetEncryption, targetBase)),
+      new PreparedMigrationTarget(target.sql, targetEncryption, targetBase, false, targetDomain)),
     addressReservation, undefined, ambiguousPublisher);
     const { requestWire, parseRequestWire } = await import("../src/migration/wire.js");
     const chosen = await clientFacingRoutes.request("https://target.example.com/.well-known/hail/transfers/reservations",
@@ -609,7 +627,7 @@ integration("fenced transfer and concurrent cutover", () => {
       transfer_id: fencedBefore[0]!.transfer_id });
     const changedSelection = await signHandshake({
       ...(decodeDeterministic(signedSelection.payloadBytes) as unknown as TransferAddressSelection),
-      address: "other@target.example.com", selection_nonce: randomUUID(),
+      address: `other@${targetDomain}`, selection_nonce: randomUUID(),
     }, identityPrivateKey);
     const { finalRequestWire } = await import("../src/migration/wire.js");
     const rejected = await sourceRoutes.request("https://source.example.com/hail/transfers/requests",
@@ -692,7 +710,7 @@ integration("fenced transfer and concurrent cutover", () => {
         evidence: { document: {}, data: { rotationKeys: [userRecoveryPublicKey] }, log: [] } };
     } };
     try {
-      await expect(new MigrationFenceService(source.sql, bogusResolver, sourceBase)
+      await expect(new MigrationFenceService(source.sql, bogusResolver, sourceBase, undefined, sourceDomain)
         .begin(signedRequest, signedSelection, signedReservation))
         .rejects.toThrow("Current PLC state");
       expect(await source.sql`SELECT did FROM provider_migration_fences WHERE did = ${custodialDid}`).toHaveLength(0);
@@ -765,7 +783,7 @@ integration("fenced transfer and concurrent cutover", () => {
     expect(manifest.tables.public_envelope_authority_evidence).toHaveLength(1);
     expect(manifest.tables.portable_custody_evidence).toHaveLength(1);
     expect(manifest.tables.account_keys.every((key) => !Object.hasOwn(key, "encrypted_private_key"))).toBe(true);
-    await new PreparedMigrationTarget(target.sql, targetEncryption, targetBase).assertOwnership({
+    await new PreparedMigrationTarget(target.sql, targetEncryption, targetBase, false, targetDomain).assertOwnership({
       transferId: targetTransferId, did, destinationServiceBase: targetBase,
       rotationPublicKey: destinationRotationPublicKey, messagingPublicKey: destinationMessagingPublicKey,
     });

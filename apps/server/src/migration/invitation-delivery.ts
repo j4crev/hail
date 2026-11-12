@@ -5,6 +5,7 @@ import { handshakeDigest, sameDigest, verifyHandshake, type SignedHandshake } fr
 import { boundedTransferBody, invitationWire, parseRequestWire,
   TRANSFER_MEDIA_TYPE, MAX_TRANSFER_WIRE_BYTES } from "./wire.js";
 import { decodeDeterministic } from "@racrproto/codec";
+import { transferEndpoint } from "./destination-domain.js";
 
 interface SourceRow {
   destination_service_base: string;
@@ -68,9 +69,10 @@ export class TransferInvitationDelivery {
     if (row.consumed_transfer_id) throw new Error("Transfer authorization was already consumed");
 
     // The destination is *only* derived from the user-signed, source-verified
-    // service base. The safe transport pins public DNS addresses while TLS
-    // verifies that exact hostname; redirects are never followed.
-    const url = new URL(`https://${grant.destination_domain}/.well-known/hail/transfers/invitations`);
+    // service base, not the address domain (which may be a separate web host).
+    // The safe transport pins public DNS addresses while TLS verifies that exact
+    // hostname; redirects are never followed.
+    const url = transferEndpoint(grant.destination_service_base, "invitations");
     await this.validateTarget(url);
     const body = invitationWire(grantSigned, invitationSigned);
     if (body.length > MAX_TRANSFER_WIRE_BYTES) throw new Error("Invitation wire body exceeds limit");

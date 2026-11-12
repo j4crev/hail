@@ -38,7 +38,8 @@ function fromRow(row: FenceRow): ManagedMigrationFence {
 export class ManagedMigrationFenceService {
   constructor(private readonly sql: SQL, private readonly resolver: HailDidResolver,
     private readonly sourceServiceBase: string, private readonly now = () => Math.floor(Date.now() / 1000),
-    private readonly verificationMode:"strict-public-v1"|"poc-local"="strict-public-v1") {}
+    private readonly verificationMode:"strict-public-v1"|"poc-local"="strict-public-v1",
+    private readonly addressDomain = new URL(sourceServiceBase).hostname) {}
 
   async begin(requestSigned: SignedManagedHandshake, selectionSigned: SignedManagedHandshake,
     reservationSigned: SignedManagedHandshake): Promise<ManagedMigrationFence> {
@@ -63,7 +64,7 @@ export class ManagedMigrationFenceService {
         WHERE account.did=${did} FOR UPDATE OF account`)[0];
       if(account&&(await tx`SELECT id FROM provider_accounts WHERE id=${account.id} AND (address_released_at IS NOT NULL OR closed_at IS NOT NULL)`).length)
         throw new Error("Released addresses cannot begin provider transfer");
-      if (account && account.canonical_address.split("@")[1] !== new URL(this.sourceServiceBase).hostname) {
+      if (account && account.canonical_address.split("@")[1] !== this.addressDomain) {
         throw new Error("Custom-domain provider transfer is not supported yet");
       }
       const held = account ? await tx<{ role: string; public_key: string }[]>`

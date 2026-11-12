@@ -125,7 +125,7 @@ try {
   await checked(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
     "-subj", "/CN=racr-test-ca", "-addext", "basicConstraints=critical,CA:TRUE", "-keyout", caKey, "-out", ca]);
   await checked(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost", "-keyout", key, "-out", csr]);
-  await writeFile(extensions, "subjectAltName=DNS:localhost\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\n");
+  await writeFile(extensions, "subjectAltName=DNS:localhost,DNS:destination.example\nbasicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\n");
   await checked(["openssl", "x509", "-req", "-in", csr, "-CA", ca, "-CAkey", caKey, "-CAcreateserial", "-days", "1", "-extfile", extensions, "-out", cert]);
   server = Bun.serve({ hostname: "localhost", port: 0, tls: { key: Bun.file(key), cert: Bun.file(cert) },
     async fetch(request) {

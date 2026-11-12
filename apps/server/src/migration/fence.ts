@@ -44,6 +44,8 @@ export class MigrationFenceService {
     private readonly resolver: HailDidResolver,
     private readonly sourceServiceBase: string,
     private readonly now: () => Date = () => new Date(),
+    /** This provider's native address domain; it may differ from the service host. */
+    private readonly addressDomain = new URL(sourceServiceBase).hostname,
   ) {}
 
   async begin(signedRequest: SignedHandshake, signedSelection: SignedHandshake,
@@ -71,7 +73,7 @@ export class MigrationFenceService {
       }
       if(account&&(await tx`SELECT id FROM provider_accounts WHERE id=${account.id} AND (address_released_at IS NOT NULL OR closed_at IS NOT NULL)`).length)
         throw new Error("Released addresses cannot begin provider transfer");
-      if (account && account.canonical_address.split("@")[1] !== new URL(this.sourceServiceBase).hostname) {
+      if (account && account.canonical_address.split("@")[1] !== this.addressDomain) {
         throw new Error("Custom-domain provider transfer is not supported yet");
       }
       const custody = await tx<{ user_recovery_public_key: string; user_identity_public_key: string }[]>`

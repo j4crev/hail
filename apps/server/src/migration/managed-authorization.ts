@@ -5,6 +5,8 @@ import type { KeyEncryptor } from "../identity/key-encryption.js";
 import { importEd25519PrivateKey } from "../identity/keys.js";
 import type { OnboardingRepository } from "../onboarding/repository.js";
 import type { HailDidResolver } from "../plc/resolver.js";
+import type { ProviderDiscovery } from "../discovery/delegation.js";
+import { assertDestinationDomain } from "./destination-domain.js";
 import { managedHandshakeDigest, signManagedProviderHandshake, verifyManagedOwnerHandshake,
   verifyManagedProviderHandshake, type ManagedTransferAcknowledgement,
   type SignedManagedHandshake } from "./managed-handshake.js";
@@ -21,7 +23,7 @@ interface ExistingAuthorization {
 export class ManagedTransferAuthorization {
   constructor(private readonly sql:SQL,private readonly resolver:HailDidResolver,private readonly sourceBase:string,
     private readonly accounts:Pick<OnboardingRepository,"getKey">,private readonly encryptor:KeyEncryptor,
-    private readonly now=()=>Math.floor(Date.now()/1000)) {}
+    private readonly now=()=>Math.floor(Date.now()/1000),private readonly discover?:ProviderDiscovery) {}
 
   async authorize(signed:SignedManagedHandshake):Promise<SignedManagedHandshake> {
     if(!signed.payloadBytes.length||signed.payloadBytes.length>8192||signed.signature.length!==64)
@@ -36,6 +38,7 @@ export class ManagedTransferAuthorization {
     const grant=await verifyManagedOwnerHandshake(signed,"hail.managed-transfer-grant",ownerRecoveryKey),now=this.now();
     if(grant.source_service_base!==this.sourceBase||grant.source_identity_key!==state.identityDidKey||
       grant.issued_at>now+300||grant.expires_at<=now)throw new Error("Managed transfer grant is stale or for another authority");
+    await assertDestinationDomain(grant.destination_domain,grant.destination_service_base,this.discover);
     const account=(await this.sql<{id:string;owner_recovery_public_key:string;provider_identity_public_key:string}[]>`
       SELECT account.id,managed.owner_recovery_public_key,managed.provider_identity_public_key
       FROM provider_accounts account JOIN managed_custody_evidence managed ON managed.account_id=account.id

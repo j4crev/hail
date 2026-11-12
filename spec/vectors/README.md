@@ -30,7 +30,7 @@ Normal tests read committed files; they do not generate their own expected bytes
 | `conversation-creator.json` | `collectConversationHistory` after shared sends; immutable descriptor, creator membership and terminal shared-message outboxes |
 | `conversation-active.json` | Same collector for an active recipient whose own reply renewed their participation |
 | `conversation-left.json` | Same collector for a recipient who left and disabled introductions; exact leave and opt-out state survive reconstruction |
-| `transfer-wire.json` | Real portable/managed signing functions, handover signing functions and wire wrapper; 32 fixed Ed25519/ES256 records, all handover signature roles, consent, activation and cancellation |
+| `transfer-wire.json` | Real portable/managed signing functions, handover signing functions and wire wrapper; 34 fixed Ed25519/ES256 records (including split-domain portable and managed grants), all handover signature roles, consent, activation and cancellation |
 | `connection-wire.json` | Real COSE codec; coherent invitation, confirmation, address bindings, reviewed coordinator snapshot and deterministic bundle, lifecycle/ack controls, conversation descriptor, exact JSON request/response bodies and ingress rejection cases |
 | `history-negative.json` | Shared mutation instructions for unknown/private fields, missing domains, wrong scalar types, foreign ownership and changed checkpoint digests |
 

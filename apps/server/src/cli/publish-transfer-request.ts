@@ -17,7 +17,8 @@ try {
   const transport = new SafeHttpsTransport();
   await new TransferFinalRequestPublisher(database.sql,
     createHailDidResolver(config,database.sql),
-    new PreparedMigrationTarget(database.sql, new KeyEncryptor(config.keyEncryptionKey), config.hailServiceBase),
+    new PreparedMigrationTarget(database.sql, new KeyEncryptor(config.keyEncryptionKey), config.hailServiceBase,
+      false, config.nativeAddressDomain),
     transport.fetch, transport.validateTarget).publish(transferId);
   console.info(JSON.stringify({ transferId, acknowledged: true }));
 } finally { await database.close(); }

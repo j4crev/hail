@@ -4,6 +4,8 @@ import type { SQL } from "bun";
 import { ed25519PublicKeyFromDidKey } from "../identity/did-key.js";
 import { canonicalizeHailAddress } from "../identity/address.js";
 import { canonicalizeHailServiceBase, type HailDidResolver } from "../plc/resolver.js";
+import type { ProviderDiscovery } from "../discovery/delegation.js";
+import { assertDestinationDomain, isCanonicalAddressDomain } from "./destination-domain.js";
 
 const DID = /^did:plc:[a-z2-7]{24}$/;
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
@@ -54,12 +56,6 @@ export interface TransferCancellationReceipt {
 type Handshake = TransferGrant | TransferInvitation | TransferOffer | TransferAddressSelection |
   TransferReservation | TransferRequest | TransferCancellation | TransferCancellationReceipt;
 type Kind = Handshake["type"];
-
-export function serviceBaseForProviderDomain(domain: string): string {
-  if (typeof domain !== "string" || canonicalizeHailAddress(`a@${domain}`) !== `a@${domain}` ||
-    domain.includes(":") || domain.includes("/")) throw new Error("Provider domain is not canonical");
-  return `https://${domain}/hail`;
-}
 
 export function handshakeDigest(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(createHash("sha256").update(bytes).digest());
@@ -121,9 +117,8 @@ function validate(value: unknown, kind: Kind): Handshake {
     }
   }
   if (kind === "hail.transfer-grant" &&
-    (typeof value.destination_domain !== "string" ||
-      serviceBaseForProviderDomain(value.destination_domain) !== value.destination_service_base)) {
-    throw new Error("Transfer grant does not match the destination provider domain");
+    !isCanonicalAddressDomain(value.destination_domain)) {
+    throw new Error("Transfer grant destination domain is not canonical");
   }
   if (kind !== "hail.transfer-grant" && kind !== "hail.transfer-reservation" &&
     !digest(value.grant_digest)) throw new Error("Missing grant digest");
@@ -153,9 +148,8 @@ function validate(value: unknown, kind: Kind): Handshake {
     throw new Error("Final transfer request lacks the user-selected address");
   }
   if (kind === "hail.transfer-cancellation-receipt" &&
-    (!digest(value.invitation_digest) || typeof value.destination_domain !== "string" ||
-      !validBase(value.source_service_base) ||
-      serviceBaseForProviderDomain(value.destination_domain) === value.source_service_base)) {
+    (!digest(value.invitation_digest) || !isCanonicalAddressDomain(value.destination_domain) ||
+      !validBase(value.source_service_base))) {
     throw new Error("Invalid source cancellation receipt");
   }
   return value as unknown as Handshake;
@@ -185,7 +179,8 @@ export function sameDigest(a: Uint8Array, b: Uint8Array): boolean {
 
 export class TransferInvitationService {
   constructor(private readonly sql: SQL, private readonly resolver: HailDidResolver,
-    private readonly sourceBase: string, private readonly now = () => Math.floor(Date.now() / 1000)) {}
+    private readonly sourceBase: string, private readonly now = () => Math.floor(Date.now() / 1000),
+    private readonly discover?: ProviderDiscovery) {}
 
   // The source signs an acknowledgement, not a replacement for the user's grant.
   async issue(grantSigned: SignedHandshake, sourceMessagingPrivateKey: CryptoKey): Promise<SignedHandshake> {
@@ -198,6 +193,7 @@ export class TransferInvitationService {
       throw new Error("Transfer grant source or lifetime is invalid");
     }
     await verifyHandshake(grantSigned, "hail.transfer-grant", state.identityDidKey);
+    await assertDestinationDomain(grant.destination_domain, grant.destination_service_base, this.discover);
     const invitation: TransferInvitation = { type: "hail.transfer-invitation", version: 1,
       did: grant.did, nonce: grant.nonce, source_service_base: grant.source_service_base,
       destination_service_base: grant.destination_service_base,

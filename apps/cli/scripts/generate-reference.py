@@ -48,7 +48,7 @@ options = {
     'monitor-key': 'Pinned monitor public key; supply together with `--monitor-origin`.',
     'monitor-attestation': 'Path to retained signed monitor attestation JSON; needed when the onboarding/transfer authority profile requires it.',
     'passkey-enrollment': 'Private output path for short-lived browser passkey enrollment during signup.',
-    'destination': 'Destination provider HTTPS origin for a transfer offer.',
+    'destination': 'Destination provider API HTTPS origin for a transfer offer; its address domain is read from the provider and may differ.',
     'username': 'Requested local username at the transfer destination.',
     'snapshot': 'Private exact transfer snapshot JSON path. Preserve the exported bytes.',
     'operation': 'Private owner-signed PLC operation output path for offline cutover.',

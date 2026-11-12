@@ -33,7 +33,7 @@ export function createPublicManagedRuntime(config:AppConfig,sql:SQL,plc:PlcDirec
   if(observers.some((observer,index)=>observer.origin!==policy.readers[index]!.origin||observer.operator!==policy.readers[index]!.operator))
     throw new Error("Injected public readers must match reviewed declarations");
   const resolver=new VerifiedPublicPlcResolver(sql,observers,policy.providerOperators,[config.publicOrigin]);
-  const targetKeys=new PreparedMigrationTarget(sql,encryptor,config.hailServiceBase,true);
+  const targetKeys=new PreparedMigrationTarget(sql,encryptor,config.hailServiceBase,true,config.nativeAddressDomain);
   const gate=new PortableCutoverGate(sql,observers,undefined,policy.providerOperators,config.publicManagedTransfer,plc);
   const activation=new ManagedMigrationActivation(sql,encryptor,resolver,verifier,config.hailServiceBase,
     config.plcDirectoryUrl,"strict-public-v1",undefined,gate);
@@ -41,7 +41,7 @@ export function createPublicManagedRuntime(config:AppConfig,sql:SQL,plc:PlcDirec
     authorization:new ManagedTransferAuthorization(sql,resolver,config.hailServiceBase,repository,encryptor),
     delivery:new ManagedTransferDelivery(sql,resolver,config.hailServiceBase,transport.fetch,transport.validateTarget),
     fencePublisher:new ManagedTransferFencePublisher(sql,resolver,targetKeys,transport.fetch,transport.validateTarget),
-    fence:new ManagedMigrationFenceService(sql,resolver,config.hailServiceBase),
+    fence:new ManagedMigrationFenceService(sql,resolver,config.hailServiceBase,undefined,undefined,config.nativeAddressDomain),
     exporter:new ManagedMigrationExportService(sql,repository,encryptor,resolver,config.hailServiceBase),
     completion:new ManagedMigrationCompletion(new ManagedMigrationStageService(sql,resolver,targetKeys,config.hailServiceBase),
        new ManagedMigrationPlcSubmission(sql,plc,resolver,config.hailServiceBase),activation,true,connections)};

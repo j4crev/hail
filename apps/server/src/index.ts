@@ -138,7 +138,8 @@ const statusSigner = new DeliveryStatusSigner(database.sql, onboardingRepository
 const statusPublisher = new TerminalStatusPublisher(database.sql, statusSigner, resolver,
   transport.fetch, transport.validateTarget);
 const targetKeys = new PreparedMigrationTarget(database.sql,
-  encryptor, config.hailServiceBase,Boolean(config.publicManagedTransfer)||process.env.POC_SELF_SERVICE_RETURN==="true");
+  encryptor, config.hailServiceBase,Boolean(config.publicManagedTransfer)||process.env.POC_SELF_SERVICE_RETURN==="true",
+  config.nativeAddressDomain);
 const finalTransferPublisher = new TransferFinalRequestPublisher(database.sql, resolver,
   targetKeys, transport.fetch, transport.validateTarget);
 const invitationDelivery = new TransferInvitationDelivery(database.sql, resolver,
@@ -167,7 +168,7 @@ const managedDelivery=publicManaged?.delivery??(managedResolver?new ManagedTrans
 const managedFencePublisher=publicManaged?.fencePublisher??(managedResolver?new ManagedTransferFencePublisher(database.sql,managedResolver,managedTargetKeys,
   transport.fetch,transport.validateTarget):undefined);
 const managedFence=publicManaged?.fence??(managedResolver?new ManagedMigrationFenceService(database.sql,managedResolver,config.hailServiceBase,
-  undefined,"poc-local"):undefined);
+  undefined,"poc-local",config.nativeAddressDomain):undefined);
 const managedExporter=publicManaged?.exporter??(managedResolver?new ManagedMigrationExportService(database.sql,onboardingRepository,encryptor,
   managedResolver,config.hailServiceBase,undefined,"poc-local"):undefined);
 const managedActivation=publicManaged?.activation??(managedResolver?new ManagedMigrationActivation(database.sql,encryptor,managedResolver,
@@ -417,7 +418,7 @@ const app = createApp(config, schemaRehearsal ? {
       new TransferGrantSubmission(database.sql,resolver,config.hailServiceBase,onboardingRepository,new KeyEncryptor(config.keyEncryptionKey),
         new TransferInvitationService(database.sql,resolver,config.hailServiceBase),invitationDelivery,transferRateLimit),
       new TransferCancellationService(database.sql,resolver,config.hailServiceBase,onboardingRepository,new KeyEncryptor(config.keyEncryptionKey)),config.publicOrigin,
-      {fence:new MigrationFenceService(database.sql,resolver,config.hailServiceBase),snapshots:new MigrationTransferService(database.sql,onboardingRepository,
+      {fence:new MigrationFenceService(database.sql,resolver,config.hailServiceBase,undefined,config.nativeAddressDomain),snapshots:new MigrationTransferService(database.sql,onboardingRepository,
         new KeyEncryptor(config.keyEncryptionKey),resolver,config.hailServiceBase)})}:{}),
     binding:new AccountBinding(database.sql,resolver,new KeyEncryptor(config.keyEncryptionKey),config.publicOrigin,
        new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),undefined,config.nativeAddressDomain),
@@ -458,7 +459,7 @@ const app = createApp(config, schemaRehearsal ? {
   transferAddressReservation: new TransferAddressReservation(database.sql, resolver,
     targetKeys, transferRateLimit),
   transferFinalRequestPublisher: finalTransferPublisher,
-  migrationFence: new MigrationFenceService(database.sql, resolver, config.hailServiceBase),
+  migrationFence: new MigrationFenceService(database.sql, resolver, config.hailServiceBase, undefined, config.nativeAddressDomain),
   transferGrantSubmission: new TransferGrantSubmission(database.sql, resolver, config.hailServiceBase,
     onboardingRepository, new KeyEncryptor(config.keyEncryptionKey),
     new TransferInvitationService(database.sql, resolver, config.hailServiceBase),
@@ -466,7 +467,8 @@ const app = createApp(config, schemaRehearsal ? {
   transferRateLimit,
   transferCancellation: new TransferCancellationService(database.sql, resolver, config.hailServiceBase,
     onboardingRepository, new KeyEncryptor(config.keyEncryptionKey)),
-  transferCancellationReceiver: new TransferCancellationReceiver(database.sql, resolver, config.hailServiceBase),
+  transferCancellationReceiver: new TransferCancellationReceiver(database.sql, resolver, config.hailServiceBase,
+    config.nativeAddressDomain),
   ...(managedResolver&&managedFencePublisher&&managedFence&&managedCompletion?{
     managedTransferInvitationReceiver:new ManagedTransferInvitationReceiver(database.sql,managedResolver,managedTargetKeys),
     managedTransferAddressReservation:new ManagedTransferAddressReservation(database.sql,managedResolver,managedTargetKeys,transferRateLimit),

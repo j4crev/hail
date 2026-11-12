@@ -83,7 +83,7 @@ export class ManagedTransferAddressReservation {
       const grantDigest = managedHandshakeDigest(grantSigned.payloadBytes);
       const acknowledgementDigest = managedHandshakeDigest(acknowledgementSigned.payloadBytes);
       const offerDigest = managedHandshakeDigest(offerSigned.payloadBytes);
-      const domain = new URL(prepared.destinationServiceBase).hostname;
+      const domain = this.target.addressDomain;
       const sourceKeys = new Set([ownerRecoveryKey, resolved.identityDidKey, resolved.messagingDidKey, ...plc.rotationKeys]);
       if (grant.did !== selection.did || grant.nonce !== selection.nonce ||
         grant.source_service_base !== resolved.serviceBase || grant.source_identity_key !== resolved.identityDidKey ||

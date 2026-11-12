@@ -7,6 +7,7 @@ import { managedHandshakeDigest,verifyManagedOwnerHandshake,verifyManagedProvide
   type ManagedTransferGrant,type SignedManagedHandshake } from "./managed-handshake.js";
 import {boundedTransferBody,managedInvitationWire,MAX_TRANSFER_WIRE_BYTES,parseRequestWire,requestWire,
   TRANSFER_MEDIA_TYPE} from "./wire.js";
+import {transferEndpoint} from "./destination-domain.js";
 
 const same=(a:Uint8Array,b:Uint8Array)=>Buffer.from(a).equals(Buffer.from(b));
 interface SourceRow {custody_profile:"portable"|"managed";owner_recovery_public_key:string|null;
@@ -46,7 +47,7 @@ export class ManagedTransferDelivery {
       return prior;
     }
     if(row.consumed_transfer_id)throw new Error("Managed transfer authorization was already consumed");
-    const url=new URL(`https://${grant.destination_domain}/.well-known/hail/transfers/managed-invitations`);
+    const url=transferEndpoint(grant.destination_service_base,"managed-invitations");
     await this.validateTarget(url);
     const body=managedInvitationWire(grantSigned,acknowledgementSigned);
     if(body.length>MAX_TRANSFER_WIRE_BYTES)throw new Error("Managed invitation wire body exceeds limit");

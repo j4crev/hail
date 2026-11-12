@@ -69,8 +69,21 @@ seconds. Invitation inherits the Grant deadline and has no `issued_at` field.
 Managed handshake lifetimes are positive and at most 3600 seconds. Receivers also
 check current time, exact operation state and the authority chain; a structurally
 valid historical record is not a fresh authorization. Source and destination
-service bases differ; the selected destination domain binds
-`https://{domain}/hail` and the destination address domain.
+service bases differ.
+
+`destination_domain` is the destination provider's native address domain: the
+domain of the address the user will select there. It is independent of the
+destination service host, so a provider can serve API/federation at
+`https://svr.example.com/hail` and addresses at `example.com`. Structurally it
+is a canonical lowercase DNS name without scheme, port, path or address literal.
+Before acknowledging a grant, the source MUST verify that the domain is served by
+`destination_service_base`: either it equals that service base's host, or its
+`_hail-provider.{domain}` TXT record (see [address binding](address-binding.md))
+names that exact host. A missing, ambiguous, foreign or unavailable delegation
+refuses the grant. The destination MUST refuse grants, address selections,
+bindings and cancellation receipts whose domain is not its own configured native
+address domain. Discovery and transfer endpoints never use the address domain as
+an HTTP origin; see the operation inventory below.
 
 ### Portable handshake
 
@@ -227,7 +240,9 @@ not just a mathematically valid old signature.
 
 ## HTTP operation inventory
 
-`W` means `https://{approved-destination-domain}/.well-known/hail/transfers/`;
+`W` means the origin of the approved `destination_service_base` plus
+`/.well-known/hail/transfers/` (for example `https://svr.example.com/.well-known/hail/transfers/`),
+never the destination address domain;
 `S` means the current source service base plus `/transfers/`.
 All entries use POST and `application/hail-transfer+json`, no content coding,
 HTTPS validation and pinned public DNS, and no redirects. JSON signatures are the

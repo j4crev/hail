@@ -76,7 +76,7 @@ interoperability, authentication-method-neutral browser authorization and the
 account API boundary. It is not required for federation. The reference web
 client retains its passkey-specific browser contract. The profile also documents
 its optional scoped media-capability extension and separation of browser, API,
-and native address origins, including the remaining provider-transfer limitation.
+and native address origins, including split-domain provider transfer.
 
 ## Reference client namespace
 
