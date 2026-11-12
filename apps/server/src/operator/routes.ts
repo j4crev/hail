@@ -9,9 +9,43 @@ import {OperatorError, type OperatorInvitations} from "./invitations.js";
 import {RECENT_PASSKEY_WINDOW_MS} from "../accounts/session-policy.js";
 
 import {statsRanges, type OperatorStatistics, type StatsRange} from "./stats.js";
+import {ServiceAccountError,type ProviderServiceAccounts} from "../onboarding/service-accounts.js";
 
-export function registerOperatorRoutes(app:Hono,accounts:AccountApiRepository,invitations:OperatorInvitations,origin:string,statistics?:OperatorStatistics,registration?:RegistrationPolicy){
+export function registerOperatorRoutes(app:Hono,accounts:AccountApiRepository,invitations:OperatorInvitations,origin:string,statistics?:OperatorStatistics,registration?:RegistrationPolicy,
+  serviceAccounts?:ProviderServiceAccounts){
   const rate=new FixedWindowRateLimit();
+  // Provider service accounts (spec/provider-service-accounts.md). Passkey links stay host-only.
+  if(serviceAccounts)app.all("/api/v1/operator/service-accounts",async context=>{
+    context.header("Cache-Control","no-store");
+    context.header("Referrer-Policy","no-referrer");
+    if(!["GET","POST"].includes(context.req.method))return context.json({error:"Use GET or POST"},405);
+    if(context.req.header("Origin")!==origin)return context.json({error:"Origin refused"},403);
+    try{
+      const session=await accounts.authenticate(undefined,getCookie(context,"hail_session"));
+      if(!session)return context.json({error:"Sign in with a passkey"},401);
+      if(!session.passkey_credential_id||session.migration_state||!await invitations.authorized(session.account_id))
+        return context.json({error:"Provider operator access required"},403);
+      const retry=rate.take(session.account_id,30);
+      if(retry!==null){context.header("Retry-After",String(retry));return context.json({error:"Rate limited"},429);}
+      if(context.req.method==="GET")return context.json({accounts:await serviceAccounts.list(),available:await serviceAccounts.available(),
+        recoveryKeySet:await serviceAccounts.recoveryKey()!==null});
+      if(!session.passkey_verified_at||Date.now()-session.passkey_verified_at.getTime()>RECENT_PASSKEY_WINDOW_MS)
+        return context.json({error:"Sign in again before creating service accounts"},403);
+      if(context.req.header("Content-Type")!=="application/json"||context.req.header("Content-Encoding"))return context.json({error:"Use JSON"},415);
+      const bytes=await accountRequestBytes(context.req.raw,1024);
+      if(!bytes)return context.json({error:"Request too large"},413);
+      let name:string;
+      try{
+        const input=parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8",{fatal:true}).decode(bytes)) as Record<string,unknown>;
+        if(!input||typeof input!=="object"||Array.isArray(input)||Object.keys(input).join()!=="name"||typeof input.name!=="string")throw new Error();
+        name=input.name;
+      }catch{return context.json({error:"Invalid request"},400);}
+      return context.json(await serviceAccounts.create(name));
+    }catch(error){
+      if(error instanceof ServiceAccountError)return context.json({error:error.message},409);
+      return context.json({error:"Creation is unconfirmed; retry the same name to resume"},503);
+    }
+  });
   for(const path of ["/api/v1/operator/invitations","/api/v1/operator/stats","/api/v1/operator/registration"])app.all(path,async context=>{
     const isRegistration=context.req.path.endsWith("/registration");
     const isStats=context.req.path.endsWith("/stats");

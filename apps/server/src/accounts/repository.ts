@@ -171,8 +171,9 @@ export class AccountApiRepository {
     const managed = await this.sql<{owner_recovery_public_key:string;verification_mode:string;managed_profile_version:string}[]>`
       SELECT owner_recovery_public_key,verification_mode,managed_profile_version
       FROM managed_custody_evidence WHERE account_id=${session.account_id}`;
-    const profile = managed[0] && identity ? "managed" : custody[0] && !identity ? "owner-controlled" : !custody[0] && identity && rotation ?
-      "custodial-poc" : "unknown";
+    const service = (await this.sql`SELECT 1 FROM provider_service_account_evidence WHERE account_id=${session.account_id}`).length > 0;
+    const profile = service && identity && rotation ? "provider-service" : managed[0] && identity ? "managed" :
+      custody[0] && !identity ? "owner-controlled" : !custody[0] && identity && rotation ? "custodial-poc" : "unknown";
     const operator=await this.sql`SELECT op.account_id FROM provider_operators op JOIN account_serving_generations g ON g.account_id=op.account_id AND g.generation=op.serving_generation WHERE op.account_id=${session.account_id}`;
     return { providerOperator:operator.length>0, type: "racr.account", version: 1, provider, accountId: session.account_id,
       did: session.did, address: session.canonical_address, addressReleased:!!session.address_released_at, migrationState: session.migration_state,

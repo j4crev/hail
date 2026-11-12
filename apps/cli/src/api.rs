@@ -378,7 +378,13 @@ fn account_response(result: Value, credential: &Credential) -> Result<Value, Err
         || !allowed("migrationState", &["fenced", "exported", "retired"], true)
         || !allowed(
             "custodyProfile",
-            &["owner-controlled", "managed", "custodial-poc", "unknown"],
+            &[
+                "owner-controlled",
+                "managed",
+                "provider-service",
+                "custodial-poc",
+                "unknown",
+            ],
             false,
         )
         || !allowed(

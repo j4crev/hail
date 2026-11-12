@@ -318,10 +318,10 @@ reports the number queued (or that none were available).
 
 ## Operator setup
 
-1. Create a local account for the bridge, give it a Sender Profile with a
-   category for bridged mail (`email` by default), and publish its address
-   binding. This is the sender users grant. The reference provider reserves the
-   name `email`, so it is claimed as a provider role rather than registered.
+1. Create the bridge's sender as a [provider service account](provider-service-accounts.md)
+   (the reference provider reserves the name `email`) and give it a Sender
+   Profile with a category for bridged mail (`email` by default). This is the
+   sender users grant.
 2. Set `EMAIL_BRIDGE_DOMAIN`, `EMAIL_BRIDGE_INTAKE_TOKEN`, `EMAIL_BRIDGE_SENDER`
    (that account's address) and, if not `email`, `EMAIL_BRIDGE_CATEGORY`. The
    provider refuses to start with only some of them.

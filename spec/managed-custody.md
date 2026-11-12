@@ -17,7 +17,8 @@ evidence does not by itself establish conformance to the revised binding format.
 The [onboarding profile](account-onboarding.md) remains the baseline. A production
 provider must continue to support portable owner-controlled custody. Managed v1
 is a separately, explicitly selected alternative with different identity custody;
-provider-held recovery remains the custodial POC, not this profile. All shared
+provider-held recovery remains the custodial POC, not this profile. Provider-owned
+reserved addresses use the separate [provider service account](provider-service-accounts.md) profile. All shared
 onboarding, Hail key-role, backup, monitoring, registration, discovery and delivery
 requirements apply unless the difference is stated below.
 

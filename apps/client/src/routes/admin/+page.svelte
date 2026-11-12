@@ -21,6 +21,22 @@
     }catch{modeMessage="Could not confirm the setting. Refresh and retry.";}
     finally{savingMode=false;}
   }
+  let serviceName=$state(""),creatingService=$state(false),serviceMessage=$state("");
+  async function createService(event:SubmitEvent){
+    event.preventDefault();if(creatingService||!serviceName)return;
+    creatingService=true;serviceMessage="";
+    try{
+      const response=await fetch("/api/v1/operator/service-accounts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:serviceName})});
+      if(!response.ok){
+        const detail=await response.json().catch(()=>({}));
+        serviceMessage=response.status===403?"Sign in again with your operator passkey, then return here.":
+          response.status===409&&typeof detail.error==="string"?detail.error:"Creation is unconfirmed. Retry the same name to resume it.";
+        return;
+      }
+      serviceMessage=`${serviceName}@ is ready.`;serviceName="";await invalidateAll();
+    }catch{serviceMessage="Creation is unconfirmed. Retry the same name to resume it.";}
+    finally{creatingService=false;}
+  }
   async function create(event:SubmitEvent){
     event.preventDefault();if(busy)return;
     busy=true;message="";inviteUrl="";
@@ -72,6 +88,31 @@
     {#if inviteUrl}<label for="invite-link">Private invitation link</label><div class="flex min-w-0 items-start gap-1"><textarea class="min-w-0 flex-1" id="invite-link" readonly value={inviteUrl} rows="3"></textarea><CopyButton value={inviteUrl} label="Copy invitation link" /></div>{/if}
     <p class="hint">Creating invitations requires a passkey login within the last ten minutes. <a href="/?next=%2Fadmin">Sign in again</a></p>
   </section>
+  {#if data.serviceAccounts}
+  <section class="hail-card panel" aria-labelledby="service-accounts">
+    <h2 id="service-accounts">Service accounts</h2>
+    <p>Reserved addresses that belong to this server, such as abuse@ or support@. The server holds their keys; they cannot be transferred.</p>
+    {#if data.serviceAccounts.accounts.length}
+      <div class="table-scroll overflow-auto"><table><thead><tr><th>Address</th><th>Status</th><th>Operator</th><th>Passkeys</th></tr></thead><tbody>
+        {#each data.serviceAccounts.accounts as service (service.accountId)}<tr><td>{service.address}</td><td>{service.active?"Active":`Setting up (${service.state})`}</td><td>{service.operator?"Yes":"No"}</td><td>{service.passkeys}</td></tr>{/each}
+      </tbody></table></div>
+    {/if}
+    {#if !data.serviceAccounts.recoveryKeySet}
+      <p class="hint">Set the provider recovery key on the server before creating service accounts.</p>
+    {:else if data.serviceAccounts.available.length}
+      <form onsubmit={createService}>
+        <label for="service-name">Create a service account</label>
+        <select id="service-name" bind:value={serviceName} disabled={creatingService}>
+          <option value="" disabled>Choose a reserved name</option>
+          {#each data.serviceAccounts.available as name (name)}<option value={name}>{name}@</option>{/each}
+        </select>
+        <button class="hail-button" disabled={creatingService||!serviceName}>{creatingService?"Creating…":"Create service account"}</button>
+      </form>
+      <p class="hint">Creation registers a public identity and checks its address, so it can take a few seconds. It requires a passkey login within the last ten minutes.</p>
+    {/if}
+    {#if serviceMessage}<Toast message={serviceMessage} />{/if}
+  </section>
+  {/if}
   <section class="hail-card panel" aria-labelledby="recent-invitations">
     <h2 id="recent-invitations">Recent invitations</h2><p class="hint">Latest 100 invitations created through this dashboard. “Accepted” means signup has started.</p>
     {#if !data.invitations.length}<p>No invitations yet.</p>{:else}
@@ -90,7 +131,7 @@
   form { @apply grid gap-[12px] max-w-[540px]; }
   label { @apply block font-[600] mb-[8px]; }
   label span,.hint { @apply text-muted text-[13px]; }
-  input,textarea { @apply w-full p-[12px] [border:1px_solid_var(--color-line)] rounded-[10px] [background:var(--color-canvas)] text-ink; }
+  input,textarea,select { @apply w-full p-[12px] [border:1px_solid_var(--color-line)] rounded-[10px] [background:var(--color-canvas)] text-ink; }
   textarea { @apply mb-[12px] [overflow-wrap:anywhere]; }
   table { @apply w-full border-collapse text-left text-[13px]; }
   th,td { @apply [padding:14px_12px] [border-bottom:1px_solid_var(--color-line)]; }

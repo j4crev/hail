@@ -53,6 +53,7 @@ import { TransferCleanup } from "./migration/cleanup.js";
 import { AccountApiRepository } from "./accounts/repository.js";
 import { GrantService } from "./grants/service.js";
 import { AddressVerifier } from "./discovery/verifier.js";
+import { ProviderServiceAccounts } from "./onboarding/service-accounts.js";
 import { providerDiscoveryForOrigin } from "./discovery/delegation.js";
 import { CustomDomains } from "./accounts/custom-domains.js";
 import { SenderProfileVerifier } from "./profiles/verifier.js";
@@ -394,6 +395,9 @@ const app = createApp(config, schemaRehearsal ? {
     return {signup:new SignupCoordinator(database.sql,onboarding,new SignupMonitorService(database.sql,new SignupEmailClient(config.signupEmail!),
       new SignupMonitorClient(config.signupMonitor!)),config.publicOrigin,policy,config.alphaSignup.invitationKey,new CustomDomains(database.sql,config.publicOrigin,undefined,undefined,config.nativeAddressDomain),config.sessionPolicy,config.nativeAddressDomain,config.passkeys?.origin)};
   })():{}),
+  ...(config.plcDirectoryUrl==="https://plc.directory"?{serviceAccounts:new ProviderServiceAccounts(database.sql,plc,resolver,
+    new KeyEncryptor(config.keyEncryptionKey),config.plcDirectoryUrl,config.hailServiceBase,
+    new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),config.nativeAddressDomain,config.publicOrigin)}:{}),
   ...(config.passkeys?{passkeys:new PasskeyAuth(database.sql,config.passkeys.rpId,config.passkeys.origin,undefined,config.sessionPolicy,config.publicOrigin)}:{}),
   ...(process.env.POC_ACCOUNT_ACCESS === "true" || publicManaged ?
     { accountAccess: { access: new AccountAccess(database.sql, resolver, config.publicOrigin), sql: database.sql } } : {}),

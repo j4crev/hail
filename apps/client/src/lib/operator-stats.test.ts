@@ -19,3 +19,14 @@ it("does not hide operator authorization failures",async()=>{
   request.mockResolvedValueOnce({invitations:[]}).mockRejectedValueOnce(new AccountApiError(403));
   await expect(load(event())).rejects.toMatchObject({status:403});
 });
+it("lists service accounts and treats a provider without them as unavailable",async()=>{
+  const serviceAccounts={accounts:[{address:"admin@example.com",accountId:"a",did:null,state:"active",active:true,operator:true,passkeys:1}],
+    available:["abuse"],recoveryKeySet:true};
+  request.mockResolvedValueOnce({invitations:[]}).mockResolvedValueOnce({range:"day",activity:[]}).mockResolvedValueOnce({mode:"invite"})
+    .mockResolvedValueOnce(serviceAccounts);
+  expect(await load(event())).toMatchObject({serviceAccounts});
+  expect(request).toHaveBeenLastCalledWith("/service-accounts",undefined,"/api/v1/operator");
+  request.mockResolvedValueOnce({invitations:[]}).mockResolvedValueOnce({range:"day",activity:[]}).mockResolvedValueOnce({mode:"invite"})
+    .mockRejectedValueOnce(new AccountApiError(404));
+  expect(await load(event())).toMatchObject({serviceAccounts:null});
+});
