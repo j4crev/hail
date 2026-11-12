@@ -35,6 +35,10 @@ digest=$(sha256sum "$work/$name" | cut -d' ' -f1)
 export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
 export RCLONE_CONFIG_R2_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
 export RCLONE_CONFIG_R2_ENDPOINT="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+# rclone before 1.61 re-reads each upload with HEAD ?versionId=..., which R2
+# rejects with 501 NotImplemented. The full-download digest check below is the
+# real verification, so skip that HEAD.
+export RCLONE_CONFIG_R2_NO_HEAD=true
 remote="r2:haili-production-backups/provider/$name"
 rclone copyto "$work/$name" "$remote"
 test "$(rclone cat "$remote" | sha256sum | cut -d' ' -f1)" = "$digest"
