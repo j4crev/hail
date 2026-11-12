@@ -486,9 +486,13 @@ empty-Feed prompt.
   requires it, and intake refuses mail for accounts that have it off.
 - [x] Aliases screen: list, create with a label and copy the address, select
   and delete with confirmation. Design-preview fixture updated.
-- [ ] Feed rows and message view show the email sender from `origin`, a bridged
-  label and the authentication result, and hide Reply.
-- [ ] Replace Unsubscribe on bridged messages with "Delete this alias".
+- [x] Feed, Trash and message views show the email sender from `origin`, a
+  "via email" label and the authentication result, and hide Reply. The design
+  preview includes a bridged newsletter.
+- [x] Hide Unsubscribe on bridged messages (it would turn inbound email off
+  entirely) and link to Aliases instead.
+- [ ] Offer "Delete this alias" on a bridged message. Needs the provider to
+  expose which alias the message arrived through.
 - [ ] Browser check script covering the switch, alias creation and deletion;
   add to CI. The design preview cannot exercise the switch, which needs a passkey.
 
