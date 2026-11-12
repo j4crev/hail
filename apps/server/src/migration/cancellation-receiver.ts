@@ -5,7 +5,8 @@ import { handshakeDigest, sameDigest, verifyHandshake, type SignedHandshake } fr
 
 export class TransferCancellationReceiver {
   constructor(private readonly sql: SQL, private readonly resolver: HailDidResolver,
-    private readonly destinationBase: string) {}
+    private readonly destinationBase: string,
+    private readonly addressDomain = new URL(destinationBase).hostname) {}
 
   async receive(signedCancel: SignedHandshake, signedReceipt: SignedHandshake): Promise<void> {
     if (signedCancel.payloadBytes.length > 4096 || signedReceipt.payloadBytes.length > 4096) {
@@ -24,7 +25,7 @@ export class TransferCancellationReceiver {
     if (state.did !== cancellation.did || receipt.did !== cancellation.did ||
       receipt.nonce !== cancellation.nonce ||
       receipt.source_service_base !== state.serviceBase ||
-      receipt.destination_domain !== new URL(this.destinationBase).hostname ||
+      receipt.destination_domain !== this.addressDomain ||
       receipt.issued_at > now + 300 || receipt.expires_at <= now ||
       !sameDigest(receipt.grant_digest, cancellation.grant_digest)) {
       throw new Error("Cancellation is not authenticated by the current source and user");

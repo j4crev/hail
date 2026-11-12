@@ -15,8 +15,11 @@ import {signPrivatePocCutover,verifyTransferSnapshot,verifySignature} from "./tr
 
 interface Wire {payload:string;signature:string;}
 interface State {type:"racr.account-transfer";version:1;provider:string;accountId:string;did:string;key:string;destination:string;
+  /** Destination native address domain; may differ from its API host. Defaults to that host. */
+  destinationDomain?:string;
   grant?:Wire;offer?:Wire;selection?:Wire;reservation?:Wire;cancellation?:Wire;receipt?:Wire;sourceMessagingKey?:string;targetAcknowledged?:boolean;
   cutover?:{snapshotDigest:string;consentPath:string;operationPath:string;bindingPath:string;operationCid?:string};activationReceipt?:Wire;retired?:boolean;}
+const addressDomain=(state:Pick<State,"destination"|"destinationDomain">)=>state.destinationDomain??new URL(state.destination).hostname;
 const sha=(bytes:Uint8Array)=>new Uint8Array(createHash("sha256").update(bytes).digest());
 const equal=(a:Uint8Array,b:Uint8Array)=>Buffer.from(a).equals(Buffer.from(b));
 const uuid=(value:unknown)=>typeof value==="string"&&/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value);
@@ -59,7 +62,7 @@ export function destinationOrigin(input:string) {
 async function reviewGrant(state:State) {
   const grant=await verify(record(state.grant),"hail.transfer-grant",state.key);
   if(grant.did!==state.did||grant.source_service_base!==`${state.provider}/hail`||grant.destination_service_base!==`${destinationOrigin(state.destination)}/hail`||
-    grant.destination_domain!==new URL(state.destination).hostname)throw new Error("Retained approval differs from the transfer review");
+    grant.destination_domain!==addressDomain(state))throw new Error("Retained approval differs from the transfer review");
   return grant;
 }
 async function reviewOffer(state:State,grant:Record<string,any>) {
@@ -95,13 +98,15 @@ export async function transferStatus(client:AccountApiClient) {
     !["none","invitation-pending","offer-ready","expired","expired-unresolved","cancelled","fenced","exported","retired"].includes(status.phase as string))throw new Error("Transfer status differs from its authenticated account");
   return status;
 }
-export async function transferOffer(client:AccountApiClient,destination:string,vaultPath:string,path:string,recoveryInput=readRecoverySecret) {
+export async function transferOffer(client:AccountApiClient,destination:string,vaultPath:string,path:string,recoveryInput=readRecoverySecret,
+  destinationDomain?:string) {
   destination=destinationOrigin(destination);const account=await client.account();
   if(account.custodyProfile!=="owner-controlled"||account.migrationState||!account.scopes.includes("account:write")||typeof account.identityPublicKey!=="string"||destination===account.provider)throw new Error("Offer preparation requires owner-controlled write authority and a distinct destination");
   let state:State;
   try {state=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(await privateFile(path,32768)));}
   catch(error){if(!(error instanceof Error&&"code" in error&&error.code==="ENOENT"))throw error;
-    state={type:"racr.account-transfer",version:1,provider:account.provider,accountId:account.accountId,did:account.did,key:account.identityPublicKey,destination};
+    state={type:"racr.account-transfer",version:1,provider:account.provider,accountId:account.accountId,did:account.did,key:account.identityPublicKey,destination,
+      destinationDomain:destinationDomain??new URL(destination).hostname};
     await savePrivateBytes(path,new TextEncoder().encode(JSON.stringify(state)));}
   if(!state||state.type!=="racr.account-transfer"||state.version!==1||state.provider!==account.provider||state.accountId!==account.accountId||
     state.did!==account.did||state.key!==account.identityPublicKey||state.destination!==destination||state.cancellation)throw new Error("Transfer state/identity/destination changed or was cancelled");
@@ -109,12 +114,12 @@ export async function transferOffer(client:AccountApiClient,destination:string,v
     const user=await unlockUserIdentity(JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(await privateFile(vaultPath,16384))) as UserVaultFile,secret);
     if(user.vault.did!==account.did||user.vault.identity.publicDidKey!==state.key)throw new Error("Vault does not match the account identity");
     const now=Math.floor(Date.now()/1000),grant:UserTransferGrant={type:"hail.transfer-grant",version:1,did:state.did,nonce:randomUUID(),
-      source_service_base:`${account.provider}/hail`,destination_service_base:`${destination}/hail`,destination_domain:new URL(destination).hostname,issued_at:now,expires_at:now+3600};
+      source_service_base:`${account.provider}/hail`,destination_service_base:`${destination}/hail`,destination_domain:addressDomain(state),issued_at:now,expires_at:now+3600};
     const signed=await user.signTransferGrant(grant);state.grant={payload:encodeBase64Url(signed.payloadBytes),signature:encodeBase64Url(signed.signature)};await writeState(path,state);
   }finally{secret.fill(0);}}
   const grant=await verify(record(state.grant),"hail.transfer-grant",state.key),now=Math.floor(Date.now()/1000);
   if(grant.type!=="hail.transfer-grant"||grant.version!==1||grant.did!==state.did||grant.source_service_base!==`${account.provider}/hail`||
-    grant.destination_service_base!==`${destination}/hail`||grant.destination_domain!==new URL(destination).hostname||grant.expires_at<=now||grant.expires_at-grant.issued_at>3600)throw new Error("Retained transfer approval is stale or differs from the review");
+    grant.destination_service_base!==`${destination}/hail`||grant.destination_domain!==addressDomain(state)||grant.expires_at<=now||grant.expires_at-grant.issued_at>3600)throw new Error("Retained transfer approval is stale or differs from the review");
   const status=await client.request("/transfers/offer",{...state.grant});
   if(status.type!=="racr.transfer-status"||status.version!==1||status.did!==state.did||status.accountId!==state.accountId||status.provider!==state.provider||
     status.nonce!==grant.nonce||status.destinationServiceBase!==grant.destination_service_base)throw new Error("Offer response does not match the signed approval");
@@ -181,7 +186,7 @@ export async function cancelTransfer(client:AccountApiClient,vaultPath:string,pa
   if(typeof result.sourceMessagingPublicKey!=="string")throw new Error("Cancellation receipt has no source operational key");
   const value=await verify(receipt,"hail.transfer-cancellation-receipt",result.sourceMessagingPublicKey);
   if(value.type!=="hail.transfer-cancellation-receipt"||value.version!==1||value.did!==state.did||value.nonce!==grant.nonce||
-    value.source_service_base!==`${state.provider}/hail`||value.destination_domain!==new URL(state.destination).hostname||
+    value.source_service_base!==`${state.provider}/hail`||value.destination_domain!==addressDomain(state)||
      value.expires_at<=Math.floor(Date.now()/1000)||!digest(value.invitation_digest)||!equal(value.grant_digest,sha(decodeBase64Url(state.grant.payload)))||
      state.offer&&!equal(value.invitation_digest,(decodeDeterministic(decodeBase64Url(record(state.offer).payload)) as Record<string,any>).invitation_digest))throw new Error("Cancellation receipt does not match the original transfer");
   if(state.receipt&&(state.receipt.payload!==receipt.payload||state.receipt.signature!==receipt.signature))throw new Error("Cancellation receipt changed");

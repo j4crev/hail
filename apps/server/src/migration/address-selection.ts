@@ -77,7 +77,7 @@ export class TransferAddressReservation {
       const offerSigned: SignedHandshake = { payloadBytes: invitation.request_bytes,
         signature: invitation.request_signature };
       const offer = await verifyHandshake(offerSigned, "hail.transfer-offer", prepared.messagingPublicKey);
-      const domain = new URL(prepared.destinationServiceBase).hostname;
+      const domain = this.target.addressDomain;
       if (offer.did !== selection.did || offer.transfer_id !== prepared.transferId ||
         offer.destination_service_base !== prepared.destinationServiceBase ||
         currentGrant.destination_service_base !== prepared.destinationServiceBase ||

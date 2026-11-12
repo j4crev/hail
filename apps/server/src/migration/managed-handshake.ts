@@ -4,6 +4,7 @@ import { decodeDeterministic, encodeDeterministic, type HailValue } from "@racrp
 import { canonicalizeHailAddress } from "../identity/address.js";
 import { ed25519PublicKeyFromDidKey } from "../identity/did-key.js";
 import { canonicalizeHailServiceBase } from "../plc/resolver.js";
+import { isCanonicalAddressDomain } from "./destination-domain.js";
 
 const DID = /^did:plc:[a-z2-7]{24}$/;
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
@@ -98,11 +99,6 @@ function validBase(value: unknown): value is string {
 }
 function digest(value: unknown): value is Uint8Array { return value instanceof Uint8Array && value.length === 32; }
 function didKey(value: unknown): value is string { return typeof value === "string" && value.startsWith("did:key:z"); }
-function serviceBaseForDomain(domain: string): string {
-  if (typeof domain !== "string" || canonicalizeHailAddress(`a@${domain}`) !== `a@${domain}` ||
-    domain.includes(":") || domain.includes("/")) throw new Error("Managed transfer destination domain is not canonical");
-  return `https://${domain}/hail`;
-}
 
 function validate<K extends ManagedHandshakeKind>(value: unknown, kind: K): Extract<ManagedHandshake, {type: K}> {
   const expected = fields[kind];
@@ -124,8 +120,7 @@ function validate<K extends ManagedHandshakeKind>(value: unknown, kind: K): Extr
     "hail.managed-transfer-fence-request", "hail.managed-transfer-approval"].includes(kind) &&
     !digest(item.grant_digest)) throw new Error("Invalid managed transfer grant linkage");
   if (kind === "hail.managed-transfer-grant") {
-    if (typeof item.destination_domain !== "string" ||
-      serviceBaseForDomain(item.destination_domain) !== item.destination_service_base ||
+    if (!isCanonicalAddressDomain(item.destination_domain) ||
       !didKey(item.owner_recovery_key) || !didKey(item.source_identity_key) ||
       item.owner_recovery_key === item.source_identity_key) throw new Error("Invalid managed transfer authority");
   }

@@ -112,12 +112,15 @@ async function signConnectionConsent(vault:UserVaultFile,identity:CryptoKey,payl
   return signPayload(payload.type,payload,createWebCryptoSigner(payload.key_id,identity));
 }
 
+// The address domain may differ from the destination service host; the source verifies DNS delegation.
+const canonicalDomain=(domain:string)=>domain.length<=253&&domain.includes(".")&&
+  domain.split(".").every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
 async function signTransferIntent(vault:UserVaultFile,key:CryptoKey,value:UserTransferGrant|UserTransferCancellation|UserTransferAddressSelection,kind:typeof value.type) {
   if(!vault.did||value.did!==vault.did||value.type!==kind||value.version!==1||!Number.isSafeInteger(value.issued_at)||!Number.isSafeInteger(value.expires_at)||
     value.expires_at<=value.issued_at||value.expires_at-value.issued_at>3600)throw new Error("Transfer intent must name this DID and one short-lived approval");
   if(value.type==="hail.transfer-grant") {
     if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value.nonce)||
-      value.destination_service_base!==`https://${value.destination_domain}/hail`||value.source_service_base===value.destination_service_base)throw new Error("Transfer grant must select one destination");
+      !canonicalDomain(value.destination_domain)||value.source_service_base===value.destination_service_base)throw new Error("Transfer grant must select one destination");
   } else if(value.grant_digest.length!==32||value.type==="hail.transfer-address-selection"&&value.offer_digest.length!==32)throw new Error("Transfer intent must bind the exact transfer grant and Offer");
   const payloadBytes=encodeDeterministic(value as unknown as HailValue),tag=new TextEncoder().encode(`${value.type}.v1\0`);
   const input=new Uint8Array(tag.length+payloadBytes.length);input.set(tag);input.set(payloadBytes,tag.length);
@@ -202,7 +205,7 @@ export class UnlockedUserVault {
       value.expires_at-value.issued_at>3600)throw new Error("Managed transfer intent must name this DID and one short-lived approval");
     if(value.type==="hail.managed-transfer-grant") {
       if(value.owner_recovery_key!==this.vault.recovery.publicDidKey||value.source_service_base===value.destination_service_base||
-        value.destination_service_base!==`https://${value.destination_domain}/hail`||value.source_identity_key===value.owner_recovery_key)
+        !canonicalDomain(value.destination_domain)||value.source_identity_key===value.owner_recovery_key)
         throw new Error("Managed transfer grant must bind this owner and one destination");
     } else if(value.grant_digest.length!==32||value.offer_digest.length!==32||
       !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value.transfer_id)) {

@@ -12,6 +12,8 @@ const {encode}=await import(Bun.resolveSync("@ipld/dag-cbor",new URL("../../cli"
 const {cidForCbor}=await import(Bun.resolveSync("@atproto/common",new URL("../../cli",import.meta.url).pathname));
 const root=resolve(import.meta.dir,"../../.."),binary=resolve(Bun.argv[2]??join(root,"apps/cli/target/debug/racr"));
 const directory=await mkdtemp(join(tmpdir(),"racr-transfer-e2e-"));
+// The destination's address domain differs from its API host (split-domain provider).
+const addressDomain="mail.example.org";
 const source="https://source.example.com",destination="https://destination.example.com",id="019a0000-0000-7000-8000-000000000001",did=`did:plc:${"a".repeat(24)}`,token=`racr_${"a".repeat(43)}`;
 const hash=(bytes:Uint8Array)=>new Uint8Array(new Bun.CryptoHasher("sha256").update(bytes).digest());
 const b64=(bytes:Uint8Array)=>Buffer.from(bytes).toString("base64url");
@@ -46,6 +48,10 @@ try{
   const status=()=>({type:managed?"racr.managed-transfer-status":"racr.transfer-status",version:1,provider:source,accountId:id,did,phase:"offer-ready",originConfirmed:true,transferId:id,nonce:grant?.nonce,destinationServiceBase:destination+"/hail",offer,...managed?{acknowledgement:ack}:{}});
   handler=async(request)=>{
    const url=new URL(request.url),path=url.pathname,body=request.method==="POST"?await request.json():null;calls.push({origin:url.origin,path,body});
+   if(url.origin===destination&&path==="/api/v1/capabilities"){
+    assert.equal(request.method,"GET");assert.equal(request.headers.get("authorization"),null);assert.equal(request.headers.get("cookie"),null);
+    return new Response(JSON.stringify({type:"racr.capabilities",version:1,addressDomain}),{headers:{"Content-Type":"application/json"}});
+   }
    const target=path.startsWith("/.well-known/");assert.equal(request.headers.get("authorization"),target?null:`Bearer ${token}`);assert.equal(request.headers.get("cookie"),null);
    const json=(v:unknown,status=200)=>new Response(JSON.stringify(v),{status,headers:{"Content-Type":target?"application/hail-transfer+json":"application/json"}});
    if(path==="/api/v1/account")return json({type:"racr.account",version:1,provider:source,accountId:id,did,address:"alice@source.example.com",custodyProfile:managed?"managed":"owner-controlled",migrationState:fenced?"fenced":null,monitorVerificationMode:"strict-public-v1",managedProfileVersion:managed?"hail-managed-custody-v1":null,identityPublicKey:managed?sourceKeys.vault.identity.publicDidKey:generated.vault.identity.publicDidKey,ownerRecoveryPublicKey:generated.vault.recovery.publicDidKey,scopes:["account:read","account:write"],credential:{credentialId:id,expiresAt:"2030-01-01T00:00:00.000Z"}});
@@ -64,7 +70,7 @@ try{
    }
    if(path.endsWith("/export"))return json(snapshot);
    if(path.endsWith("/cancel")){
-    const cancelled=decodeDeterministic(Buffer.from(body.payload,"base64url"));cancelReceipt??=await sign({type:"hail.transfer-cancellation-receipt",version:1,did,nonce:grant.nonce,grant_digest:cancelled.grant_digest,invitation_digest:new Uint8Array(32),destination_domain:"destination.example.com",source_service_base:source+"/hail",issued_at:cancelled.issued_at,expires_at:cancelled.issued_at+604800},sourceSigner);
+    const cancelled=decodeDeterministic(Buffer.from(body.payload,"base64url"));cancelReceipt??=await sign({type:"hail.transfer-cancellation-receipt",version:1,did,nonce:grant.nonce,grant_digest:cancelled.grant_digest,invitation_digest:new Uint8Array(32),destination_domain:addressDomain,source_service_base:source+"/hail",issued_at:cancelled.issued_at,expires_at:cancelled.issued_at+604800},sourceSigner);
     return json({type:"racr.transfer-cancellation",version:1,cancelled:true,sourceMessagingPublicKey:sourceMessage.vault.identity.publicDidKey,receipt:cancelReceipt});
    }
    if(path.endsWith("cancellations"))return new Response(null,{status:fail==="cancel"?503:204});
@@ -74,7 +80,7 @@ try{
     const cid=(await cidForCbor(operation)).toString();
     if(fail==="complete")return new Response("",{status:503});
     const phase=fail==="monitor"?"awaiting-monitor":fail==="handover"?"awaiting-connection-handover":"active";
-    activation??=await sign({type:"hail.portable-migration-activated",version:1,did,transfer_id:id,snapshot_digest:Buffer.from(snapshot.digest,"base64url"),destination_service_base:destination+"/hail",destination_messaging_key:targetMessage.vault.identity.publicDidKey,destination_address:"alice@destination.example.com",address_binding_digest:managed?new Uint8Array(32):hash(Buffer.from(body.binding,"base64url")),activated_at:Math.floor(Date.now()/1000)},targetSigner);
+    activation??=await sign({type:"hail.portable-migration-activated",version:1,did,transfer_id:id,snapshot_digest:Buffer.from(snapshot.digest,"base64url"),destination_service_base:destination+"/hail",destination_messaging_key:targetMessage.vault.identity.publicDidKey,destination_address:`alice@${addressDomain}`,address_binding_digest:managed?new Uint8Array(32):hash(Buffer.from(body.binding,"base64url")),activated_at:Math.floor(Date.now()/1000)},targetSigner);
     return json({type:managed?"racr.managed-transfer-completion":"racr.transfer-completion",version:1,did,accountId:id,transferId:id,operationCid:cid,generation:2,phase,receipt:activation});
    }
    if(path.endsWith("retirements"))return new Response(null,{status:fail==="retire"?503:204});

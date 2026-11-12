@@ -45,7 +45,7 @@ and run `racr doctor --action "<command>"` for supported prerequisite checks.
 | `--consent` | Private signed transfer consent output path for owner-controlled cutover. |
 | `--credentials` | Private API credential file. Reads select this before `RACR_CREDENTIAL_FILE`; signup/login write a new credential here. |
 | `--custody` | Required signup choice: `owner-controlled` or `managed`. |
-| `--destination` | Destination provider HTTPS origin for a transfer offer. |
+| `--destination` | Destination provider API HTTPS origin for a transfer offer; its address domain is read from the provider and may differ. |
 | `--did` | Account `did:plc:…` whose access is being recovered. |
 | `--epoch` | Current positive connection epoch for an introduction preference override; use the value from connection/preference listing. |
 | `--expected-did` | Expected `did:plc:…` binding for verification/import or expected peer for connection accept. Vault verification also supports `unbound`. |

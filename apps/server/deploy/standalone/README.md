@@ -729,9 +729,19 @@ API origin; preserve its key unless deliberately rotating that key everywhere it
 is trusted. The provider and monitor resets do not clear the external email
 receiver's state.
 
-The current provider-transfer profile still assumes native address domains match
-service hostnames. Transfers to/from the split native-domain profile remain
-unsupported; leave `PUBLIC_MANAGED_TRANSFER=false` and unset
-`PLC_MANAGED_MONITOR_ORIGIN` and `PLC_MANAGED_MONITOR_PUBLIC_KEY`. Those declarations
-belong to managed transfer, not the separate `SIGNUP_MONITOR_*` settings. This fresh-install procedure does
-not bypass that protocol constraint.
+### Provider transfers
+
+Accounts can move between providers that use separate API and address domains,
+such as `svr.example.com` and `example.com`. A source provider confirms that a
+destination's address domain belongs to its API host by reading the
+`_hail-provider` record from [DNS discovery](#dns-discovery-for-your-provider), so
+keep that record published. Clients learn the address domain from the
+destination's `/api/v1/capabilities` (`addressDomain`). Transfer requests between
+providers use the API hostname. Addresses on hosted custom domains cannot be
+transferred yet.
+
+Managed-account transfer is off by default. To enable it, set
+`PUBLIC_MANAGED_TRANSFER=true` together with `PLC_MANAGED_MONITOR_ORIGIN` and
+`PLC_MANAGED_MONITOR_PUBLIC_KEY` for an independent monitor on a different
+hostname from this provider. Those declarations belong to managed transfer, not
+the separate `SIGNUP_MONITOR_*` settings.

@@ -12,6 +12,7 @@ const database = new ProviderDatabase(config.databaseUrl);
 try {
   await database.migrate();
   const result = await new PreparedMigrationTarget(database.sql,
-    new KeyEncryptor(config.keyEncryptionKey), config.hailServiceBase).prepare(did);
+    new KeyEncryptor(config.keyEncryptionKey), config.hailServiceBase, false,
+    config.nativeAddressDomain).prepare(did);
   console.info(JSON.stringify(result, null, 2));
 } finally { await database.close(); }

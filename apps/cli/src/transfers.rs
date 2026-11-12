@@ -71,6 +71,52 @@ pub fn destination(input: &str) -> Result<reqwest::Url, Error> {
     }
     Ok(url)
 }
+/// The destination's native address domain, which may differ from its API host.
+/// Its source verifies `_hail-provider` delegation before acknowledging the grant.
+pub async fn destination_domain(origin: &str) -> Result<String, Error> {
+    destination(origin)?;
+    let unavailable = || Error::client("Destination provider capabilities unavailable");
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| invalid())?;
+    let mut response = client
+        .get(format!("{origin}/api/v1/capabilities"))
+        .header("Accept-Encoding", "identity")
+        .header("Cache-Control", "no-store")
+        .send()
+        .await
+        .map_err(|_| unavailable())?;
+    let h = response.headers();
+    if response.status().as_u16() != 200
+        || h.contains_key("Location")
+        || h.contains_key("Content-Encoding")
+        || !h
+            .get("Content-Type")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("application/json"))
+    {
+        return Err(unavailable());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| unavailable())? {
+        if bytes.len() + chunk.len() > 65536 {
+            return Err(unavailable());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let capabilities: Value = serde_json::from_slice(&bytes).map_err(|_| unavailable())?;
+    let domain = capabilities["addressDomain"]
+        .as_str()
+        .ok_or_else(unavailable)?;
+    if capabilities["type"] != "racr.capabilities" {
+        return Err(unavailable());
+    }
+    // Reuse the canonical public-hostname rules for provider origins.
+    destination(&format!("https://{domain}"))?;
+    Ok(domain.to_owned())
+}
 pub fn wire(v: &Value, managed: bool) -> Result<(Vec<u8>, Vec<u8>), Error> {
     vault::exact(v, &["payload", "signature"])?;
     let bytes = codec::decode_base64(text(&v["payload"])?)?;
@@ -234,11 +280,11 @@ pub fn review_grant(s: &Value, managed: bool) -> Result<Value, Error> {
     };
     let key = text(&s[if managed { "ownerRecoveryKey" } else { "key" }])?;
     let grant = verify(&s["grant"], kind, key, managed, managed)?;
-    let url = destination(text(&s["destination"])?)?;
+    destination(text(&s["destination"])?)?;
     if grant["did"] != s["did"]
         || grant["source_service_base"] != format!("{}/hail", text(&s["provider"])?)
         || grant["destination_service_base"] != format!("{}/hail", text(&s["destination"])?)
-        || grant["destination_domain"] != url.host_str().unwrap()
+        || grant["destination_domain"] != *text(&s["destinationDomain"])?
         || managed
             && (grant["owner_recovery_key"] != s["ownerRecoveryKey"]
                 || grant["source_identity_key"] != s["sourceIdentityKey"])
@@ -400,7 +446,7 @@ pub fn sign_intent(
 }
 pub async fn offer(client: &Client, args: &Args, managed: bool) -> Result<Value, Error> {
     let dest = &args.options["destination"];
-    let url = destination(dest)?;
+    destination(dest)?;
     let a = client.account().await?;
     if !allowed(&a)
         || !a["migrationState"].is_null()
@@ -435,8 +481,12 @@ pub async fn offer(client: &Client, args: &Args, managed: bool) -> Result<Value,
         return Err(invalid());
     }
     if s["grant"].is_null() {
+        if s["destinationDomain"].is_null() {
+            s["destinationDomain"] = Value::String(destination_domain(dest).await?);
+            private::replace(path, &s)?;
+        }
         let now = now();
-        let mut p = json!({"type":if managed{"hail.managed-transfer-grant"}else{"hail.transfer-grant"},"version":1,"did":s["did"],"nonce":nonce()?,"source_service_base":format!("{}/hail",text(&s["provider"])?),"destination_service_base":format!("{dest}/hail"),"destination_domain":url.host_str().unwrap(),"issued_at":now,"expires_at":now+3600});
+        let mut p = json!({"type":if managed{"hail.managed-transfer-grant"}else{"hail.transfer-grant"},"version":1,"did":s["did"],"nonce":nonce()?,"source_service_base":format!("{}/hail",text(&s["provider"])?),"destination_service_base":format!("{dest}/hail"),"destination_domain":s["destinationDomain"],"issued_at":now,"expires_at":now+3600});
         if managed {
             p["owner_recovery_key"] = s["ownerRecoveryKey"].clone();
             p["source_identity_key"] = s["sourceIdentityKey"].clone();
@@ -504,7 +554,7 @@ pub async fn offer(client: &Client, args: &Args, managed: bool) -> Result<Value,
         return Err(invalid());
     }
     private::replace(path, &s)?;
-    let mut result = json!({"did":s["did"],"destination":dest,"transferId":offer["transfer_id"],"expiresAt":offer["expires_at"],"destinationRotationPublicKey":offer["destination_rotation_key"],"destinationMessagingPublicKey":offer["destination_messaging_key"],"phase":"offer-ready","stateFile":path});
+    let mut result = json!({"did":s["did"],"destination":dest,"destinationDomain":s["destinationDomain"],"transferId":offer["transfer_id"],"expiresAt":offer["expires_at"],"destinationRotationPublicKey":offer["destination_rotation_key"],"destinationMessagingPublicKey":offer["destination_messaging_key"],"phase":"offer-ready","stateFile":path});
     if managed {
         result["destinationIdentityPublicKey"] = offer["destination_identity_key"].clone();
     }
@@ -771,7 +821,7 @@ pub async fn cancel(client: &Client, args: &Args) -> Result<Value, Error> {
     if value["did"] != s["did"]
         || value["nonce"] != grant["nonce"]
         || value["source_service_base"] != format!("{}/hail", text(&s["provider"])?)
-        || value["destination_domain"] != destination(text(&s["destination"])?)?.host_str().unwrap()
+        || value["destination_domain"] != *text(&s["destinationDomain"])?
         || integer(&value["expires_at"])? <= now()
         || value["grant_digest"] != hash_wire(&s["grant"])?
     {

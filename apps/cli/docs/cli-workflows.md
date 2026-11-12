@@ -325,6 +325,13 @@ racr account transfer offer \
 racr account transfer status
 ```
 
+`--destination` is the destination provider's API origin. The CLI reads that
+provider's address domain from its `/api/v1/capabilities` once, keeps it in the
+private state file, and shows it as `destinationDomain`; your new address will be
+`username@destinationDomain`, which can differ from the API host (for example
+`svr.example.com` and `example.com`). Your current provider refuses the grant
+unless that domain's `_hail-provider` DNS record names the destination's API host.
+
 A pending Offer is not approval to create another state file. Repeat the same
 command until the signed Offer is available, then review its destination.
 

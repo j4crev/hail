@@ -143,11 +143,15 @@ inventory and do not define interoperable peer capability negotiation.
 
 ### Provider Transfer Invitation Transport
 
-The proposed portable-custody profile requires the selected provider's
-canonical DNS domain, without any user-supplied scheme, port or path. A
-conforming provider serves Hail from `https://{domain}/hail`; its Hail address
-domain is the same `{domain}`. Its pre-cutover invitation endpoint is the
-fixed `POST https://{domain}/.well-known/hail/transfers/invitations`. The old
+The proposed portable-custody profile identifies the destination by two values
+in the user-signed grant: its canonical service base, served at
+`https://{host}/hail`, and its native address domain `destination_domain`. They
+may differ (`svr.example.com` and `example.com`); the source verifies the
+`_hail-provider` delegation between them as specified in
+[transfer formats](transfer-formats.md#payload-field-schemas). Every destination
+transfer endpoint below is at the service-base origin `https://{host}`, never the
+address domain. The pre-cutover invitation endpoint is the
+fixed `POST https://{host}/.well-known/hail/transfers/invitations`. The old
 provider posts the exact user-signed Transfer Grant and its own signed
 Transfer Invitation in bounded `application/hail-transfer+json` (base64url
 payload/signature pairs). The target verifies current PLC identity/service
@@ -158,9 +162,9 @@ returns the same Offer while it is fresh. The source persists the Offer and
 evidence that it arrived from the TLS-verified destination origin.
 
 The user client selects a username and signs an Address Selection containing
-the complete `username@{domain}`, DID, grant and Offer digests, transfer ID,
+the complete `username@{destination_domain}`, DID, grant and Offer digests, transfer ID,
 nonce and short expiry. It sends that signed object **directly** to
-`POST https://{domain}/.well-known/hail/transfers/reservations`. The target
+`POST https://{host}/.well-known/hail/transfers/reservations`. The target
 authenticates the user signature against current PLC, requires that the grant,
 Offer, transfer and address domain match its live stored invitation, and
 atomically reserves the name in the same uniqueness domain as ordinary
@@ -219,7 +223,7 @@ still active and submit it to `POST {source_service_base}/transfers/cancellation
 The source serializes this request with fencing; on success it irrevocably
 rejects later final requests for that grant and returns a signed cancellation
 receipt. The client forwards that receipt and its signed cancellation to
-`POST https://{destination_domain}/.well-known/hail/transfers/cancellations`.
+`POST https://{host}/.well-known/hail/transfers/cancellations`.
 The destination verifies *both* signatures against current PLC, their exact
 grant/nonce/invitation correlation, and that no import became active. It may
 then release its own pending address and keys and retain a cancellation
@@ -243,7 +247,7 @@ procedure for longer-lived submitted failures.
 After fencing, the source exports one immutable signed snapshot. The owner signs
 the exact PLC operation, migration consent and destination Address Binding. The
 client submits those retained artifacts to
-`POST https://{destination_domain}/.well-known/hail/transfers/completions`.
+`POST https://{host}/.well-known/hail/transfers/completions`.
 Under the strict-public profile, the destination first stages the inactive
 import and submits only that owner-signed operation, then returns
 `phase: awaiting-monitor`. It does not publish the address or activate the

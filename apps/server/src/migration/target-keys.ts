@@ -51,10 +51,12 @@ export class PreparedMigrationTarget {
     private readonly encryptor: KeyEncryptor,
     private readonly destinationServiceBase: string,
     private readonly allowReturns=false,
+    /** This provider's native address domain; it may differ from the service host. */
+    readonly addressDomain=new URL(destinationServiceBase).hostname,
   ) {}
 
   withTransaction(sql:SQL):PreparedMigrationTarget {
-    return new PreparedMigrationTarget(sql,this.encryptor,this.destinationServiceBase,this.allowReturns);
+    return new PreparedMigrationTarget(sql,this.encryptor,this.destinationServiceBase,this.allowReturns,this.addressDomain);
   }
 
   async recycleRetiredSlots(tx:SQL,did:string,custodyProfile:"portable"|"managed"="portable") {
@@ -116,6 +118,7 @@ export class PreparedMigrationTarget {
       invitation.source_service_base !== grant.source_service_base ||
       invitation.destination_service_base !== grant.destination_service_base ||
       grant.destination_service_base !== this.destinationServiceBase ||
+      grant.destination_domain !== this.addressDomain ||
       invitation.expires_at !== grant.expires_at || grant.expires_at <= now ||
       !sameDigest(invitation.grant_digest, handshakeDigest(grantSigned.payloadBytes))) {
       throw new Error("Destination invitation does not match the user grant");
@@ -177,7 +180,7 @@ export class PreparedMigrationTarget {
     const ownerRecoveryKey = data.rotationKeys[0];
     if (!ownerRecoveryKey || !state.evidence.verification || state.did !== did ||
       state.serviceBase !== raw.source_service_base || state.identityDidKey !== raw.source_identity_key ||
-      this.destinationServiceBase !== raw.destination_service_base) {
+      this.destinationServiceBase !== raw.destination_service_base || this.addressDomain !== raw.destination_domain) {
       throw new Error("Managed Offer requires strict current source authority");
     }
     const grant = await verifyManagedOwnerHandshake(grantSigned, "hail.managed-transfer-grant", ownerRecoveryKey);
@@ -220,7 +223,7 @@ export class PreparedMigrationTarget {
     issuedAt: number): Promise<Uint8Array> {
     if (prepared.custodyProfile !== "managed" || !prepared.identityPublicKey ||
       canonicalizeHailAddress(address) !== address ||
-      address.slice(address.indexOf("@") + 1) !== new URL(prepared.destinationServiceBase).hostname ||
+      address.slice(address.indexOf("@") + 1) !== this.addressDomain ||
       !Number.isSafeInteger(issuedAt) || issuedAt < 0) {
       throw new Error("Managed destination binding does not match prepared identity and domain");
     }
