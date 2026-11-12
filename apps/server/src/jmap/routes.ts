@@ -1,5 +1,6 @@
 import {HAIL_PUSH,type JmapPush} from './push.js';
 import {HAIL_EVENTS,eventOptions,stateStream} from './events.js';
+import type {StateNotifications} from './state-notifications.js';
 import {JmapOperations,JmapOperationError} from './operations.js';
 import {JmapCollections,COLLECTIONS,HAIL_ACCOUNT,canReadCollection,type Collection} from './collections.js';
 import {JmapBlobs,MAX_UPLOAD_BYTES} from './blobs.js';
@@ -46,7 +47,10 @@ function references(args:Record<string,unknown>,responses:Invocation[]){
   return result;
 }
 
-export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messages:JmapMessages,origin:string,browserOrigin=origin,drafts?:JmapDrafts,blobs?:JmapBlobs,collections?:JmapCollections,operations?:JmapOperations,push?:JmapPush){
+// Reference-provider stream policy. With working state notifications an idle
+// stream costs one state read per 30 seconds, so the limits allow several devices.
+const STREAMS_PER_ACCOUNT=6,STREAMS_PER_PROCESS=256,POLL_MS=2_000,NOTIFIED_POLL_MS=30_000;
+export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messages:JmapMessages,origin:string,browserOrigin=origin,drafts?:JmapDrafts,blobs?:JmapBlobs,collections?:JmapCollections,operations?:JmapOperations,push?:JmapPush,notifications?:StateNotifications){
   const rate=new FixedWindowRateLimit(),active=new Map<string,number>(),uploads=new Map<string,number>(),approvalRate=new FixedWindowRateLimit();let processing=0,streamCount=0;const streams=new Map<string,AbortController[]>();
   function sessionObject(session:AccountApiSession){
     const accountId=messages.accountId(session),read=session.scopes.includes('messages:read');
@@ -66,8 +70,10 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
     const retry=rate.take(clientAddress(context.req.raw),120);
     if(retry!==null){const response=problem(429,'limit');response.headers.set('Retry-After',String(retry));return response;}
     let session:AccountApiSession|null;
+    const authStart=performance.now();
     try{session=await accounts.authenticate(context.req.header('Authorization'),getCookie(context,'hail_session'),context.req.path!=='/jmap/events'&&context.req.header('X-Hail-Background')!=='true');}
     catch{return problem(503,'serverUnavailable');}
+    const authDone=performance.now();
     if(!session){const response=problem(401,'unauthorized');response.headers.set('WWW-Authenticate','Bearer realm="hail-jmap"');return response;}
     if(context.req.header('Origin')!==undefined&&context.req.header('Origin')!==browserOrigin)return problem(403,'forbidden');
     if(getCookie(context,'hail_session')&&context.req.method!=='GET'&&context.req.header('Origin')!==browserOrigin)return problem(403,'forbidden');
@@ -81,8 +87,8 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
       // A new stream replaces the account's oldest at the limit instead of being
       // refused: a proxy may keep a stream the browser already closed open until
       // its lifetime ends, and refusing would lock the account out until then.
-      const held=streams.get(session.account_id)??[];if(held.length>=2)held[0]!.abort();
-      if(streamCount>=64)return problem(429,'limit');
+      const held=streams.get(session.account_id)??[];if(held.length>=STREAMS_PER_ACCOUNT)held[0]!.abort();
+      if(streamCount>=STREAMS_PER_PROCESS)return problem(429,'limit');
       const identity=(s:AccountApiSession)=>JSON.stringify([s.account_id,s.credential_id,s.serving_generation??1,s.did,[...s.scopes].sort()]);
       const admitted=identity(session),account=session.account_id;
       const slot=new AbortController();streams.set(account,[...(streams.get(account)??[]),slot]);streamCount++;
@@ -95,7 +101,10 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
             type==='HailDraft'?await drafts!.currentState(current):await collections!.currentState(current,type as Collection);
           return {accountId:messages.accountId(current),states};
         });
-      },options,AbortSignal.any([context.req.raw.signal,slot.signal]),lastId,()=>{streamCount--;const left=(streams.get(account)??[]).filter(other=>other!==slot);if(left.length)streams.set(account,left);else streams.delete(account);});
+      },options,AbortSignal.any([context.req.raw.signal,slot.signal]),lastId,()=>{streamCount--;const left=(streams.get(account)??[]).filter(other=>other!==slot);if(left.length)streams.set(account,left);else streams.delete(account);},
+        // Notifications wake streams on change; polling (which also re-checks the
+        // session, so revocation ends a stream within it) is the slow safety net.
+        {pollMs:()=>notifications?.healthy?NOTIFIED_POLL_MS:POLL_MS,lifetimeMs:300_000},notifications?wake=>notifications.watch(account,wake):undefined);
     }
     const count=active.get(session.account_id)??0;
     if(processing>=32||count>=4)return problem(429,'limit');
@@ -145,7 +154,12 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
       const remember=(result:Record<string,unknown>)=>{if(object(result.created))for(const [key,value] of Object.entries(result.created))
         if(object(value)&&typeof value.id==='string')createdIds[key]=value.id;};
       const creationId=(value:unknown)=>typeof value==='string'&&value.startsWith('#')?(createdIds[value.slice(1)]??value):value;
+      // Server-Timing: authentication and each method's duration (names and view
+      // kinds only), so clients can see where a slow request spends its time.
+      const timing=[`auth;dur=${(authDone-authStart).toFixed(1)}`];
       for(const [name,raw,callId] of input.methodCalls as Invocation[]){
+        const methodStart=performance.now();
+        const label=name==='HailMailbox/view'&&object(raw)&&typeof raw.view==='string'&&/^[A-Za-z]{1,32}$/.test(raw.view)?`${name} ${raw.view}`:name;
         try{
           const args=references(raw,responses);
           if(name==='Core/echo'){responses.push([name,args,callId]);continue;}
@@ -189,7 +203,9 @@ export function registerJmapRoutes(app:Hono,accounts:AccountApiRepository,messag
           const result=name==='HailMessage/set'?await messages.set(session,args):name==='HailMessage/get'?await messages.get(session,args):name==='HailMessage/query'?await messages.query(session,args):await messages.changes(session,args);
           remember(result);responses.push([name,result,callId]);
         }catch(error){responses.push(['error',{type:error instanceof JmapError?error.type:'serverFail',...(error instanceof JmapOperationError?{httpStatus:error.httpStatus,description:error.description,...(error.code?{code:error.code}:{})}:{})},callId]);}
+        finally{timing.push(`m${timing.length-1};desc="${label}";dur=${(performance.now()-methodStart).toFixed(1)}`);}
       }
+      context.header('Server-Timing',timing.join(', '));
       return context.json({methodResponses:responses,sessionState:sessionData.state,...(input.createdIds!==undefined?{createdIds}:{})});
     });}catch(error){return problem(error instanceof RequestBodyTimeout?408:503,'serverUnavailable');}
     finally{processing--;const remaining=(active.get(session.account_id)??1)-1;if(remaining)active.set(session.account_id,remaining);else active.delete(session.account_id);}

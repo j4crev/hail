@@ -199,11 +199,18 @@ export class AccountApiClient {
     return new Response(bounded,{headers:response.headers});
   }
 
+  /**
+   * Diagnostics: the most recent provider round trips (path, milliseconds and the
+   * provider's own Server-Timing), for a caller reporting where time went.
+   */
+  readonly timings: Array<{path:string;ms:number;server:string|null}> = [];
+
   async request(path: string, bytes?: Uint8Array | JsonObject, namespace = "/api/v1/account",maxResponse=namespace==="/api/v1/account"&&path.startsWith("/connection-threads/")?192*1024*1024:namespace==="/api/v1/account"&&/^\/(?:inbox|sent|conversations)(?:\/|$)/.test(path)?40*1024*1024:MAX_RESPONSE, signal?: AbortSignal): Promise<JsonObject> {
     const headers: Record<string, string> = { ...this.credentialHeaders(),
       Accept: "application/json", "Accept-Encoding": "identity", "Cache-Control": "no-store" };
     if (bytes) headers["Content-Type"] = bytes instanceof Uint8Array ? 'application/cose; cose-type="cose-sign1"' : "application/json";
     let response: Response;
+    const started = performance.now();
     try {
       response = await fetch(`${this.transport}${namespace}${path}`, {
         method: bytes ? bytes instanceof Uint8Array ? "PUT" : "POST" : "GET", headers, redirect: "error", credentials: "omit",
@@ -249,6 +256,8 @@ export class AccountApiClient {
     const all = new Uint8Array(size);
     let offset = 0;
     for (const chunk of chunks) { all.set(chunk, offset); offset += chunk.length; }
+    if (this.timings.length >= 32) this.timings.shift();
+    this.timings.push({path: `${namespace}${path}`.split("?")[0]!, ms: performance.now() - started, server: response.headers.get("Server-Timing")});
     try { return object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(all))); }
     catch { throw new ClientError("RESPONSE_ERROR", "Provider API returned invalid JSON"); }
   }

@@ -85,7 +85,7 @@ fail the request with `unknownCapability`. Hail methods additionally require the
 Hail capability in `using`. Calls execute sequentially and independently, not as
 an implicit transaction. A failure yields `["error",{type},callId]`; later calls
 still execute. Typed operation errors may additionally carry `httpStatus`,
-`description` and a stable domain `code`; internal failures expose only `serverFail`. Responses have `methodResponses` and `sessionState`. Optional `createdIds` seeds
+`description` and a stable domain `code`; internal failures expose only `serverFail`. Responses have `methodResponses` and `sessionState`. The reference provider also sends a diagnostic `Server-Timing` header (authentication and each method's duration, labelled by method name and, for `HailMailbox/view`, the view); it carries no identifiers or content. Optional `createdIds` seeds
 creation-ID resolution; its keys and ID values must each match
 `[A-Za-z0-9_-]{1,255}`. Successful `created` entries from earlier set calls add
 their IDs. When the request supplied `createdIds`, the response includes the

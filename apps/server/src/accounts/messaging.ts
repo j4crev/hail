@@ -52,11 +52,34 @@ export function referenceImages<T extends {body:unknown}>(message:T):T {
   })}}};
 }
 
-export function bodyDocument(bytes:Uint8Array) {
+function decodeBodyDocument(bytes:Uint8Array) {
   const profile=validateBodyBytes(bytes);
   return profile==="spt-1"?toDiagnosticJson("hail.body.spt-1",decodePayload("hail.body.spt-1",bytes)):
     profile==="spt-2"?toDiagnosticJson("hail.body.spt-2",decodePayload("hail.body.spt-2",bytes)):
     toDiagnosticJson("hail.body.spt-3",decodePayload("hail.body.spt-3",bytes));
+}
+const deepFreeze=<T>(value:T):T=>{
+  if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.freeze(value);for(const item of Object.values(value))deepFreeze(item);}
+  return value;
+};
+// Decoded bodies by content digest. Bodies are immutable and content-addressed,
+// so a document decoded once (validation, profile detection, CBOR decode and
+// base64 of bundled images: tens of milliseconds for an illustrated body) serves
+// later reads, its thread preview and each image request. Documents are frozen
+// and shared; callers never mutate them. Bounded by stored body bytes.
+const DOCUMENT_CACHE_BYTES=24*1024*1024;
+const documents=new Map<string,{document:DiagnosticJson;size:number}>();
+let documentBytes=0;
+export function bodyDocument(bytes:Uint8Array):DiagnosticJson {
+  const key=createHash('sha256').update(bytes).digest('base64url');
+  const cached=documents.get(key);
+  if(cached){documents.delete(key);documents.set(key,cached);return cached.document;}
+  const document=deepFreeze(decodeBodyDocument(bytes));
+  documents.set(key,{document,size:bytes.length});documentBytes+=bytes.length;
+  while(documentBytes>DOCUMENT_CACHE_BYTES){
+    const [oldest,entry]=documents.entries().next().value!;documents.delete(oldest);documentBytes-=entry.size;
+  }
+  return document;
 }
 
 export function outboundBody(input:Record<string,unknown>):Uint8Array {

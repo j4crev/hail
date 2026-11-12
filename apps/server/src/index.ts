@@ -1,3 +1,5 @@
+import {SQL} from "bun";
+import {StateNotifications} from "./jmap/state-notifications.js";
 import { EmailBridgeDelivery } from "./bridge/delivery.js";
 import { EmailAliasOperations } from "./bridge/operations.js";
 import { EmailBridgeIntake } from "./bridge/intake.js";
@@ -186,6 +188,14 @@ const jmapPush=config.webPush?new JmapPush(database.sql,new AccountApiRepository
     for(const type of types)states[type]=type==='HailMessage'?await jmapMessages.currentState(session):type==='HailDraft'?await jmapDrafts.currentState(session):await jmapCollections.currentState(session,type as Collection);
     return states;
   },transport.fetchPush,transport.validateTarget):undefined;
+// One LISTEN connection per process wakes event streams on state changes.
+const jmapNotifications=schemaRehearsal?undefined:(()=>{
+  const listener=new SQL(config.databaseUrl,{max:1});
+  const notifications=new StateNotifications((channel,onNotify,onListen)=>listener.listen(channel,onNotify,onListen),
+    (channel,payload)=>listener`SELECT pg_notify(${channel},${payload})`);
+  void notifications.start();
+  return notifications;
+})();
 if (!schemaRehearsal) {
   if(jmapPush){
     let pushing=false;
@@ -424,6 +434,7 @@ const app = createApp(config, schemaRehearsal ? {
   bodyStore: new BodyRepository(database.sql),
   bodyProof: new BodyRequestVerifier(database.sql,resolver,config.publicOrigin),
   ...(jmapPush?{jmapPush}:{}),
+  ...(jmapNotifications?{jmapNotifications}:{}),
   jmap: jmapMessages,
   jmapCollections,
   jmapDrafts,
