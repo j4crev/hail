@@ -90,9 +90,15 @@ Adapters:
 
 - **Cloudflare Email Routing with an Email Worker**, for haili.app. Production
   has no public ingress, so this is the only option there without opening a
-  port. It lives under `deploy/` as one deployment choice. Still to verify:
-  catch-all routing on a subdomain, the Worker's maximum message size, and
-  SMTP-time rejection from the Worker.
+  port. It lives under `deploy/` as one deployment choice. Checked against the
+  docs (2026-11-11): Workers can reject with a permanent SMTP error and accept
+  25 MiB, but **catch-all rules exist only on a zone's apex**, and literal rules
+  are capped at 200 per domain. A subdomain such as `in.haili.app` therefore
+  cannot route arbitrary aliases. **Decided (2026-11-11):** a separate zone,
+  `haili.email`, with its apex catch-all sent to the Worker. Plus addressing
+  on `in.haili.app` was rejected because signup forms often refuse `+`.
+  Workers also cannot return a temporary SMTP failure, so the adapter holds
+  mail in R2 and retries from a queue when the provider is unavailable.
 - **Self-hosted SMTP receiver**, for providers that run their own mail edge: a
   small receive-only service, or a documented hook for an existing mail server,
   calling the same contract. Without it the standalone deployment guide has no
@@ -307,7 +313,8 @@ user: Feed item, labelled as bridged email from <newsletter>
 - [ ] Verify the Cloudflare Email Routing assumptions in D2 for the haili.app
   adapter.
 - [ ] Confirm D4, D5, D8 and D9 with the operator.
-- [ ] Choose the bridge subdomain and the bridge account's address.
+- [x] Choose the alias domain and the bridge account's address: `haili.email`
+  and `email@haili.app`.
 
 ### Phase 1: protocol changes
 
@@ -464,22 +471,26 @@ names in `EMAIL_BRIDGE_SENDER`; see the operator setup in
 
 ### Phase 6: account API and web client
 
-- [ ] JMAP collection and operations for aliases: list, create, rename label,
-  pause, resume, delete. Document in the JMAP collection and operation specs as
-  reference-provider extensions.
-- [ ] One-time enablement that creates the Grant to the bridge, using the
-  existing passkey-confirmed managed approval. Creating aliases afterwards needs
-  no further passkey prompt.
-- [ ] Alias management screen: create with a label, copy address, see last
-  received and message count, pause, delete.
+Decided with the operator (2026-11-11): an **Aliases** sidebar item under
+Categories, shown only when the provider offers the bridge, modelled on
+Subscriptions; generic `@` avatars that select aliases for deletion; a floating
+plus button to create one; and an **Inbound email** switch in Settings. No
+empty-Feed prompt.
+
+- [x] Account API: `HailEmailAlias/get`, `create` and `destroy`
+  (`apps/server/src/bridge/operations.ts`), documented in
+  [spec/email-bridge.md](../spec/email-bridge.md#account-api). Rename and pause
+  exist in the alias store but are not exposed, to keep the screen simple.
+- [x] Inbound email switch: turning it on is the ordinary passkey-confirmed
+  Grant to the bridge account; turning it off revokes it. Alias creation
+  requires it, and intake refuses mail for accounts that have it off.
+- [x] Aliases screen: list, create with a label and copy the address, select
+  and delete with confirmation. Design-preview fixture updated.
 - [ ] Feed rows and message view show the email sender from `origin`, a bridged
-  label, the authentication result, and the alias that received it.
+  label and the authentication result, and hide Reply.
 - [ ] Replace Unsubscribe on bridged messages with "Delete this alias".
-- [ ] Hide Reply on bridged messages.
-- [ ] Empty-Feed state for new accounts points to alias creation.
-- [ ] Browser check script covering enablement, alias creation, a delivered
-  bridged message and alias deletion; add to CI.
-- [ ] Add a fictional bridged message to the `preview:design` fixture.
+- [ ] Browser check script covering the switch, alias creation and deletion;
+  add to CI. The design preview cannot exercise the switch, which needs a passkey.
 
 ### Phase 7: CLI
 
@@ -490,15 +501,17 @@ names in `EMAIL_BRIDGE_SENDER`; see the operator setup in
 
 ### Phase 8: ingress adapters and deployment
 
-- [ ] Cloudflare adapter: Email Worker source under `apps/server/deploy`,
-  separate from the monitor's worker, passing the intake contract tests.
-- [ ] Self-hosted adapter: a receive-only SMTP service, or a documented hook
-  for an existing mail server, passing the same contract tests. Document it in
-  the standalone deploy guide.
-- [ ] Both adapters return a temporary SMTP failure when the provider is
-  unavailable; neither accepts mail it cannot hand over or sends a bounce.
-- [ ] No Cloudflare-specific name, header or format appears in `apps/server/src`
-  or `packages/hail-email-bridge`; check this in review.
+- [x] Cloudflare adapter: `apps/server/deploy/cloudflare-email-worker`, with
+  R2-and-queue retry for provider outages. Unit tests, and a contract test
+  against the real intake routes and database.
+- [ ] Deploy it for haili.app: provider settings, R2 bucket, queue, secret,
+  Worker, and the `haili.email` catch-all (see its README). Operator steps.
+- [ ] Self-hosted adapter: undecided whether to ship one (see D2). Other
+  providers can implement the documented contract with their own mail edge.
+- [x] The Cloudflare adapter never sends a bounce, and keeps mail it cannot
+  hand over rather than refusing it; it cannot send a temporary failure.
+- [x] No Cloudflare-specific name, header or format appears in `apps/server/src`
+  or `packages/hail-email-bridge` (checked 2026-11-11; keep checking in review).
 - [x] Converter entry point (`src/cli/email-bridge-converter.ts`) that works the
   queue and stops on SIGTERM. It loads no keys and refuses the provider's role.
 - [x] Converter service in the standalone Compose file, behind the
