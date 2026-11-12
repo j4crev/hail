@@ -121,6 +121,16 @@ describe("HTML handling", () => {
     expectValid(converted);
   });
 
+  it("keeps content inside zero-font layout containers and Outlook-only hiding", async () => {
+    const converted = await convertEmail(htmlEmail(
+      '<table><tr><td style="direction:ltr;font-size:0px;padding:20px 0">stray<div style="font-size:16px">Visible <b>text</b></div>' +
+      '<img src="https://a.example/i.png" alt="Kept"></td></tr></table><div style="mso-hide:all">Shown outside Outlook</div>' +
+      '<div style="font-size:0">gone <span>still gone</span></div>'));
+    expect(textBlocks(converted.blocks).map(plain)).toEqual(["Test", "Visible text", "Shown outside Outlook"]);
+    expect(images(converted.blocks)).toHaveLength(1);
+    expect(converted.diagnostics["hidden-content-dropped"]).toBe(3);
+  });
+
   it("clamps deep lists to three levels", async () => {
     const converted = await convertEmail(htmlEmail("<ul><li>1<ul><li>2<ul><li>3<ul><li>4</li></ul></li></ul></li></ul></li></ul>"));
     expect(textBlocks(converted.blocks).slice(1).map(block => block.level)).toEqual([1, 2, 3, 3]);

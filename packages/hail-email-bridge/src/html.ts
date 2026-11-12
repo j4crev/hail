@@ -31,6 +31,8 @@ interface Context {
   href: string | null;
   callToAction: boolean;
   preserve: boolean;
+  /** Inherited `font-size:0`: text is invisible until a descendant sets a size. */
+  zeroFont: boolean;
   depth: number;
   maxDepth: number;
 }
@@ -51,11 +53,15 @@ function inlineStyle(element: Element): Map<string, string> {
 
 const zero = (value: string | undefined): boolean => value !== undefined && /^0+(\.0+)?(px|pt|em|rem|%)?$/.test(value);
 
-/** Preheaders and client-specific variants are hidden with inline styles. */
+/**
+ * Preheaders are hidden with inline styles. Two look-alikes are not hiding:
+ * `mso-hide:all` hides content from Outlook only, and `font-size:0` on a
+ * layout container merely removes gaps between its children, which set their
+ * own size. The latter is tracked as inherited text size instead.
+ */
 function hidden(element: Element, style: Map<string, string>): boolean {
   return attribute(element, "hidden") !== undefined || style.get("display") === "none" ||
-    style.get("visibility") === "hidden" || style.get("mso-hide") === "all" || zero(style.get("opacity")) ||
-    zero(style.get("max-height")) || zero(style.get("font-size"));
+    style.get("visibility") === "hidden" || zero(style.get("opacity")) || zero(style.get("max-height"));
 }
 
 function alignment(element: Element, style: Map<string, string>, inherited: Context["alignment"]): Context["alignment"] {
@@ -134,6 +140,10 @@ function image(element: Element, style: Map<string, string>, context: Context, b
 function walk(node: Node, parent: Element | null, context: Context, builder: BlockBuilder): void {
   if (builder.truncated) return;
   if (node.nodeName === "#text") {
+    if (context.zeroFont) {
+      if ((node as DefaultTreeAdapterTypes.TextNode).value.trim()) builder.note("hidden-content-dropped");
+      return;
+    }
     builder.text((node as DefaultTreeAdapterTypes.TextNode).value, shape(context),
       { decorators: context.decorators, href: context.href, preserve: context.preserve });
     return;
@@ -155,6 +165,8 @@ function walk(node: Node, parent: Element | null, context: Context, builder: Blo
   if (tag === "img") return image(element, style, context, builder);
 
   const next: Context = { ...context, depth: context.depth + 1, alignment: alignment(element, style, context.alignment) };
+  const fontSize = style.get("font-size");
+  if (fontSize !== undefined) next.zeroFont = zero(fontSize);
   const block = BLOCK.has(tag);
   if (block) builder.flush();
 
@@ -212,7 +224,7 @@ export function convertHtml(html: string, builder: BlockBuilder, maxDepth: numbe
   const document = parse(html);
   const root: Context = {
     style: "normal", list: null, inItem: false, alignment: undefined, decorators: new Set(), href: null,
-    callToAction: false, preserve: false, depth: 0, maxDepth,
+    callToAction: false, preserve: false, zeroFont: false, depth: 0, maxDepth,
   };
   for (const child of document.childNodes) walk(child, null, root, builder);
   builder.flush();
