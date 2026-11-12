@@ -5,18 +5,41 @@ import {mailboxCache, StaleMailboxRead} from './mailbox-cache.js';
 import {readMailbox, mailboxKey} from './mailbox-load.js';
 import {appendMailbox} from './mailbox-history.js';
 
+/**
+ * Fields the root layout adds to every page's data (see routes/+layout.server.ts).
+ * When only these change, the page's own content was not reloaded.
+ */
+const LAYOUT_DATA = new Set(['mailboxScope','hasAccountSession','accountAvatar','inboundEmail','unreadCounts','unseenConnections','branding']);
+
 export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean}>(source:()=>T, url:()=>URL, locked:()=>boolean = ()=>false, deferChanges = false) {
   let data = $state.raw<T>(untrack(source));
   let pending = $state.raw<T | null>(null);
   let busy = $state(false), failure = $state(''), batches = $state(0);
-  let pendingGeneration = 0, historyGeneration = mailboxCache.generation, recentFingerprint = "";
-  let mounted = false, lastCheck = 0, failures = 0, version = 0;
+  let pendingGeneration = 0, historyGeneration = mailboxCache.generation;
+  // What is on screen, compared with each refresh to decide whether anything changed.
+  let recent = untrack(source) as Record<string, unknown>;
+  let mounted = false, lastCheck = 0, failures = 0, version = 0, previous = untrack(source) as Record<string, unknown>;
   $effect(() => {
     const next = source();
-    untrack(() => {data = next; recentFingerprint = fingerprint(next); historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++; lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));});
+    untrack(() => {
+      const before = previous; previous = next as Record<string, unknown>;
+      const changedKeys = Object.keys(next).filter(key => (next as Record<string, unknown>)[key] !== before[key]);
+      // A layout reload (counts every 30 seconds) must not replace refreshed page
+      // content with the page's original copy; carry over only the layout fields.
+      if (before !== next && changedKeys.every(key => LAYOUT_DATA.has(key))) {
+        data = {...data, ...Object.fromEntries(changedKeys.map(key => [key, (next as Record<string, unknown>)[key]]))} as T;
+        return;
+      }
+      data = next; recent = next as Record<string, unknown>; historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++; lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));
+    });
   });
   // Operation IDs are fresh form defaults, not mailbox changes.
-  const fingerprint = (value:T) => JSON.stringify(value, (key,item)=>['newReplyId','newReplyUntil','mailboxCached'].includes(key)?undefined:item);
+  const fingerprint = (value:unknown) => JSON.stringify(value, (key,item)=>['newReplyId','newReplyUntil','mailboxCached'].includes(key)?undefined:item);
+  // Page data also carries the layout's fields (counts, branding), which a refresh
+  // never returns. Compare only the fields the refresh did return, or every check
+  // would look like a change.
+  const differs = (result:Record<string, unknown>) =>
+    fingerprint(result) !== fingerprint(Object.fromEntries(Object.keys(result).map(key=>[key, recent[key]])));
   const scope = () => source().mailboxKey?.split(':')[0] ?? '';
   async function refresh(force = false, applyNow = false) {
     if (!mounted || busy || mailboxCache.mutations || document.visibilityState !== 'visible' || !scope()) return;
@@ -28,11 +51,12 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
       const next = await mailboxCache.request(mailboxKey(scope(), location), () => readMailbox<T>(fetch, location, scope()));
       if (!mounted || current !== version || generation !== mailboxCache.generation) return;
       const result = {...next, mailboxKey:source().mailboxKey};
-      if (applyNow || fingerprint(result) !== recentFingerprint || generation !== historyGeneration) {
+      // A cache generation changes on any mailbox change anywhere. Pages that defer
+      // updates (an open message) offer one only when their own content changed.
+      if (applyNow || differs(result) || (!deferChanges && generation !== historyGeneration)) {
         if (!applyNow && (deferChanges || locked() || batches || location.searchParams.has('after') || location.searchParams.has('sentAfter') || location.searchParams.has('draftAfter') || window.scrollY > 100)) {pending = result; pendingGeneration = generation;}
-        else {data = result; recentFingerprint = fingerprint(result); historyGeneration = generation; pending = null; batches = 0;}
-
-      }
+        else {data = result; recent = result; historyGeneration = generation; pending = null; batches = 0;}
+      } else if (deferChanges) historyGeneration = generation;
       failure = ''; failures = 0;
     } catch (cause) {
       if (isRedirect(cause)) {await goto(cause.location, {invalidateAll:true}); return;}
@@ -59,9 +83,20 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
       failure = 'Unable to load older messages. Please try again.';
     } finally {busy = false;}
   }
+  /**
+   * Records a change this page made itself, so it is not offered back as an
+   * update. With display false only the comparison baseline changes, for pages
+   * that already show the change in their own state.
+   */
+  function adopt(update:(value:T)=>T, display = true) {
+    if (display) data = update(data);
+    recent = update(recent as T) as Record<string, unknown>;
+    if (pending) pending = update(pending);
+    historyGeneration = mailboxCache.generation;
+  }
   function apply() {
     if (locked()) return;
-    if (pending && pendingGeneration === mailboxCache.generation) {data = pending; recentFingerprint = fingerprint(pending); historyGeneration = pendingGeneration; pending = null; batches = 0; version++;}
+    if (pending && pendingGeneration === mailboxCache.generation) {data = pending; recent = pending as Record<string, unknown>; historyGeneration = pendingGeneration; pending = null; batches = 0; version++;}
     else {pending = null; void refresh(true,true);}
   }
   onMount(() => {
@@ -78,5 +113,5 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
     if (source().mailboxCached) void refresh(true);
     return () => {mounted = false; version++; clearInterval(interval); window.removeEventListener('focus',focus); window.removeEventListener('hail:mailbox-changed',changed); document.removeEventListener('visibilitychange',focus);};
   });
-  return {get data(){return data;},get pending(){return !!pending;},get busy(){return busy;},get failure(){return failure;},get batches(){return batches;},refresh,older,apply};
+  return {get data(){return data;},get pending(){return !!pending;},get busy(){return busy;},get failure(){return failure;},get batches(){return batches;},refresh,older,apply,adopt};
 }

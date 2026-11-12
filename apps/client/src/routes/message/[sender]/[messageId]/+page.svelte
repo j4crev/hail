@@ -48,7 +48,15 @@
     opened = key;
     readError = ''; readPending = true;
     void setMessageRead(message.sender,message.messageId,true)
-      .then(() => invalidate('hail:mailbox')).catch(() => { readError = 'Unable to mark this message read. Reload to try again.'; }).finally(() => { readPending = false; });
+      .then(() => {
+        // Our own change: show it as read without offering it back as an update.
+        // It also appears in its own reply thread.
+        const read = <V extends {sender: string; messageId: string}>(m: V) =>
+          m.sender === message.sender && m.messageId === message.messageId ? {...m, isRead: true} : m;
+        mailbox.adopt(value => ({...value, message: read(value.message),
+          thread: value.thread ? {...value.thread, messages: value.thread.messages.map(read)} : value.thread}));
+        return invalidate('hail:mailbox');
+      }).catch(() => { readError = 'Unable to mark this message read. Reload to try again.'; }).finally(() => { readPending = false; });
   });
   let restoring = $state(false), restoreError = $state('');
   async function restore() {
@@ -79,7 +87,8 @@
 </script>
 
 <svelte:head><title>Message · {page.data.branding?.name ?? "Hail"}</title></svelte:head>
-<MailboxRefresh floating={false} view={mailbox} locked={replyOpen || readPending} />
+<!-- An open message offers a refresh only when it has changed. -->
+<MailboxRefresh floating={false} manual={false} view={mailbox} locked={replyOpen || readPending} />
 <div class="message-detail mx-auto max-w-[800px]" class:feed-reader={data.message.kind!=='connection'}>
 <MessageBack href={data.message.trashedAt?'/trash':data.message.kind==='connection'?'/?view=connections':'/?view=subscriptions'} label={data.message.trashedAt?'Trash':data.message.kind==='connection'?'Inbox':'Feed'} />
 {#if content.title}<h1 class="reader-title">{content.title}</h1>{:else}<h1 class="sr-only">Received message</h1>{/if}

@@ -70,6 +70,9 @@
     readPending=true;
     try{await setMessageRead(row.sender,row.messageId,true);
       rows=rows.map(m=>conversationKey(m)===conversationKey(row)?{...m,isRead:true}:m);
+      // The rows above already show it; keep the refresh from offering it back.
+      const read=<V extends {sender:string;messageId:string}>(m:V)=>m.sender===row.sender&&m.messageId===row.messageId?{...m,isRead:true}:m;
+      mailbox.adopt(value=>({...value,message:read(value.message),thread:{...value.thread,messages:value.thread.messages.map(read)}}),false);
       await invalidate('hail:mailbox');
     }catch{error='Unable to mark this message read. Reopen it to try again.';}
     finally{readPending=false;}
