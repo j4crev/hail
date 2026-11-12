@@ -32,6 +32,8 @@ async function loadAccount(cookies?:Cookies,url?:URL) {
   const session=cookies?.get("hail_session");
   if(session){
     const client=AccountApiClient.fromSession(PROVIDER,session,ORIGIN,API_ORIGIN,clientAddress());
+    // Nearly every account page then calls JMAP; overlap its Session read with the account read.
+    client.prepareJmap();
     try{return {account:await client.account(),client};}
     catch(error_){if(error_ instanceof AccountApiError&&error_.status===401){cookies?.delete?.("hail_session",{path:"/"});redirect(303,loginPath(url));}throw error_;}
   }

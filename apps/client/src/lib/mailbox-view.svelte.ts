@@ -33,7 +33,9 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
       }
       data = next; recent = next as Record<string, unknown>; historyGeneration = mailboxCache.generation; pending = null; batches = 0; version++;
       // Freshly loaded content supersedes an earlier refresh failure.
-      failure = ''; failures = 0; clearTimeout(retryTimer); lastCheck = next.mailboxCached ? 0 : Date.now(); if (mounted && next.mailboxCached) queueMicrotask(()=>void refresh(true));
+      failure = ''; failures = 0; clearTimeout(retryTimer); // A cached copy reloads only when the change check cannot vouch for it.
+      const stale = next.mailboxCached && !mailboxCache.current();
+      lastCheck = stale ? 0 : Date.now(); if (mounted && stale) queueMicrotask(()=>void refresh(true));
     });
   });
   // Operation IDs are fresh form defaults, not mailbox changes.
@@ -134,7 +136,7 @@ export function mailboxView<T extends {mailboxKey?:string;mailboxCached?:boolean
     // Fallback only: the layout's change check and live events refresh this view
     // (via hail:mailbox-changed) as soon as the mailbox changes.
     const interval = setInterval(focus, 120_000 + Math.random()*10_000);
-    if (source().mailboxCached) void refresh(true);
+    if (source().mailboxCached && !mailboxCache.current()) void refresh(true);
     return () => {mounted = false; version++; clearInterval(interval); clearTimeout(retryTimer); window.removeEventListener('focus',focus); window.removeEventListener('hail:mailbox-changed',changed); document.removeEventListener('visibilitychange',focus);};
   });
   return {get data(){return data;},get pending(){return !!pending;},get busy(){return busy;},get failure(){return failure;},get batches(){return batches;},refresh,older,apply,adopt};

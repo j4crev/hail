@@ -6,12 +6,18 @@ it('uses only the same-origin bridge and treats reconnects and duplicate states 
   const source={close:vi.fn(),onopen:null as null|(()=>void),onerror:null as null|(()=>void),addEventListener:(name:string,callback:(event:unknown)=>void)=>listeners.set(name,callback)};
   const create=vi.fn(()=>source as unknown as EventSource),events=new MailboxEvents(changed,create);
   events.start();events.start();expect(create).toHaveBeenCalledTimes(1);expect(create.mock.calls[0]).toEqual(['/api/jmap/events?types=*&closeafter=no&ping=30']);
-  source.onopen!();expect(changed).toHaveBeenCalledTimes(1);
+  expect(events.connected).toBe(false);source.onopen!();expect(changed).toHaveBeenCalledTimes(1);expect(events.connected).toBe(true);
   for(let i=0;i<2;i++)listeners.get('state')!({data:JSON.stringify({'@type':'StateChange',changed:{account:{HailMessage:'state'}}})});
   expect(changed).toHaveBeenCalledTimes(3);
   for(const data of ['bad',JSON.stringify({changed:{}}),'x'.repeat(8193)])listeners.get('state')!({data});
   expect(changed).toHaveBeenCalledTimes(3);events.stop();listeners.get('state')!({data:JSON.stringify({'@type':'StateChange',changed:{}})});
-  expect(changed).toHaveBeenCalledTimes(3);expect(source.close).toHaveBeenCalledTimes(1);
+  expect(changed).toHaveBeenCalledTimes(3);expect(source.close).toHaveBeenCalledTimes(1);expect(events.connected).toBe(false);
+});
+it('reports a dropped stream as disconnected so polling resumes',()=>{
+  const source={close:vi.fn(),onopen:null as null|(()=>void),onerror:null as null|(()=>void),addEventListener:()=>{}};
+  const events=new MailboxEvents(()=>{},()=>source as unknown as EventSource);
+  events.start();source.onopen!();expect(events.connected).toBe(true);
+  source.onerror!();expect(events.connected).toBe(false);events.stop();
 });
 it('backs off failures, cancels retries on stop and can start again',async()=>{
   vi.useFakeTimers();const sources:Array<{close:ReturnType<typeof vi.fn>;onerror:()=>void}>=[];

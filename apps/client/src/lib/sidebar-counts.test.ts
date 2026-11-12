@@ -1,7 +1,10 @@
 import {beforeEach,expect,it,vi} from 'vitest';
+import {AccountApiError} from '@racrproto/client-support/account-api';
 const fixture=vi.hoisted(()=>({request:vi.fn(),configured:true}));
 vi.mock('$env/dynamic/private',()=>({env:{}}));
-vi.mock('$lib/server/canary.js',()=>({isConfigured:()=>fixture.configured,canaryAccount:async()=>({account:{did:'did:plc:test'},client:{jmap:fixture.request}})}));
+vi.mock('$lib/server/canary.js',()=>({isConfigured:()=>fixture.configured,canaryAccount:async()=>({account:{did:'did:plc:test'},client:{jmap:fixture.request,
+  // One batched provider request; each method's failure is its own result.
+  jmapBatch:(calls:[string,unknown][])=>Promise.all(calls.map(([name,args])=>Promise.resolve(fixture.request(name,args)).catch((cause:unknown)=>{if(cause instanceof AccountApiError)return cause;throw cause;})))}})}));
 import {load} from '../routes/+layout.server.js';
 const event=()=>({cookies:{get:()=>"test-session"},url:new URL('https://example.com/sent'),depends:vi.fn()});
 beforeEach(()=>{fixture.configured=true;fixture.request.mockReset();});

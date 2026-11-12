@@ -129,16 +129,37 @@ export class AccountApiClient {
   }
 
   async jmap(name:string,args:JsonObject={},maxResponse=40*1024*1024):Promise<JsonObject>{
+    const [result]=await this.jmapBatch([[name,args]],maxResponse);
+    if(result instanceof AccountApiError)throw result;
+    return result!;
+  }
+
+  /**
+   * Several account methods in one JMAP request: one provider round trip and one
+   * authentication instead of one per method. The provider runs them in order.
+   * Each entry is that method's result, or its AccountApiError; a malformed
+   * response or transport failure rejects the whole batch.
+   */
+  async jmapBatch(calls:Array<[name:string,args?:JsonObject]>,maxResponse=40*1024*1024):Promise<Array<JsonObject|AccountApiError>>{
+    if(calls.length<1||calls.length>16)throw new ClientError('USAGE_ERROR','A JMAP batch has 1 to 16 methods');
     const capability='https://racrproto.com/ns/jmap/account';
     const accountId=await this.jmapAccount();
-    const response=await this.jmapRequest('/jmap',{using:['urn:ietf:params:jmap:core',capability],methodCalls:[[name,{...args,accountId},'account']]},maxResponse);
-    const calls=response.methodResponses;
-    if(!Array.isArray(calls)||calls.length!==1||!Array.isArray(calls[0])||calls[0][2]!=='account')throw new ClientError('RESPONSE_ERROR','Invalid JMAP response');
-    const result=object(calls[0][1]);
-    if(calls[0][0]==='error')throw new AccountApiError(typeof result.httpStatus==='number'?result.httpStatus:result.type==='stateMismatch'?409:result.type==='forbidden'?403:result.type==='notFound'?404:result.type==='rateLimit'?429:['serverFail','serverUnavailable'].includes(String(result.type))?503:400,undefined,typeof result.code==='string'?result.code:'JMAP_'+String(result.type));
-    if(calls[0][0]!==name||result.accountId!==accountId)throw new ClientError('RESPONSE_ERROR','Invalid JMAP account response');
-    return result;
+    const response=await this.jmapRequest('/jmap',{using:['urn:ietf:params:jmap:core',capability],
+      methodCalls:calls.map(([name,args],index)=>[name,{...args,accountId},calls.length===1?'account':'account'+index])},maxResponse);
+    const responses=response.methodResponses;
+    if(!Array.isArray(responses)||responses.length!==calls.length)throw new ClientError('RESPONSE_ERROR','Invalid JMAP response');
+    return calls.map(([name],index)=>{
+      const call=responses[index];
+      if(!Array.isArray(call)||call[2]!==(calls.length===1?'account':'account'+index))throw new ClientError('RESPONSE_ERROR','Invalid JMAP response');
+      const result=object(call[1]);
+      if(call[0]==='error')return new AccountApiError(typeof result.httpStatus==='number'?result.httpStatus:result.type==='stateMismatch'?409:result.type==='forbidden'?403:result.type==='notFound'?404:result.type==='rateLimit'?429:['serverFail','serverUnavailable'].includes(String(result.type))?503:400,undefined,typeof result.code==='string'?result.code:'JMAP_'+String(result.type));
+      if(call[0]!==name||result.accountId!==accountId)throw new ClientError('RESPONSE_ERROR','Invalid JMAP account response');
+      return result;
+    });
   }
+
+  /** Starts reading the JMAP Session now so a later method call need not wait for it. */
+  prepareJmap():void{void this.jmapAccount().catch(()=>{});}
 
   async uploadAttachment(filename:string,bytes:Uint8Array):Promise<JsonObject>{
     if(bytes.length<1||bytes.length>25*1024*1024)throw new Error('Invalid attachment size');

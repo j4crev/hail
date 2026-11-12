@@ -11,33 +11,41 @@ function provider(){
   const fail=new Map<string,'http'|'method'|'state'>();
   const state=(type:string,revision:number)=>`${accountId}_${type}_${revision}`;
   function transport(){
-    const calls:Array<{method:string;args:Record<string,any>}>=[];
+    const calls:Array<{method:string;args:Record<string,any>}>=[],requests:number[]=[];let sessions=0;
     const fetcher=vi.fn(async(path:RequestInfo|URL,init?:RequestInit)=>{
       expect(init).toMatchObject({credentials:'same-origin',cache:'no-store',redirect:'error'});
       if(path==='/api/jmap/session'){
-        expect(init?.method).toBe('GET');
-        return Response.json({username:'alice',state:sessionState,apiUrl:'https://foreign.example/jmap',primaryAccounts:{[MESSAGE]:accountId,[DRAFT]:accountId,[ACCOUNT]:accountId},
+        expect(init?.method).toBe('GET');sessions++;
+        return Response.json({username:'alice',state:sessionState,apiUrl:'https://foreign.example/jmap',capabilities:{[CORE]:{maxCallsInRequest:16}},primaryAccounts:{[MESSAGE]:accountId,[DRAFT]:accountId,[ACCOUNT]:accountId},
           accounts:{[accountId]:{accountCapabilities:{[MESSAGE]:{},[DRAFT]:{},[ACCOUNT]:{types:types.slice(2)}}}}});
       }
       expect(path).toBe('/api/jmap');expect(init?.method).toBe('POST');
-      const body=JSON.parse(String(init?.body));expect(body.methodCalls).toHaveLength(1);
-      const [method,args,tag]=body.methodCalls[0],type=method.split('/')[0];
-      expect(tag).toBe('sync');expect(args.accountId).toBe(accountId);
-      expect(body.using).toEqual([CORE,type==='HailMessage'?MESSAGE:type==='HailDraft'?DRAFT:ACCOUNT]);calls.push({method,args});
-      const failure=fail.get(type);fail.delete(type);
-      if(failure==='http')return new Response(null,{status:503});
-      if(failure==='method')return Response.json({methodResponses:[['error',{type:'serverFail'},tag]]});
-      const rows=events.get(type)!;
-      if(method.endsWith('/get')){expect(args.ids).toEqual([]);return Response.json({methodResponses:[[method,{accountId,state:state(type,rows.length),list:[],notFound:[]},tag]]});}
-      expect(method).toBe(type+'/changes');expect(args.maxChanges).toBe(50);
-      const since=Number(String(args.sinceState).split('_').at(-1));expect(args.sinceState).toBe(state(type,since));
-      if(since<(floor.get(type)??0))return Response.json({methodResponses:[['error',{type:'cannotCalculateChanges'},tag]]});
-      const end=Math.min(since+50,rows.length),page=rows.slice(since,end);
-      return Response.json({methodResponses:[[method,{accountId,oldState:failure==='state'?'foreign-state':args.sinceState,newState:state(type,end),
-        created:page.filter(e=>e.operation==='created').map(e=>e.id),updated:page.filter(e=>e.operation==='updated').map(e=>e.id),
-        destroyed:page.filter(e=>e.operation==='destroyed').map(e=>e.id),hasMoreChanges:end<rows.length},tag]]});
+      const body=JSON.parse(String(init?.body));requests.push(body.methodCalls.length);
+      const capabilities=body.methodCalls.map(([method]:[string])=>{const type=method.split('/')[0];return type==='HailMessage'?MESSAGE:type==='HailDraft'?DRAFT:ACCOUNT;});
+      expect(body.using).toEqual([CORE,...new Set(capabilities)]);
+      for(const [method,args] of body.methodCalls)calls.push({method,args});
+      if(body.methodCalls.some(([method]:[string])=>fail.get(method.split('/')[0])==='http')){
+        for(const [method] of body.methodCalls)if(fail.get(method.split('/')[0])==='http')fail.delete(method.split('/')[0]);
+        return new Response(null,{status:503});
+      }
+      const methodResponses=body.methodCalls.map(([method,args,tag]:[string,Record<string,any>,string])=>{
+        const type=method.split('/')[0];expect(tag).toBe(type);
+        if(args.accountId!==accountId)return ['error',{type:'accountNotFound'},tag];
+        const failure=fail.get(type);fail.delete(type);
+        if(failure==='method')return ['error',{type:'serverFail'},tag];
+        const rows=events.get(type)!;
+        if(method.endsWith('/get')){expect(args.ids).toEqual([]);return [method,{accountId,state:state(type,rows.length),list:[],notFound:[]},tag];}
+        expect(method).toBe(type+'/changes');expect(args.maxChanges).toBe(50);
+        const since=Number(String(args.sinceState).split('_').at(-1));expect(args.sinceState).toBe(state(type,since));
+        if(since<(floor.get(type)??0))return ['error',{type:'cannotCalculateChanges'},tag];
+        const end=Math.min(since+50,rows.length),page=rows.slice(since,end);
+        return [method,{accountId,oldState:failure==='state'?'foreign-state':args.sinceState,newState:state(type,end),
+          created:page.filter(e=>e.operation==='created').map(e=>e.id),updated:page.filter(e=>e.operation==='updated').map(e=>e.id),
+          destroyed:page.filter(e=>e.operation==='destroyed').map(e=>e.id),hasMoreChanges:end<rows.length},tag];
+      });
+      return Response.json({methodResponses,sessionState});
     });
-    return {calls,fetcher,sync:new MailboxSync(fetcher as typeof fetch)};
+    return {calls,requests,sessions:()=>sessions,fetcher,sync:new MailboxSync(fetcher as typeof fetch)};
   }
   return {transport,fail,floor,events,reset(){accountId='account_generation_2';sessionState='session_2';for(const rows of events.values())rows.length=0;floor.clear();}};
 }
@@ -55,6 +63,21 @@ it('lets two independent clients discover all collections and converge after mis
   expect(b.calls.filter(c=>c.method==='HailMessage/changes').at(-1)!.args.sinceState).toBe('account_generation_1_HailMessage_0');
   expect(a.calls.filter(c=>c.method==='HailMessage/changes').at(-1)!.args.sinceState).toBe('account_generation_1_HailMessage_1');
   expect(await a.sync.poll()).toBe(false);expect(await b.sync.poll()).toBe(false);expect(clear).toHaveBeenCalledTimes(5);
+});
+it('checks every collection in one request and reads the Session only when it changes',async()=>{
+  const server=provider(),client=server.transport();
+  await client.sync.poll();await client.sync.poll();await client.sync.poll();
+  expect(client.requests).toEqual([types.length,types.length,types.length]);
+  expect(client.sessions()).toBe(1);
+  server.reset();expect(await client.sync.poll()).toBe(true);
+  // The stale answers are discarded; the next request uses the new account.
+  expect(client.sessions()).toBe(2);expect(client.requests).toHaveLength(5);
+  expect(client.calls.slice(-types.length).map(c=>c.args.accountId)).toEqual(types.map(()=>'account_generation_2'));
+});
+it('reads the Session again after a failed check',async()=>{
+  const server=provider(),client=server.transport();await client.sync.poll();
+  server.fail.set('HailGrant','http');await expect(client.sync.poll()).rejects.toThrow();
+  expect(await client.sync.poll()).toBe(false);expect(client.sessions()).toBe(2);
 });
 it('retains paged cursors so later polls observe the remaining changes',async()=>{
   const server=provider(),client=server.transport();await client.sync.poll();

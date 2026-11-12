@@ -431,6 +431,9 @@ const server=Bun.serve({hostname:'::',port:0,async fetch(request){
     assert.equal(request.method,'POST');assert(Array.isArray(input.methodCalls));assert(input.using.includes('urn:ietf:params:jmap:core'));
     const methodResponses=[];
     for(const [name,args,tag] of input.methodCalls){
+      // This fixture has no account collections; the layout's batched change check
+      // gets the same refusal for them as for HailMessage/get.
+      if(/^(HailSent|HailSubmission|HailGrant|HailRelationship)\/(get|changes|query|queryChanges)$/.test(name)){methodResponses.push(['error',{type:'unknownMethod'},tag]);continue;}
       if(/^(HailMailbox|HailSubmission|HailGrant|HailRelationship)\//.test(name)){
         assert(input.using.includes(accountCapability));operationCalls.push({name,args});
         if(args.accountId!=='fixture_account'){methodResponses.push(['error',{type:'accountNotFound'},tag]);continue;}
