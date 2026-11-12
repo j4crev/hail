@@ -10,6 +10,7 @@ export interface DkimOutcome {
   signatures: { domain: string; result: string; aligned: boolean; comment?: string }[];
   /** Why the result is "none"; also set when the check itself failed. */
   reason?: string;
+  unsubscribe?: import("./unsubscribe.js").UnsubscribeTarget;
 }
 /** Whether the message carries a valid DKIM signature from its author's own domain. */
 export type DkimCheck = (raw: Uint8Array, fromAddress: string) => Promise<DkimOutcome>;

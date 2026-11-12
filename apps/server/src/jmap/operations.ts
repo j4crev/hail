@@ -87,7 +87,7 @@ export class JmapOperations {
    // Aliases are account configuration managed from the browser, like Trash and preferences.
    scope(s,'messages:write');browser(s);active(s);const aliases=need(d.emailAliases);
    if(name==='HailEmailAlias/create'){argumentsOnly(a,['label']);return aliases.create(s,a.label);}
-   argumentsOnly(a,['ids']);return aliases.destroy(s.account_id,a.ids);
+   argumentsOnly(a,['ids','unsubscribe']);return aliases.destroy(s.account_id,a.ids,bool(a,'unsubscribe'));
   }
   if(name==='HailAttachment/import'){
    argumentsOnly(a,['filename','blobId']);scope(s,'messages:write');active(s);

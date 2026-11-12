@@ -3,7 +3,12 @@ import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
-const { httpsRequest } = vi.hoisted(() => ({ httpsRequest: vi.fn() }));
+const { httpsRequest } = vi.hoisted(() => {
+  // The server suite runs without module isolation. Earlier bridge imports may
+  // have cached safe-fetch with the real HTTPS request function before this mock.
+  vi.resetModules();
+  return { httpsRequest: vi.fn() };
+});
 
 vi.mock("node:https", () => ({ request: httpsRequest }));
 

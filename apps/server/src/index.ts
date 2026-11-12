@@ -1,5 +1,6 @@
 import {SQL} from "bun";
 import {StateNotifications} from "./jmap/state-notifications.js";
+import { EmailBridgeUnsubscriber } from "./bridge/unsubscribe.js";
 import { EmailBridgeDelivery } from "./bridge/delivery.js";
 import { EmailAliasOperations } from "./bridge/operations.js";
 import { EmailBridgeIntake } from "./bridge/intake.js";
@@ -240,6 +241,14 @@ setInterval(async () => {
 
 if(config.emailBridge){
   const bridgeDelivery=new EmailBridgeDelivery(database.sql,messaging,{address:config.emailBridge.senderAddress,category:config.emailBridge.category});
+  const unsubscriber=new EmailBridgeUnsubscriber(database.sql);
+  let unsubscribeRunning=false;
+  setInterval(async()=>{
+    if(unsubscribeRunning)return;unsubscribeRunning=true;
+    try{await unsubscriber.workOne();}
+    catch{console.error(JSON.stringify({level:"error",message:"email bridge unsubscribe worker failed"}));}
+    finally{unsubscribeRunning=false;}
+  },5_000);
   let bridgeRunning=false;
   setInterval(async()=>{
     if(bridgeRunning)return;bridgeRunning=true;

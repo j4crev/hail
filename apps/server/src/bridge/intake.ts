@@ -65,6 +65,12 @@ export class EmailBridgeIntake {
   constructor(private readonly sql: SQL, private readonly domain: string, private readonly limits: IntakeLimits = DEFAULT_INTAKE_LIMITS,
     private readonly sender?: BridgeSender) {}
 
+  /** Trusted ingress adapters only. Cursor strings avoid bigint precision loss. */
+  async deletions(after: string): Promise<{ sequence: string; localPart: string }[]> {
+    return this.sql`SELECT sequence::text, local_part AS "localPart" FROM email_bridge_deletions
+      WHERE sequence > ${after}::bigint ORDER BY email_bridge_deletions.sequence LIMIT 500`;
+  }
+
   private localPart(recipient: string): string | null {
     const value = recipient.trim().toLowerCase(), at = value.lastIndexOf("@");
     if (at < 1 || value.slice(at + 1) !== this.domain) return null;

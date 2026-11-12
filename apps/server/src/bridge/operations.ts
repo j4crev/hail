@@ -49,14 +49,15 @@ export class EmailAliasOperations {
     return { alias: view(await this.aliases.create(account.account_id, { label })) };
   }
 
-  async destroy(accountId: string, ids: unknown) {
+  async destroy(accountId: string, ids: unknown, unsubscribe = false) {
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 50 || ids.some(id => typeof id !== "string" || !UUID.test(id)) ||
       new Set(ids).size !== ids.length) throw new EmailBridgeError(400, "Choose 1 to 50 aliases");
     const destroyed: string[] = [], notFound: string[] = [];
+    let unsubscribeRequests = 0;
     for (const id of ids as string[]) {
-      try { await this.aliases.remove(accountId, id); destroyed.push(id); }
+      try { unsubscribeRequests += await this.aliases.remove(accountId, id, unsubscribe); destroyed.push(id); }
       catch (error) { if (error instanceof EmailBridgeError && error.status === 404) notFound.push(id); else throw error; }
     }
-    return { destroyed, notFound };
+    return { destroyed, notFound, unsubscribeRequests };
   }
 }

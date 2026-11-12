@@ -266,6 +266,7 @@ const migrations: readonly Migration[] = [
   {version:122,name:"email-bridge-delivery",url:new URL("../../migrations/0122_email_bridge_delivery.sql",import.meta.url)},
   {version:123,name:"reserve-email-role",url:new URL("../../migrations/0123_reserve_email_role.sql",import.meta.url)},
   {version:124,name:"jmap-state-notifications",url:new URL("../../migrations/0124_jmap_state_notifications.sql",import.meta.url)},
+  {version:125,name:"email-bridge-unsubscribe",url:new URL("../../migrations/0125_email_bridge_unsubscribe.sql",import.meta.url)},
 ];
 
 export class ProviderDatabase {

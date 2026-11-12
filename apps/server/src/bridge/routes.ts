@@ -4,6 +4,7 @@ import { accountRequestBytes } from "../accounts/routes.js";
 import { parseJsonWithoutDuplicateKeys } from "../discovery/strict-json.js";
 import type { EmailBridgeIntake } from "./intake.js";
 
+export const DELETIONS_PATH = "/email-bridge/v1/deletions";
 export const INTAKE_CHECK_PATH = "/email-bridge/v1/intake/check";
 export const INTAKE_MESSAGE_PATH = "/email-bridge/v1/intake/messages";
 
@@ -20,6 +21,20 @@ export function registerEmailBridgeIntakeRoutes(app: Hono, intake: EmailBridgeIn
     // Hashing first makes the comparison independent of the supplied length.
     return supplied !== undefined && timingSafeEqual(sha256(supplied), expected);
   };
+
+  app.all(DELETIONS_PATH, async context => {
+    context.header("Cache-Control", "no-store");
+    if (context.req.method !== "POST") return context.json({ error: "Use POST" }, 405);
+    if (!authorized(context.req.header("Authorization"))) return context.json({ error: "Intake credential required" }, 401);
+    if (context.req.header("Content-Type") !== "application/json") return context.json({ error: "Use JSON" }, 415);
+    const bytes = await accountRequestBytes(context.req.raw, 1024);
+    let after: unknown;
+    try { after = (parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes ?? undefined)) as { after?: unknown }).after; }
+    catch { after = undefined; }
+    if (!bytes || typeof after !== "string" || !/^(0|[1-9][0-9]{0,18})$/.test(after) || BigInt(after) > 9223372036854775807n)
+      return context.json({ error: "Invalid deletion cursor" }, 400);
+    return context.json({ deletions: await intake.deletions(after) });
+  });
 
   app.all(INTAKE_CHECK_PATH, async context => {
     context.header("Cache-Control", "no-store");

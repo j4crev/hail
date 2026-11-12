@@ -359,6 +359,13 @@ integration("email bridge conversion and delivery", () => {
         .rejects.toMatchObject({ type: "invalidArguments" });
       expect(await operations.dispatch(session(["messages:read"], false), "HailEmailAlias/get", { summary: true })).toMatchObject({ enabled: true });
       expect(await new JmapOperations(base).dispatch(session(["messages:read"]), "HailEmailAlias/get", {})).toEqual({ available: false });
+      const ids = [(created as { alias: { id: string } }).alias.id];
+      await expect(operations.dispatch(session(["messages:write"]), "HailEmailAlias/destroy", { ids, unsubscribe: "yes" }))
+        .rejects.toMatchObject({ type: "invalidArguments" });
+      await expect(operations.dispatch(session(["messages:write"], false), "HailEmailAlias/destroy", { ids, unsubscribe: true }))
+        .rejects.toMatchObject({ type: "forbidden" });
+      expect(await operations.dispatch(session(["messages:write"]), "HailEmailAlias/destroy", { ids, unsubscribe: true }))
+        .toMatchObject({ destroyed: ids, unsubscribeRequests: 0 });
     });
   });
 
