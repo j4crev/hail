@@ -11,6 +11,8 @@ import {OperatorStatistics} from "./operator/stats.js";
 import {registerOperatorRoutes} from "./operator/routes.js";
 import {OperatorInvitations} from "./operator/invitations.js";
 import { Hono } from "hono";
+import { DEFAULT_INTAKE_LIMITS, type EmailBridgeIntake } from "./bridge/intake.js";
+import { registerEmailBridgeIntakeRoutes } from "./bridge/routes.js";
 import type { AppConfig } from "./config.js";
 import { registerDiscoveryRoutes } from "./discovery/routes.js";
 import type { DiscoveryStore } from "./discovery/store.js";
@@ -113,6 +115,7 @@ export interface AppDependencies {
     avatarProfiles?:SenderProfileStore & VerifiedSenderProfileStore;profiles?:SenderProfileService;profileVerifier?:Pick<SenderProfileVerifier,"verify">;publications?:AccountPublications;connections?:AccountConnections };
   selfServiceOnboarding?: SelfServiceOnboarding;
   signupEmail?:{sql:SQL;client:SignupEmailClient};
+  emailBridgeIntake?:EmailBridgeIntake;
   signupMonitor?:SignupMonitorService;
   signup?:SignupCoordinator;
   accountAccess?: { access: AccountAccess; sql: SQL };
@@ -155,6 +158,8 @@ export function createApp(
   }
   const protectedSchedule = new ProtectedResponseSchedule();
   if(dependencies.selfServiceOnboarding)registerSelfServiceOnboarding(app,dependencies.selfServiceOnboarding);
+  if(dependencies.emailBridgeIntake&&config.emailBridge)
+    registerEmailBridgeIntakeRoutes(app,dependencies.emailBridgeIntake,config.emailBridge.intakeToken,DEFAULT_INTAKE_LIMITS.maxMessageBytes);
   if(dependencies.signupEmail)registerSignupEmailRoutes(app,dependencies.signupEmail.sql,dependencies.signupEmail.client,config.passkeys?.origin??config.publicOrigin);
   if(dependencies.signupMonitor)registerSignupMonitorRoutes(app,dependencies.signupMonitor,config.passkeys?.origin??config.publicOrigin);
   if(dependencies.signup){

@@ -112,6 +112,17 @@ describe("loadConfig", () => {
       expect(()=>loadConfig({...validEnvironment,...email,...override})).toThrow();
   });
 
+  it("enables the email bridge only with a dedicated alias domain and an independent intake secret",()=>{
+    expect(loadConfig(validEnvironment).emailBridge).toBeUndefined();
+    const bridge={EMAIL_BRIDGE_DOMAIN:"in.bridge.example",EMAIL_BRIDGE_INTAKE_TOKEN:"B".repeat(42)+"A"};
+    expect(loadConfig({...validEnvironment,...bridge}).emailBridge).toEqual({domain:bridge.EMAIL_BRIDGE_DOMAIN,intakeToken:bridge.EMAIL_BRIDGE_INTAKE_TOKEN});
+    const nativeDomain=loadConfig(validEnvironment).nativeAddressDomain!;
+    for(const override of [{EMAIL_BRIDGE_DOMAIN:undefined},{EMAIL_BRIDGE_INTAKE_TOKEN:undefined},{EMAIL_BRIDGE_INTAKE_TOKEN:"short"},
+      {EMAIL_BRIDGE_DOMAIN:"In.Bridge.Example"},{EMAIL_BRIDGE_DOMAIN:"localhost"},{EMAIL_BRIDGE_DOMAIN:"https://in.bridge.example"},
+      {EMAIL_BRIDGE_DOMAIN:nativeDomain},{EMAIL_BRIDGE_INTAKE_TOKEN:validEnvironment.KEY_ENCRYPTION_KEY}])
+      expect(()=>loadConfig({...validEnvironment,...bridge,...override})).toThrow();
+  });
+
   it("requires explicit email, authority and pinned monitor configuration for automatic signup monitoring",()=>{
     expect(loadConfig(publicEnvironment).signupMonitor).toBeUndefined();
     const key=`did:key:${base58btc.encode(new Uint8Array([0xed,1,...new Uint8Array(32)]))}`;

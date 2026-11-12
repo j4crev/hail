@@ -1,3 +1,4 @@
+import { EmailBridgeIntake } from "./bridge/intake.js";
 import {JmapPush} from './jmap/push.js';
 import {EVENT_TYPES} from './jmap/events.js';
 import {canReadCollection,type Collection} from './jmap/collections.js';
@@ -350,6 +351,7 @@ const app = createApp(config, schemaRehearsal ? {
 } : {
   servingSql:database.sql,
   ...(config.signupEmail?{signupEmail:{sql:database.sql,client:new SignupEmailClient(config.signupEmail)}}:{}),
+  ...(config.emailBridge?{emailBridgeIntake:new EmailBridgeIntake(database.sql,config.emailBridge.domain)}:{}),
   ...(config.signupMonitor?{signupMonitor:new SignupMonitorService(database.sql,new SignupEmailClient(config.signupEmail!),new SignupMonitorClient(config.signupMonitor))}:{}),
   ...(config.alphaSignup?(()=>{
     const policy={profile:"reduced-assurance-alpha-v1" as const,monitorOrigin:config.alphaSignup.monitorOrigin,monitorPublicKey:config.signupMonitor!.publicKey};

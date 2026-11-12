@@ -28,6 +28,8 @@ export interface AppConfig {
   signupEmail?:{origin:string;token:string};
   signupMonitor?:{apiOrigin:string;token:string;publicKey:string};
   alphaSignup?:{invitationKey:string;monitorOrigin:string};
+  /** Inbound email bridge: the alias domain and the ingress adapter's credential. */
+  emailBridge?:{domain:string;intakeToken:string};
 }
 
 type Environment = Record<string, string | undefined>;
@@ -222,7 +224,20 @@ export function loadConfig(environment: Environment = Bun.env): AppConfig {
   let webPush:VapidConfig|undefined;
   if(['WEB_PUSH_VAPID_SUBJECT','WEB_PUSH_VAPID_PUBLIC_KEY','WEB_PUSH_VAPID_PRIVATE_KEY'].some(name=>environment[name]?.trim()))
     webPush=validateVapid({subject:required(environment,'WEB_PUSH_VAPID_SUBJECT'),publicKey:required(environment,'WEB_PUSH_VAPID_PUBLIC_KEY'),privateKey:required(environment,'WEB_PUSH_VAPID_PRIVATE_KEY')});
+  let emailBridge:AppConfig["emailBridge"];
+  if(environment.EMAIL_BRIDGE_DOMAIN?.trim()||environment.EMAIL_BRIDGE_INTAKE_TOKEN?.trim()){
+    const domain=required(environment,"EMAIL_BRIDGE_DOMAIN"),intakeToken=required(environment,"EMAIL_BRIDGE_INTAKE_TOKEN");
+    if(domain.length>253||!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(domain))
+      throw new Error("EMAIL_BRIDGE_DOMAIN must be a lowercase DNS name");
+    // Aliases are not Hail addresses; sharing the domain would make them look like one.
+    if(domain===nativeAddressDomain)throw new Error("EMAIL_BRIDGE_DOMAIN must differ from the Hail address domain");
+    try{decodeBase64Url(intakeToken,32);}catch{throw new Error("EMAIL_BRIDGE_INTAKE_TOKEN must be a canonical 32-byte base64url secret");}
+    if([signupEmail?.token,signupMonitor?.token,keyEncryptionKey,alphaSignup?.invitationKey].includes(intakeToken))
+      throw new Error("EMAIL_BRIDGE_INTAKE_TOKEN must be an independent secret");
+    emailBridge={domain,intakeToken};
+  }
   return {
+    ...(emailBridge?{emailBridge}:{}),
     ...(webPush?{webPush}:{}),
     sessionPolicy: sessionPolicy(environment),
     nodeEnv,
