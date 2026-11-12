@@ -1,6 +1,7 @@
 import { unsubscribeTarget } from "./unsubscribe.js";
 import { dkimVerify } from "mailauth/lib/dkim/verify";
 import type { DkimCheck, DkimOutcome } from "./converter.js";
+import { createDkimTxtResolver } from "./dkim-dns.js";
 
 /** DNS lookup in the shape the DKIM verifier expects, so tests can supply records. */
 export type TxtResolver = (domain: string, type: string) => Promise<string[][] | string[]>;
@@ -14,9 +15,9 @@ export type TxtResolver = (domain: string, type: string) => Promise<string[][] |
  * The outcome also lists each signature's domain and result, without message
  * content, so an unverified message can be explained afterwards.
  */
-export function createDkimCheck(resolver?: TxtResolver, now: () => Date = () => new Date()): DkimCheck {
+export function createDkimCheck(resolver: TxtResolver = createDkimTxtResolver(), now: () => Date = () => new Date()): DkimCheck {
   return async (raw, fromAddress) => {
-    const result = await dkimVerify(Buffer.from(raw), { curTime: now(), minBitLength: 1024, ...(resolver ? { resolver } : {}) });
+    const result = await dkimVerify(Buffer.from(raw), { curTime: now(), minBitLength: 1024, resolver });
     // An unsigned message yields a placeholder result with no signing domain.
     const signatures = result.results.filter(signature => signature.signingDomain).slice(0, 5).map(signature => ({
       domain: String(signature.signingDomain ?? "").slice(0, 253),
