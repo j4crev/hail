@@ -278,7 +278,7 @@ Follow [first administrator ceremony](../standalone/README.md#first-administrato
 4. Start CLI onboarding, enroll the exact public state with the monitor, and retrieve its attestation.
 5. Complete onboarding, enroll/test a passkey, and grant explicit operator permission.
 
-Reserved names (`admin`, `ops`, `alerts`, `abuse`, `security`, `support`) are not
+Reserved names (`admin`, `ops`, `alerts`, `abuse`, `security`, `support`, `email`) are not
 accounts and confer no privilege automatically. They remain reserved on custom
 domains too. The reserved native-domain administrator uses CLI signup;
 the browser address picker intentionally excludes reserved names.

@@ -34,7 +34,7 @@ it.skipIf(!process.env.DATABASE_URL)("reserves provider roles across account wri
     const invitationKey = encodeBase64Url(randomBytes(32)), invitation = createSignupInvitation(origin, invitationKey);
     const signup = new SignupCoordinator(db.sql, {} as PublicOnboarding, {} as SignupMonitorService,
       origin, {} as AlphaMonitoringPolicy, invitationKey);
-    for (const role of ["ops", "alerts", "abuse", "security", "support", "admin"]) {
+    for (const role of ["ops", "alerts", "abuse", "security", "support", "admin", "email"]) {
       const address = `${role}@local.example.com`;
       await expect(insert(address)).rejects.toThrow("reserved for the provider operator");
       await expect(db.sql`UPDATE provider_accounts SET canonical_address=${address} WHERE canonical_address='alice@local.example.com'`)
