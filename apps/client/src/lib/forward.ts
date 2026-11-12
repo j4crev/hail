@@ -18,7 +18,11 @@ function literal(text: string) {
   return {_type: 'block', style: 'normal', children: [{_type: 'span', text, marks: []}], markDefs: []};
 }
 export function forwardBody(source: {message: MessageView; body: Record<string, unknown>}, note: string) {
-  const {message, body} = source;
+  // The forwarder did not relay this from email; the original sender did. The
+  // statement is not ours to repeat, so the email sender moves into the provenance text.
+  const {origin, ...body} = source.body as Record<string, unknown> & {origin?: {from_address?: unknown}};
+  const {message} = source;
+  const relayed = typeof origin?.from_address === 'string' ? `\nRelayed from email: ${origin.from_address}` : '';
   // Keep bundled assets and their required first image block intact.
   const original = structuredClone(body.blocks as Record<string, unknown>[]);
   const assets = (body.assets as {assets?:{id:string;role:string}[]}|undefined)?.assets;
@@ -27,7 +31,7 @@ export function forwardBody(source: {message: MessageView; body: Record<string, 
   const result = {...body, profile: body.profile === 'spt-1' ? 'spt-2' : body.profile,
     blocks: [...(image ? [image] : []), ...(subject ? [subject] : []), ...composeBlocks('', note),
       literal('Forwarded message'),
-      literal(`From: ${message.senderAddress ?? message.sender}\nSender DID: ${message.sender}\nOriginally received: ${message.deliveredAt}\nMessage ID: ${message.messageId}`),
+      literal(`From: ${message.senderAddress ?? message.sender}\nSender DID: ${message.sender}\nOriginally received: ${message.deliveredAt}\nMessage ID: ${message.messageId}${relayed}`),
       ...original]};
   parseBody(result);
   return result;

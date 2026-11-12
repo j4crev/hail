@@ -281,7 +281,7 @@ does not mean a feature is unimplemented.
 | Read/open receipts | Not defined as federation operations. Local read state and server delivery receipts are distinct. |
 | Aggregate analytics | No campaign/analytics federation protocol. Local reporting is provider/client policy and cannot bypass activity-disclosure rules. |
 | Unsolicited communication | Unsolicited message delivery is not authorized. Public discovery, Grant publication and deliberate invitation review are distinct, bounded operations. A general unsolicited contact-request feature remains undefined. |
-| Email bridges | No interoperable bridge profile. Onboarding/notification email is not a Hail message bridge. |
+| Email bridges | A sender may relay received email as ordinary hails and state that with the signed [relayed-origin](bodies.md#relayed-origin) body member. Receiving email, alias management and conversion are that sender's own service, not protocol operations; no outbound email or interoperable bridge-to-bridge profile is defined. Onboarding/notification email is not a Hail message bridge. |
 | Global directories | Address/DID resolution and signed Sender Profiles exist. Global search, recommendation and directory services are application concerns, not required core protocol services; see [sender profile](sender-profile.md). |
 | Encoding negotiation | Not defined. The fixed CBOR/COSE profile and separately defined transfer representations are not negotiated alternatives; see [encoding](encoding.md). |
 | Organization verification | Domain-backed address verification exists; organizational attestations beyond domain control remain undefined. |

@@ -48,6 +48,8 @@ export type {
   HailSenderProfile,
   HailAttachment,
   HailSptBody,
+  HailBodyOrigin,
+  HailBodyOriginEmail,
   HailSpt2Body,
   HailSpt2Span,
   HailSpt2TextBlock,

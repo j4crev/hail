@@ -298,8 +298,29 @@ type SPT2TextBlock struct {
 	Level     int64      `cbor:"level,omitempty"`
 	Alignment string     `cbor:"alignment,omitempty"`
 }
+
+// BodyOrigin is the sender's statement that it relayed the content from an
+// external source. It attests where the sender obtained the content, not who wrote it.
+type BodyOrigin struct {
+	Type           string `json:"type" cbor:"type"`
+	FromAddress    string `json:"from_address" cbor:"from_address"`
+	FromName       string `json:"from_name,omitempty" cbor:"from_name,omitempty"`
+	ListID         string `json:"list_id,omitempty" cbor:"list_id,omitempty"`
+	Authentication string `json:"authentication" cbor:"authentication"`
+	ReceivedAt     int64  `json:"received_at" cbor:"received_at"`
+}
+
+func cloneOrigin(origin *BodyOrigin) *BodyOrigin {
+	if origin == nil {
+		return nil
+	}
+	cloned := *origin
+	return &cloned
+}
+
 type SPT2Body struct {
 	Attachments []Attachment    `json:"attachments,omitempty" cbor:"attachments,omitempty"`
+	Origin      *BodyOrigin     `json:"origin,omitempty" cbor:"origin,omitempty"`
 	Version     int64           `cbor:"version"`
 	Profile     string          `cbor:"profile"`
 	Blocks      []SPT2TextBlock `cbor:"blocks"`
@@ -322,6 +343,7 @@ type SPT3Block struct {
 
 type SPT3Body struct {
 	Attachments []Attachment  `json:"attachments,omitempty" cbor:"attachments,omitempty"`
+	Origin      *BodyOrigin   `json:"origin,omitempty" cbor:"origin,omitempty"`
 	Version     int64         `cbor:"version"`
 	Profile     string        `cbor:"profile"`
 	Assets      AssetManifest `cbor:"assets"`
@@ -450,6 +472,7 @@ func clonePayload(payload Payload) Payload {
 	case *SPT2Body:
 		cloned := *value
 		cloned.Attachments = cloneAttachments(value.Attachments)
+		cloned.Origin = cloneOrigin(value.Origin)
 		cloned.Blocks = make([]SPT2TextBlock, len(value.Blocks))
 		for i, block := range value.Blocks {
 			cloned.Blocks[i] = block
@@ -463,6 +486,7 @@ func clonePayload(payload Payload) Payload {
 	case *SPT3Body:
 		cloned := *value
 		cloned.Attachments = cloneAttachments(value.Attachments)
+		cloned.Origin = cloneOrigin(value.Origin)
 		cloned.Assets.Assets = append([]BundledImageAsset(nil), value.Assets.Assets...)
 		for i := range cloned.Assets.Assets {
 			cloned.Assets.Assets[i].Digest.Value = bytes.Clone(value.Assets.Assets[i].Digest.Value)

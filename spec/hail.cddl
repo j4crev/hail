@@ -406,7 +406,8 @@ hail-body-spt-2 = {
   "version": 1,
   "profile": "spt-2",
   "blocks": [* spt-2-text-block],
-  ? "attachments": [1*20 hail-attachment]
+  ? "attachments": [1*20 hail-attachment],
+  ? "origin": body-origin
 }
 
 spt-2-text-block = {
@@ -438,7 +439,8 @@ hail-body-spt-3 = {
   "profile": "spt-3",
   "assets": asset-manifest-v1,
   "blocks": [1* (spt-image-block / spt-2-text-block)],
-  ? "attachments": [1*20 hail-attachment]
+  ? "attachments": [1*20 hail-attachment],
+  ? "origin": body-origin
 }
 
 spt-image-block = {
@@ -446,6 +448,19 @@ spt-image-block = {
   "asset": tstr,
   "alt": tstr,
   ? "caption": tstr
+}
+
+; The sender's statement that it relayed the content from an external source.
+; Address, name and list-identifier syntax are semantic checks; see bodies.md.
+body-origin = body-origin-email
+
+body-origin-email = {
+  "type": "email",
+  "from_address": tstr,
+  ? "from_name": tstr,
+  ? "list_id": tstr,
+  "authentication": "dkim-aligned" / "none",
+  "received_at": timestamp
 }
 
 ; Reusable bundled-image manifest for future body and profile versions.

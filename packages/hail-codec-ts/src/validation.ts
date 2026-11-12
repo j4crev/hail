@@ -631,9 +631,32 @@ function validateSpt1Body(payload: HailRecord): void {
   });
 }
 
+const ORIGIN_EMAIL_ADDRESS = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const ORIGIN_LIST_ID = /^[a-z0-9](?:[a-z0-9._-]{0,253}[a-z0-9])?$/;
+
+/** A relayed-origin statement; see spec/bodies.md. */
+function validateOrigin(value: unknown): void {
+  const path = "$.origin", origin = record(value, path);
+  exactKeys(origin, ["type", "from_address", "authentication", "received_at"], ["from_name", "list_id"], path);
+  if (origin.type !== "email") fail("unsupported origin type", `${path}.type`);
+  const address = text(origin.from_address, `${path}.from_address`);
+  if (address.length > 254 || address.indexOf("@") > 64 || !ORIGIN_EMAIL_ADDRESS.test(address)) {
+    fail("must be a lowercase ASCII email address", `${path}.from_address`);
+  }
+  if (origin.from_name !== undefined) profileText(origin.from_name, 1, 256, `${path}.from_name`);
+  if (origin.list_id !== undefined && !ORIGIN_LIST_ID.test(text(origin.list_id, `${path}.list_id`))) {
+    fail("must be a lowercase list identifier of at most 255 bytes", `${path}.list_id`);
+  }
+  if (origin.authentication !== "dkim-aligned" && origin.authentication !== "none") {
+    fail("unsupported origin authentication", `${path}.authentication`);
+  }
+  integer(origin.received_at, `${path}.received_at`);
+}
+
 function validateSpt2Body(payload: HailRecord): void {
-  exactKeys(payload, ["version", "profile", "blocks"], ["attachments"], "$");
+  exactKeys(payload, ["version", "profile", "blocks"], ["attachments", "origin"], "$");
   if (payload.attachments !== undefined) validateAttachments(payload.attachments);
+  if (payload.origin !== undefined) validateOrigin(payload.origin);
   if (payload.version !== 1) fail("must equal integer 1", "$.version");
   if (payload.profile !== "spt-2") fail("must equal spt-2", "$.profile");
   const blocks = array(payload.blocks, "$.blocks");
@@ -759,8 +782,9 @@ export function validateAssetManifest(value: unknown): asserts value is HailAsse
 }
 
 function validateSpt3Body(payload: HailRecord): void {
-  exactKeys(payload, ["version", "profile", "assets", "blocks"], ["attachments"], "$");
+  exactKeys(payload, ["version", "profile", "assets", "blocks"], ["attachments", "origin"], "$");
   if (payload.attachments !== undefined) validateAttachments(payload.attachments);
+  if (payload.origin !== undefined) validateOrigin(payload.origin);
   if (payload.version !== 1) fail("must equal integer 1", "$.version");
   if (payload.profile !== "spt-3") fail("must equal spt-3", "$.profile");
   validateAssetManifest(payload.assets);

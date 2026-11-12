@@ -41,6 +41,8 @@ export function outboundBody(input:Record<string,unknown>):Uint8Array {
   if(text)return bodyFromText(input.text as string);
   const profile=(input.body as Record<string,unknown>).profile;
   if(profile!=="spt-2"&&profile!=="spt-3")throw new UserGrantError(400,"Invalid body profile");
+  // An account composes its own content. Only a relay service may state that a body came from elsewhere.
+  if((input.body as Record<string,unknown>).origin!==undefined)throw new UserGrantError(400,"Composed messages cannot declare a relayed origin");
   return profile==="spt-2"?bodyFromDocument(fromDiagnosticJson("hail.body.spt-2",input.body as DiagnosticJson)):
     bodyFromDocument(fromDiagnosticJson("hail.body.spt-3",input.body as DiagnosticJson));
 }

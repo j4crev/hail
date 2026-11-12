@@ -313,8 +313,23 @@ export interface HailSpt2TextBlock {
   level?: 1 | 2 | 3;
 }
 
+/**
+ * The sender's statement that it relayed this content from an external source.
+ * It attests where the sender obtained the content, not who wrote it.
+ */
+export interface HailBodyOriginEmail {
+  type: "email";
+  from_address: string;
+  from_name?: string;
+  list_id?: string;
+  authentication: "dkim-aligned" | "none";
+  received_at: number;
+}
+export type HailBodyOrigin = HailBodyOriginEmail;
+
 export interface HailSpt2Body {
   attachments?: HailAttachment[];
+  origin?: HailBodyOrigin;
   version: 1;
   profile: "spt-2";
   blocks: HailSpt2TextBlock[];
@@ -329,6 +344,7 @@ export interface HailSptImageBlock {
 
 export interface HailSpt3Body {
   attachments?: HailAttachment[];
+  origin?: HailBodyOrigin;
   version: 1;
   profile: "spt-3";
   assets: HailAssetManifest;

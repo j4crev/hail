@@ -4,4 +4,4 @@ export {fromDiagnosticJson, toDiagnosticJson, type DiagnosticJson} from './diagn
 export {encodePayload} from './payload.js';
 export {encodeBase64Url, decodeBase64Url} from './base64url.js';
 export {HailCodecError} from './errors.js';
-export type {HailSpt2Body, HailSpt3Body, HailSpt2TextBlock} from './models.js';
+export type {HailBodyOrigin, HailSpt2Body, HailSpt3Body, HailSpt2TextBlock} from './models.js';

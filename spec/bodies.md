@@ -92,6 +92,57 @@ before publishing inline-image bodies: previous alpha implementations reject the
 Existing single leading headers remain a valid distinct presentation. Never
 rewrite stored signed body bytes to upgrade their representation.
 
+### Relayed origin
+
+An `spt-2` or `spt-3` body MAY contain one `origin` member. It is the sender's
+signed statement that it obtained the content from an external source and
+relayed it, for example a bridge that receives email and delivers it as a hail.
+`spt-1` is unchanged and MUST NOT contain `origin`.
+
+`origin` is covered by the body digest and therefore by the envelope signature.
+It attests only what the **sender** says about where the content came from. It
+is not evidence of who wrote the content, and it grants no authority: delivery
+is authorized exactly as for any other body from that sender. A recipient that
+does not trust the sender has no reason to trust its `origin`.
+
+The only current origin type is `email`:
+
+| Member | Requirement |
+| --- | --- |
+| `type` | `email` |
+| `from_address` | The author address the sender read from the message. Lowercase ASCII `local@domain`, at most 254 bytes, local part at most 64 bytes and limited to dot-separated RFC 5322 `atext`; the domain is lowercase LDH labels (A-labels for internationalized names) with at least two labels. |
+| `from_name` | Optional display name: NFC plain text of 1 through 256 UTF-8 bytes without control or format characters. |
+| `list_id` | Optional mailing-list identifier: 1 through 255 bytes of lowercase ASCII letters, digits, `.`, `_` and `-`, beginning and ending with a letter or digit. |
+| `authentication` | `dkim-aligned` or `none`. |
+| `received_at` | Integer timestamp at which the sender received the source message. |
+
+`dkim-aligned` means the sender verified a DKIM signature on the source message
+whose signing domain is the `from_address` domain or shares its registrable
+domain. Any other outcome, including a valid signature for an unrelated domain,
+is `none`. This is the sender's report of its own check; recipients cannot
+re-verify it from the body. Unknown origin types, authentication values and
+members are rejected, never ignored.
+
+Readers that display `origin`:
+
+- MUST keep the verified Hail sender visible and distinct from the origin. The
+  origin address is never presented as a Hail address, a verified identity or
+  the sender of the hail.
+- MUST indicate that the content was relayed, and SHOULD show `authentication`
+  when it is `none`.
+- MUST NOT use `origin` for authorization, reply addressing, contact matching
+  or sender-avatar selection.
+
+A reader MAY ignore `origin` for presentation, but a provider MUST still
+validate it. Origin does not change what a body may contain: links, images and
+size limits are those of its profile.
+
+A participant that forwards or quotes a relayed body is composing new content
+and MUST NOT copy the original `origin` into it. Whether an account may state an
+origin at all is provider policy; the reference provider accepts `origin` only
+from a relay service it operates and rejects it in messages composed through the
+account API.
+
 The sender encodes the document using deterministic Hail CBOR. Those bytes are the deterministic body bytes.
 
 Diagnostic JSON for an example source document:

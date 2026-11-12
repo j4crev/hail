@@ -241,6 +241,14 @@ portraitBody.assets.assets[0]=dimensionAsset(1,1800);
 await addPositive('body-spt-3-portrait','hail.body.spt-3',portraitBody);
 await addPositive('body-spt-2-cta-alignment','hail.body.spt-2',ctaBody);
 
+// Relayed-origin statements: the sender attests where it obtained the content.
+const emailOrigin={type:'email' as const,from_address:'editors@fieldnotes.example',from_name:'Field Notes',
+  list_id:'weekly.fieldnotes.example',authentication:'dkim-aligned' as const,received_at:1700000000};
+const originBody={...structuredClone(richBody),origin:emailOrigin};
+await addPositive('body-spt-2-origin-email','hail.body.spt-2',originBody);
+await addPositive('body-spt-3-origin-email','hail.body.spt-3',{...structuredClone(inlineImageBody),
+  origin:{type:'email',from_address:'news@sender.example',authentication:'none',received_at:1700000000}});
+
 const addressSigned = signedByType.get("hail.address-binding");
 if (addressSigned === undefined) throw new Error("address-binding vector missing");
 
@@ -541,6 +549,23 @@ const inlineInvalid: Array<[string, (body: any) => void]> = [
   ['inline-image-duplicate-id',body=>body.assets.assets[1].id=body.assets.assets[0].id],
 ];
 for(const [id,mutate] of inlineInvalid){const body=structuredClone(inlineImageBody);mutate(body);negativePayload.push({id,type:'hail.body.spt-3',hex:hex(encode(body,rfc8949EncodeOptions)),expected_error:'schema-violation',cddl_valid:id!=='inline-image-remote-url'});}
+
+const originInvalid: Array<[string,(body:any)=>void,boolean]> = [
+  ['origin-unknown-type',body=>body.origin.type='rss',false],
+  ['origin-uppercase-address',body=>body.origin.from_address='Editors@fieldnotes.example',true],
+  ['origin-address-without-domain',body=>body.origin.from_address='editors',true],
+  ['origin-address-local-part-too-long',body=>body.origin.from_address='a'.repeat(65)+'@fieldnotes.example',true],
+  ['origin-name-format-character',body=>body.origin.from_name='Field\u202eNotes',true],
+  ['origin-list-id-with-space',body=>body.origin.list_id='weekly list',true],
+  ['origin-unknown-authentication',body=>body.origin.authentication='spf',false],
+  ['origin-missing-received-at',body=>delete body.origin.received_at,false],
+  ['origin-unknown-member',body=>body.origin.url='https://example.invalid/issue',false],
+];
+for(const [id,mutate,cddl_valid] of originInvalid){const body=structuredClone(originBody);mutate(body);
+  negativePayload.push({id,type:'hail.body.spt-2',hex:hex(encode(body,rfc8949EncodeOptions)),expected_error:'schema-violation',cddl_valid});}
+// spt-1 is unchanged and carries no origin.
+negativePayload.push({id:'origin-in-spt-1',type:'hail.body.spt-1',hex:hex(encode({...structuredClone(body),origin:emailOrigin},rfc8949EncodeOptions)),
+  expected_error:'schema-violation',cddl_valid:false});
 
 const pixelBody=structuredClone(inlineImageBody);
 pixelBody.assets.assets=[dimensionAsset(1000,2000)];
