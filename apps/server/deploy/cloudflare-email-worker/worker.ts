@@ -47,20 +47,31 @@ const retryDelay = (attempts: number) => Math.min(43_200, 60 * 2 ** Math.max(0, 
 
 class Unavailable extends Error {}
 
+/** Records why a hand-off failed. Never logs the token, addresses or message content. */
+function unavailable(path: string, reason: string): Unavailable {
+  console.warn(JSON.stringify({ level: "warn", message: "email bridge hand-off failed", path, reason }));
+  return new Unavailable(reason);
+}
+
 async function intake(env: Env, path: "check" | "messages", init: RequestInit, timeoutMs: number): Promise<Outcome> {
   let response: Response;
   try {
     response = await fetch(`${env.PROVIDER_ORIGIN}/email-bridge/v1/intake/${path}`, {
-      ...init, method: "POST", redirect: "error", signal: AbortSignal.timeout(timeoutMs),
+      // Workers reject redirect "error" with a TypeError; with "manual" a redirect
+      // arrives as a 3xx response, which is treated as unavailable below.
+      ...init, method: "POST", redirect: "manual", signal: AbortSignal.timeout(timeoutMs),
       headers: { ...init.headers as Record<string, string>, Authorization: `Bearer ${env.INTAKE_TOKEN}` },
     });
-  } catch { throw new Unavailable("provider unreachable"); }
+  } catch (error) {
+    throw unavailable(path, `provider unreachable: ${error instanceof Error ? `${error.name}: ${error.message.slice(0, 200)}` : "error"}`);
+  }
   // 413 is the contract's answer for an oversized message; anything else unexpected means "try again later".
-  if (response.status !== 200 && response.status !== 413) { await response.body?.cancel(); throw new Unavailable(`provider answered ${response.status}`); }
+  // 401 here means INTAKE_TOKEN differs from the provider's EMAIL_BRIDGE_INTAKE_TOKEN.
+  if (response.status !== 200 && response.status !== 413) { await response.body?.cancel(); throw unavailable(path, `provider answered ${response.status}`); }
   let result: unknown;
-  try { result = ((await response.json()) as { result?: unknown }).result; } catch { throw new Unavailable("unreadable provider answer"); }
+  try { result = ((await response.json()) as { result?: unknown }).result; } catch { throw unavailable(path, "unreadable provider answer"); }
   const allowed = path === "check" ? ["accept", "reject", "defer"] : ["accepted", "duplicate", "reject", "defer"];
-  if (typeof result !== "string" || !allowed.includes(result)) throw new Unavailable("unexpected provider answer");
+  if (typeof result !== "string" || !allowed.includes(result)) throw unavailable(path, "unexpected provider answer");
   return result as Outcome;
 }
 
