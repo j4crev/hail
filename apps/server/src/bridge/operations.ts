@@ -2,7 +2,7 @@ import type { SQL } from "bun";
 import { encodeBase64Url } from "@racrproto/codec";
 import type { GrantRepository } from "../grants/repository.js";
 import { EmailAliases, EmailBridgeError, type EmailAlias } from "./aliases.js";
-import { bridgeAccount, bridgeGrant, type BridgeSender } from "./consent.js";
+import { bridgeAccount, grantorGrantToBridge, type BridgeSender } from "./consent.js";
 
 const UUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 
@@ -30,7 +30,8 @@ export class EmailAliasOperations {
 
   async state(account: { account_id: string; did: string }): Promise<InboundEmailState> {
     const bridge = await bridgeAccount(this.sql, this.sender);
-    const granted = bridge ? await bridgeGrant(this.sql, account.did, bridge, this.sender.category) : null;
+    // The user's own record, not the bridge's receipt of it, which arrives moments later.
+    const granted = bridge ? await grantorGrantToBridge(this.sql, account, bridge.did, this.sender.category) : null;
     const current = granted ? await this.grants.findCurrentByGrantId(granted.grantId) : null;
     const grant = current && current.localAccountId === account.account_id && current.localRole === "grantor"
       ? { grantId: current.payload.grant_id, revision: current.payload.revision, digest: encodeBase64Url(current.digest) } : null;

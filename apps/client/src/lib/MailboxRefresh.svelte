@@ -1,9 +1,11 @@
 <script lang="ts">
   import type {Snippet} from 'svelte';
   import Icon from '$lib/Icon.svelte';
-  let {view, locked=false, heading, floating=true}: {
+  let {view, locked=false, heading, floating=true, manual=true}: {
     view:{pending:boolean;busy:boolean;failure:string;apply:()=>void};
     locked?:boolean; heading?:Snippet; floating?:boolean;
+    /** Show the always-present refresh button; the updates pill appears regardless. */
+    manual?:boolean;
   }=$props();
   let showHint=$state(false);
   const available=$derived(view.pending || !!view.failure);
@@ -15,12 +17,14 @@
     return ()=>clearTimeout(timer);
   });
 </script>
+{#if heading || manual}
 <div class="refresh-heading" class:has-heading={!!heading} class:floating>
   {#if heading}<div class="heading-content">{@render heading()}</div>{/if}
-  <button class="desktop-refresh hail-icon-button" disabled={view.busy||locked} onclick={()=>view.apply()} aria-label={label} title={label} aria-busy={view.busy}>
+  {#if manual}<button class="desktop-refresh hail-icon-button" disabled={view.busy||locked} onclick={()=>view.apply()} aria-label={label} title={label} aria-busy={view.busy}>
     <span class:spinning={view.busy}><Icon name="refresh" /></span>
-  </button>
+  </button>{/if}
 </div>
+{/if}
 <div class="refresh-status" class:floating aria-live="polite">
   {#if view.failure}<p role="status">{view.failure}</p>{/if}
   {#if available}<button class="updates-pill" disabled={view.busy||locked} onclick={()=>view.apply()} aria-label={label}><Icon name="refresh" size={16}/>{view.failure?'Retry refresh':'Updates available'}</button>{/if}

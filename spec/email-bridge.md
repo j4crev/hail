@@ -138,7 +138,7 @@ Each accepted message moves through these states:
 
 The original message is deleted as soon as it is converted or abandoned. The
 record that remains holds no message content: it exists to recognize resends,
-count against the limits above, and give the operator a failure reason.
+count against the limits above, and give the operator a failure reason. It also records the DKIM outcome: each signature's domain and result, and why a message was not verified.
 
 Deleting an alias moves every message of that alias still in the first three
 states to `dead`. A worker that finishes later finds its claim gone and writes

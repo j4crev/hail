@@ -4,7 +4,15 @@ import {
 } from "@racrproto/email-bridge";
 
 /** Whether the message carries a valid DKIM signature from its author's own domain. */
-export type DkimCheck = (raw: Uint8Array, fromAddress: string) => Promise<"dkim-aligned" | "none">;
+/** What the DKIM check concluded, and why, without message content. */
+export interface DkimOutcome {
+  authentication: "dkim-aligned" | "none";
+  signatures: { domain: string; result: string; aligned: boolean; comment?: string }[];
+  /** Why the result is "none"; also set when the check itself failed. */
+  reason?: string;
+}
+/** Whether the message carries a valid DKIM signature from its author's own domain. */
+export type DkimCheck = (raw: Uint8Array, fromAddress: string) => Promise<DkimOutcome>;
 
 export interface ConverterOptions {
   resolveRemote: RemoteImageResolver;
@@ -46,14 +54,19 @@ export class EmailBridgeConverter {
     const raw = new Uint8Array(claimed.raw);
     try {
       const converted = await convertEmail(raw);
-      const authentication = await this.options.checkDkim(raw, converted.source.fromAddress).catch(() => "none" as const);
+      const dkim = await this.options.checkDkim(raw, converted.source.fromAddress).catch((error: unknown): DkimOutcome => {
+        const reason = `check failed: ${error instanceof Error ? `${error.name}: ${error.message.slice(0, 160)}` : "error"}`;
+        console.warn(JSON.stringify({ level: "warn", message: "email bridge DKIM check failed", reason }));
+        return { authentication: "none", signatures: [], reason };
+      });
+      const authentication = dkim.authentication;
       const assembled = await assembleBody(converted, {
         authentication, receivedAt: Math.floor(claimed.received_at.getTime() / 1000), resolveRemote: this.options.resolveRemote,
         policy: this.options.policy ?? CURRENT_IMAGE_POLICY,
       });
       await this.sql`
         UPDATE email_bridge_intake SET state = 'converted', raw = NULL, converted_body = ${assembled.bytes},
-          diagnostics = ${JSON.stringify(assembled.diagnostics)}::text::jsonb, attempts = 0, next_attempt_at = clock_timestamp()
+          diagnostics = ${JSON.stringify({ ...assembled.diagnostics, dkim })}::text::jsonb, attempts = 0, next_attempt_at = clock_timestamp()
         WHERE id = ${claimed.id} AND state = 'converting' AND attempts = ${claimed.attempts}`;
     } catch (error) {
       if (error instanceof BridgeInputError || claimed.attempts >= this.maxAttempts) {

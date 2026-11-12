@@ -54,7 +54,7 @@ const email = (id: string, html = '<p>Hello from the newsletter.</p><img src="ht
   `From: Field Notes <editors@fieldnotes.example>\r\nTo: x@${DOMAIN}\r\nSubject: Issue ${id}\r\nMessage-ID: <${id}@fieldnotes.example>\r\n` +
   `Date: Tue, 10 Nov 2026 09:30:00 -0500\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${html}\r\n`;
 const bytes = (text: string) => new TextEncoder().encode(text);
-const none: DkimCheck = async () => "none";
+const none: DkimCheck = async () => ({ authentication: "none", signatures: [] });
 
 integration("email bridge conversion and delivery", () => {
   let admin: SQL, db: ProviderDatabase, schema: string;
@@ -114,7 +114,7 @@ integration("email bridge conversion and delivery", () => {
     return { alias, intakeId: row!.id };
   }
   const row = async (id: string) => (await db.sql<{ state: string; failure: string | null; raw: Uint8Array | null; converted_body: Uint8Array | null;
-    message_id: string | null; diagnostics: Record<string, number> | null }[]>`
+    message_id: string | null; diagnostics: Record<string, unknown> | null }[]>`
     SELECT state, failure, raw, converted_body, message_id, diagnostics FROM email_bridge_intake WHERE id = ${id}`)[0]!;
   /** Work queued rows until none is ready, as the long-running workers do. */
   const drain = async (worker: { workOne(): Promise<boolean> }) => { for (let i = 0; i < 50 && await worker.workOne(); i++); };
@@ -131,7 +131,7 @@ integration("email bridge conversion and delivery", () => {
       expect(body.origin).toEqual({ type: "email", from_address: "editors@fieldnotes.example", from_name: "Field Notes", authentication: "none",
         received_at: Math.floor(received.getTime() / 1000) });
       expect(body.assets.assets[0]).toMatchObject({ media_type: "image/png", width: 200, height: 60 });
-      expect(result.diagnostics).toEqual({});
+      expect(result.diagnostics).toEqual({ dkim: { authentication: "none", signatures: [] } });
     });
 
     it("abandons an unusable message and treats a failing image fetcher as unavailable images", async () => {
@@ -147,7 +147,8 @@ integration("email bridge conversion and delivery", () => {
       const result = await row(intakeId);
       // Neither failure is the message's fault: the image becomes a link and the author is reported unauthenticated.
       expect(result.state).toBe("converted");
-      expect(result.diagnostics).toEqual({ "image-unavailable": 1 });
+      expect(result.diagnostics).toEqual({ "image-unavailable": 1,
+        dkim: { authentication: "none", signatures: [], reason: "check failed: Error: DNS down" } });
       expect(decodePayload("hail.body.spt-2", new Uint8Array(result.converted_body!)).origin?.authentication).toBe("none");
     });
 
@@ -177,12 +178,16 @@ integration("email bridge conversion and delivery", () => {
       };
       const check = createDkimCheck(dns);
       const message = email("dkim-1");
-      expect(await check(await sign("fieldnotes.example", message), "editors@fieldnotes.example")).toBe("dkim-aligned");
-      expect(await check(await sign("mailer.example", message), "editors@fieldnotes.example")).toBe("none");
+      expect(await check(await sign("fieldnotes.example", message), "editors@fieldnotes.example")).toEqual({ authentication: "dkim-aligned",
+        signatures: [{ domain: "fieldnotes.example", result: "pass", aligned: true }] });
+      expect(await check(await sign("mailer.example", message), "editors@fieldnotes.example")).toMatchObject({ authentication: "none",
+        reason: "no passing signature from the sender's domain", signatures: [{ domain: "mailer.example", result: "pass", aligned: false }] });
       const tampered = await sign("fieldnotes.example", message);
-      expect(await check(bytes(Buffer.from(tampered).toString().replace("Hello", "Hullo")), "editors@fieldnotes.example")).toBe("none");
-      expect(await check(bytes(message), "editors@fieldnotes.example")).toBe("none");
-      expect(await check(await sign("fieldnotes.example", message), "someone@fieldnotes.example")).toBe("none");
+      const altered = await check(bytes(Buffer.from(tampered).toString().replace("Hello", "Hullo")), "editors@fieldnotes.example");
+      expect(altered).toMatchObject({ authentication: "none", signatures: [{ domain: "fieldnotes.example", result: "neutral", comment: "body hash did not verify" }] });
+      expect(await check(bytes(message), "editors@fieldnotes.example")).toEqual({ authentication: "none", signatures: [], reason: "no DKIM signature" });
+      expect(await check(await sign("fieldnotes.example", message), "someone@fieldnotes.example")).toMatchObject({ authentication: "none",
+        reason: "From header differs from the converted sender" });
     });
 
     it("runs under the converter role, which cannot read anything but the intake queue", async () => {
@@ -321,6 +326,19 @@ integration("email bridge conversion and delivery", () => {
       expect(await operations.destroy(owner.id, [alias.id, randomUUID()])).toMatchObject({ destroyed: [alias.id] });
       await expect(operations.destroy(owner.id, [])).rejects.toMatchObject({ status: 400 });
       await expect(operations.destroy(owner.id, ["not-a-uuid"])).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("shows inbound email on as soon as the user's Grant exists, before the bridge has received it", async () => {
+      const { sender, service } = await bridge(), owner = await account("reader");
+      const operations = new EmailAliasOperations(db.sql, new GrantRepository(db.sql), DOMAIN, { address: sender.address, category: "email" });
+      // Created by the user, not yet accepted by the bridge account.
+      const grant = await service.createOrReuse(owner.address, sender.address, { scope: { type: "categories", values: ["email"] }, expiresAt: null });
+      expect(await operations.get({ account_id: owner.id, did: owner.did }, true)).toMatchObject({ enabled: true, grant: { grantId: grant.payload.grant_id } });
+      const { alias } = await operations.create({ account_id: owner.id, did: owner.did }, "Early");
+      // Mail still waits for the bridge's own record of the Grant.
+      expect(await new EmailBridgeIntake(db.sql, DOMAIN, undefined, { address: sender.address, category: "email" }).check(alias.address)).toBe("reject");
+      await service.revoke(owner.address, grant.payload.grant_id);
+      expect((await operations.get({ account_id: owner.id, did: owner.did }, true)).enabled).toBe(false);
     });
 
     it("exposes the operations only to browser sessions with the right scopes, and reports when the provider has no bridge", async () => {

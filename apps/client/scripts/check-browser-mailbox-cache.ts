@@ -76,7 +76,9 @@ assert((await evaluate(`Array.from(document.querySelectorAll('.message-row a')).
 // Opened message content also renders immediately on a warm revisit.
 await evaluate(`document.querySelector('.message-link').click()`);
 await wait(async()=>evaluate(`location.pathname.startsWith('/message/') && Boolean(document.querySelector('.reader-panel'))`));
-await wait(async()=>evaluate(`Array.from(document.querySelectorAll('button')).some(b=>(b.getAttribute('aria-label')==='Refresh messages'||b.textContent.includes('Updates available'))&&!b.disabled)`));
+// An open message has no manual refresh button; its actions enable once read-marking settles.
+await wait(async()=>evaluate(`Array.from(document.querySelectorAll('[aria-label="Message actions"] button')).some(b=>!b.disabled)`));
+assert(!(await evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.getAttribute('aria-label')==='Refresh messages')`)));
 await Bun.sleep(500);
 const readerPath=await evaluate('location.pathname');
 await evaluate(`document.querySelector('nav[aria-label="Main navigation"] a[href="/sent"]').click()`);

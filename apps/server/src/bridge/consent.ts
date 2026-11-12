@@ -20,6 +20,26 @@ export async function bridgeAccount(sql: SQL, sender: BridgeSender): Promise<Bri
 }
 
 /**
+ * The account's own active Grant to the bridge for its category, as its grantor
+ * holds it. It exists as soon as the user confirms, before the bridge account
+ * has received it, so it is what the Inbound email setting shows.
+ */
+export async function grantorGrantToBridge(sql: SQL, account: { account_id: string; did: string }, bridgeDid: string,
+  category: string): Promise<{ grantId: string } | null> {
+  const [row] = await sql<{ grant_id: string }[]>`
+    SELECT lineage.grant_id FROM grant_lineages lineage JOIN grant_revisions revision ON revision.grant_id = lineage.grant_id
+      AND revision.revision = lineage.current_revision
+    CROSS JOIN LATERAL (SELECT CASE WHEN jsonb_typeof(revision.scope_payload) = 'string'
+      THEN (revision.scope_payload#>>'{}')::jsonb ELSE revision.scope_payload END AS scope) selected
+    WHERE lineage.local_account_id = ${account.account_id} AND lineage.local_role = 'grantor'
+      AND lineage.grantor_did = ${account.did} AND lineage.grantee_did = ${bridgeDid} AND lineage.current_status = 'active'
+      AND (revision.expires_at IS NULL OR revision.expires_at > extract(epoch FROM clock_timestamp()))
+      AND selected.scope->0->>'type' = 'categories' AND (selected.scope->0->'values') ? ${category}
+    ORDER BY lineage.grant_id LIMIT 1`;
+  return row ? { grantId: row.grant_id } : null;
+}
+
+/**
  * The recipient's own active Grant to the bridge for its category: the user's
  * consent to receive bridged mail at all. Aliases decide which senders reach them.
  */

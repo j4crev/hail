@@ -1,7 +1,9 @@
 <script lang="ts">
   import Icon from '$lib/Icon.svelte';
-  let {name, avatar, selected=false, disabled=false, label, ontoggle}: {
+  let {name, avatar, icon, selected=false, disabled=false, label, ontoggle}: {
     name:string; avatar?:{src:string;width:number;height:number}|null;
+    /** Shown instead of initials, for items that are not people. */
+    icon?:string;
     selected?:boolean; disabled?:boolean; label?:string; ontoggle?:()=>void;
   }=$props();
   let failedSrc = $state(''), image = $state<HTMLImageElement>();
@@ -17,6 +19,7 @@
 {#snippet picture()}
   {#if selected}<Icon name="check" size={24} />
   {:else if avatar && failedSrc !== avatar.src}<img class="w-full h-full object-cover" src={avatar.src} alt="" width={avatar.width} height={avatar.height} bind:this={image} />
+  {:else if icon}<span class="flex" aria-hidden="true"><Icon name={icon} size={22} /></span>
   {:else}<span aria-hidden="true">{name.slice(0,2).toUpperCase()}</span>{/if}
 {/snippet}
 {#if ontoggle}

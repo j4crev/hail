@@ -18,10 +18,12 @@ function environment() {
 }
 type Answer = { status?: number; result?: string } | "down";
 function provider(check: Answer, submit: Answer = { result: "accepted" }) {
-  const calls: { path: string; headers: Headers; body: Uint8Array }[] = [];
+  const calls: { path: string; headers: Headers; body: Uint8Array; redirect: RequestRedirect | undefined }[] = [];
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     const path = new URL(url).pathname, answer = path.endsWith("/check") ? check : submit;
-    calls.push({ path, headers: new Headers(init.headers), body: new Uint8Array(await new Response(init.body).arrayBuffer()) });
+    // The Workers runtime accepts only "follow" and "manual"; "error" throws a TypeError.
+    if (init.redirect !== "follow" && init.redirect !== "manual") throw new TypeError("Invalid redirect value");
+    calls.push({ path, headers: new Headers(init.headers), body: new Uint8Array(await new Response(init.body).arrayBuffer()), redirect: init.redirect });
     if (answer === "down") throw new TypeError("fetch failed");
     return Response.json({ result: answer.result }, { status: answer.status ?? 200 });
   });
@@ -35,6 +37,7 @@ describe("email handler", () => {
     await handleEmail(message, env);
     expect(rejected).toEqual([]);
     expect(calls.map(call => call.path)).toEqual(["/email-bridge/v1/intake/check", "/email-bridge/v1/intake/messages"]);
+    expect(calls.map(call => call.redirect)).toEqual(["manual", "manual"]);
     expect(JSON.parse(new TextDecoder().decode(calls[0]!.body))).toEqual({ recipient: "kq4tzx7m2fpa@haili.email" });
     expect(calls[1]!.body).toEqual(raw);
     expect(Object.fromEntries(calls[1]!.headers)).toMatchObject({ authorization: `Bearer ${"T".repeat(43)}`, "content-type": "message/rfc822",
@@ -67,7 +70,7 @@ describe("email handler", () => {
   });
 
   it("holds the message for retry when the provider is down or answers unexpectedly", async () => {
-    for (const [check, submit] of [["down", { result: "accepted" }], [{ status: 503 }, { result: "accepted" }], [{ result: "accept" }, "down"],
+    for (const [check, submit] of [["down", { result: "accepted" }], [{ status: 503 }, { result: "accepted" }], [{ status: 308 }, { result: "accepted" }], [{ result: "accept" }, "down"],
       [{ result: "accept" }, { status: 502 }], [{ result: "maybe" }, { result: "accepted" }]] as [Answer, Answer][]) {
       provider(check, submit);
       const { env, stored, queued } = environment(), { message, rejected } = email();

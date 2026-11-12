@@ -3,7 +3,6 @@
   import MobileSheet from "$lib/MobileSheet.svelte";
   import Icon from "$lib/Icon.svelte";
   import CopyButton from "$lib/CopyButton.svelte";
-  import DateTime from "$lib/DateTime.svelte";
   import MailboxEmptyState from "$lib/MailboxEmptyState.svelte";
   import SelectionAvatar from "$lib/SelectionAvatar.svelte";
   import SelectionActions from "$lib/SelectionActions.svelte";
@@ -51,8 +50,12 @@
       {#if created}
         <section class="grid min-w-0 gap-4" aria-label="New alias">
           <p class="m-0 text-sm">Use this address when you subscribe to <strong>{created.label}</strong>. Its mail arrives in your Feed.</p>
-          <code class="alias-address">{created.address}</code>
-          <div class="flex flex-wrap gap-2"><CopyButton value={created.address} label="Copy address" /><button class="hail-button-secondary" onclick={()=>addOpen=false}>Done</button></div>
+          <div class="flex items-center gap-2">
+            <!-- Break after the @ before splitting either part. -->
+            <code class="alias-address min-w-0 flex-1">{created.address.split("@")[0]}@<wbr />{created.address.split("@")[1]}</code>
+            <CopyButton value={created.address} label="Copy address" />
+          </div>
+          <button class="hail-button-secondary justify-self-start" onclick={()=>addOpen=false}>Done</button>
         </section>
       {:else}
         <form class="grid min-w-0 gap-4" aria-label="New alias" onsubmit={event=>{event.preventDefault();if(label.trim())void run(create);}}>
@@ -83,11 +86,10 @@
       <div class="compact-list">
         {#each data.aliases as alias (alias.id)}
           <article class="list-row contact-row" class:is-selected={selected.includes(alias.id)}>
-            <SelectionAvatar name="@" selected={selected.includes(alias.id)} disabled={busy} label={`Select alias ${alias.label}`} ontoggle={()=>toggle(alias.id)} />
+            <SelectionAvatar name="@" icon="at" selected={selected.includes(alias.id)} disabled={busy} label={`Select alias ${alias.label}`} ontoggle={()=>toggle(alias.id)} />
             <div class="contact-copy">
               <h3>{alias.label}</h3>
               <code class="contact-identity" title={alias.address}>{alias.address}</code>
-              <p class="alias-activity">{#if alias.lastReceivedAt}{alias.messageCount} {alias.messageCount===1?"message":"messages"} · last <DateTime value={alias.lastReceivedAt} format="list" />{:else}No mail yet{/if}</p>
             </div>
           </article>
         {/each}
@@ -103,7 +105,6 @@
   @reference "../../app.css";
 
   .alias-address { @apply block [overflow-wrap:anywhere] rounded-[8px] [padding:10px_12px] [background:var(--color-brand-soft)] text-[14px]; }
-  .alias-activity { @apply [margin:4px_0_0] text-[12px] text-muted; }
   @media (max-width:900px) {
     .has-selection { @apply pb-[180px]; }
   }
