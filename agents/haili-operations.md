@@ -118,6 +118,18 @@ application release.
 
 ## Shared receiver migration (registration v2)
 
+**Completed 2026-11-12 UTC** for release `a4a214e9bcdee8650a771ec96642841e81f407a4`
+(publication run `43327066864`). The monitor was deployed through `hail-monitor-ops`
+after backup `monitor-20261112T232302Z-7fb740fd.tar.gpg`, with `MONITOR_RECEIVER_ORIGIN`
+added to `/etc/hail-monitor-enrollment/compose.override.json` (previous copy kept as
+`compose.override.json.before-registration-v2`). Worker version `2d7c50fe` replaced the
+single-provider Worker and its `SIGNUP_EMAIL_TOKEN` secret was deleted; Haili's existing
+token was then imported as its receiver credential, assigning pre-v2 recipients to it.
+The provider/GUI images `provider@sha256:e304b026…` and `provider-web-client@sha256:132aaf19…`
+were deployed through `hail-provider-ops` after backup `haili-20261112T233823Z.tar.gpg`;
+PostgreSQL and Caddy were not recreated. Worker version `e92d4406` removed
+`LEGACY_RECIPIENT_PROVIDER_ORIGIN`. The steps below are retained for reference.
+
 [Registration v2](../spec/monitor-receiver.md) turns `alerts.plcmonitor.us` into
 the shared receiver for every provider. Haili keeps its existing
 `SIGNUP_EMAIL_TOKEN`, imported as its receiver credential. Roll out in this order:
