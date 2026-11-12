@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { probeImage } from "../src/index.ts";
+import { probeImage } from "../src/index.js";
 
 const base64 = (value: string): Uint8Array => Uint8Array.from(atob(value), character => character.charCodeAt(0));
 const hex = (value: string): Uint8Array => Uint8Array.from(value.replace(/\s+/g, "").match(/../g)!, byte => parseInt(byte, 16));

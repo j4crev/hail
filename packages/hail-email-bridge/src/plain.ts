@@ -1,5 +1,5 @@
-import type { BlockBuilder, BlockShape } from "./builder.ts";
-import { httpsDestination } from "./text.ts";
+import type { BlockBuilder, BlockShape } from "./builder.js";
+import { httpsDestination } from "./text.js";
 
 const NORMAL: BlockShape = { style: "normal" };
 const NO_DECORATORS: ReadonlySet<never> = new Set();

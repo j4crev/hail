@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   BridgeInputError, convertEmail, DEFAULT_LIMITS, TRUNCATION_NOTICE, type BridgeBlock, type BridgeImageRef,
   type BridgeTextBlock, type ConvertedEmail,
-} from "../src/index.ts";
+} from "../src/index.js";
 
 const fixture = (name: string): Uint8Array => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value.replace(/\r?\n/g, "\r\n"));

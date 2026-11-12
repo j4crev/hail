@@ -4,7 +4,7 @@ import { decodePayload, type HailSpt2Body, type HailSpt3Body } from "@racrproto/
 import { describe, expect, it } from "vitest";
 import {
   assembleBody, BridgeInputError, convertEmail, CURRENT_IMAGE_POLICY, type AssembleOptions, type ImagePolicy,
-} from "../src/index.ts";
+} from "../src/index.js";
 
 /** A complete, structurally valid RGBA PNG of the requested size. */
 function png(width: number, height: number, padding = 0): Uint8Array {

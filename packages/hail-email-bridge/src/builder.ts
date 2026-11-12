@@ -1,8 +1,8 @@
-import { blockItems, blockTextBytes, utf8Length, type ConversionLimits } from "./limits.ts";
-import { cleanSpanText } from "./text.ts";
+import { blockItems, blockTextBytes, utf8Length, type ConversionLimits } from "./limits.js";
+import { cleanSpanText } from "./text.js";
 import type {
   BridgeBlock, BridgeImageRef, BridgeLink, BridgeSpan, BridgeTextBlock, Decorator, DiagnosticCode, Diagnostics, TextStyle,
-} from "./types.ts";
+} from "./types.js";
 
 export interface BlockShape {
   style: TextStyle;

@@ -1,6 +1,6 @@
 import PostalMime from "postal-mime";
-import { cleanProfileText } from "./text.ts";
-import { BridgeInputError, type EmailSource, type InlineImage } from "./types.ts";
+import { cleanProfileText } from "./text.js";
+import { BridgeInputError, type EmailSource, type InlineImage } from "./types.js";
 
 export interface ParsedEmail {
   source: EmailSource;

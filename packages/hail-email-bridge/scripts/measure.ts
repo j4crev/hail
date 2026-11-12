@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { encodeDeterministic } from "@racrproto/codec/cbor";
 import {
   blockItems, BridgeInputError, convertEmail, probeImage, UNBOUNDED_LIMITS, type BridgeImageRef, type Diagnostics, type ImageProbe,
-} from "../src/index.ts";
+} from "../src/index.js";
 
 const FETCH_BYTES = 8 * 1024 * 1024, FETCH_TIMEOUT = 15_000;
 const UNBOUNDED_CBOR = {

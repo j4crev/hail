@@ -1,4 +1,4 @@
-import type { BridgeBlock } from "./types.ts";
+import type { BridgeBlock } from "./types.js";
 
 export interface ConversionLimits {
   /** Raw RFC 5322 message bytes accepted for parsing. */

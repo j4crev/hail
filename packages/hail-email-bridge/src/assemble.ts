@@ -3,9 +3,9 @@ import {
   type HailSpt2TextBlock, type HailSpt3Body, type HailSptImageBlock,
 } from "@racrproto/codec";
 import { encodeDeterministic } from "@racrproto/codec/cbor";
-import { probeImage, type ImageFormat } from "./image-probe.ts";
-import { cleanProfileText } from "./text.ts";
-import { BridgeInputError, type BridgeImageRef, type BridgeTextBlock, type ConvertedEmail, type DiagnosticCode, type Diagnostics } from "./types.ts";
+import { probeImage, type ImageFormat } from "./image-probe.js";
+import { cleanProfileText } from "./text.js";
+import { BridgeInputError, type BridgeImageRef, type BridgeTextBlock, type ConvertedEmail, type DiagnosticCode, type Diagnostics } from "./types.js";
 
 /** Which referenced images may be bundled. Everything else becomes a link. */
 export interface ImagePolicy {

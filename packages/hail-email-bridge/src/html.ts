@@ -1,7 +1,7 @@
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
-import type { BlockBuilder, BlockShape } from "./builder.ts";
-import { cleanProfileText, httpsDestination } from "./text.ts";
-import type { BridgeImageRef, Decorator, TextStyle } from "./types.ts";
+import type { BlockBuilder, BlockShape } from "./builder.js";
+import { cleanProfileText, httpsDestination } from "./text.js";
+import type { BridgeImageRef, Decorator, TextStyle } from "./types.js";
 
 type Node = DefaultTreeAdapterTypes.ChildNode;
 type Element = DefaultTreeAdapterTypes.Element;

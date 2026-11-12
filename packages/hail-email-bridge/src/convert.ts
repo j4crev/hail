@@ -1,9 +1,9 @@
-import { BlockBuilder, plainBlock } from "./builder.ts";
-import { convertHtml } from "./html.ts";
-import { DEFAULT_LIMITS, utf8Length, type ConversionLimits } from "./limits.ts";
-import { parseEmail } from "./mime.ts";
-import { convertPlainText } from "./plain.ts";
-import { BridgeInputError, type BridgeBlock, type ConvertedEmail } from "./types.ts";
+import { BlockBuilder, plainBlock } from "./builder.js";
+import { convertHtml } from "./html.js";
+import { DEFAULT_LIMITS, utf8Length, type ConversionLimits } from "./limits.js";
+import { parseEmail } from "./mime.js";
+import { convertPlainText } from "./plain.js";
+import { BridgeInputError, type BridgeBlock, type ConvertedEmail } from "./types.js";
 
 const sameTitle = (left: string, right: string): boolean =>
   left.trim().toLowerCase().replace(/\s+/g, " ") === right.trim().toLowerCase().replace(/\s+/g, " ");

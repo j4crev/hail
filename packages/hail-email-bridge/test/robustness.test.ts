@@ -1,6 +1,6 @@
 import { validatePayload } from "@racrproto/codec";
 import { describe, expect, it } from "vitest";
-import { BridgeInputError, convertEmail } from "../src/index.ts";
+import { BridgeInputError, convertEmail } from "../src/index.js";
 
 /** Deterministic generator so a failure reproduces from its seed. */
 function generator(seed: number): () => number {

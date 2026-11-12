@@ -1,4 +1,4 @@
-import { utf8Length } from "./limits.ts";
+import { utf8Length } from "./limits.js";
 
 const CONTROL_EXCEPT_NEWLINE = /[\p{Cc}]/gu;
 const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/gu;
