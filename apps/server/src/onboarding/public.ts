@@ -24,7 +24,6 @@ import type { HailDidResolver } from "../plc/resolver.js";
 import { retainPublicSigningAuthority } from "../plc/signing-authority.js";
 import { verifyRegisteredGenesis } from "../plc/verify.js";
 import { OnboardingRepository } from "./repository.js";
-import { providerRoleAccountId } from "./provider-roles.js";
 
 interface PreparationRow {
   account_id: string;
@@ -111,7 +110,7 @@ export class PublicOnboarding {
       }
       return this.result(row, address);
     }
-    const accountId = (custom ? undefined : await providerRoleAccountId(sql, address, recovery)) ?? randomUUID();
+    const accountId = randomUUID();
     const generated = await generateAccountKeys(accountId, this.encryptor);
     if (profile === "managed") identity = generated.identityDidKey;
     const write = async (tx: SQL) => {

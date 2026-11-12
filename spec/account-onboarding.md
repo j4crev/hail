@@ -304,6 +304,8 @@ A custodial implementation must label that limitation in its user-facing and imp
 
 The POC should still implement the same registration state machine, regular `plc_operation` creation, exact-operation retry behavior, read-back verification, staged Address Binding publication, and end-to-end activation check. Doing so tests the protocol lifecycle without treating prototype custody as the production design.
 
+Provider-owned reserved addresses such as `admin@` are not user accounts and use the separate [provider service account](provider-service-accounts.md) profile, which registers on the public PLC directory with provider-held keys under an offline provider recovery key.
+
 ## Security And Privacy Considerations
 
 ### Provider Takeover Window

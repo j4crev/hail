@@ -32,6 +32,8 @@ integration("rolls the email bridge migrations back in order, refusing to lose u
   const large = randomUUID();
   await db.sql`INSERT INTO account_message_drafts(account_id,id,content) VALUES(${account},${large},${JSON.stringify({ text: "x".repeat(500_000) })}::text::jsonb)`;
 
+  await rollback("0126_provider_service_accounts");
+  expect((await db.sql`SELECT to_regclass('provider_service_account_evidence') AS name`)[0].name).toBeNull();
   await rollback("0125_email_bridge_unsubscribe");
   await rollback("0124_jmap_state_notifications");
   await rollback("0123_reserve_email_role");

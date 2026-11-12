@@ -71,3 +71,30 @@ it("protects registration reads and changes with operator authority, origin and 
   expect(registration.update).toHaveBeenCalledExactlyOnceWith("a",{mode:"public"});
   t.accounts.authenticate.mockResolvedValue(null as never);expect((await request("POST")).status).toBe(401);
 });
+it("protects service-account listing and creation with operator authority, origin and recent authentication",async()=>{
+  const t=setup();
+  const {ServiceAccountError}=await import("../src/onboarding/service-accounts.js");
+  const services={list:vi.fn(async()=>[{address:"admin@example.com"}]),available:vi.fn(async()=>["abuse"]),
+    recoveryKey:vi.fn(async()=>"did:key:zRecovery"),create:vi.fn(async(name:string)=>({address:`${name}@example.com`}))};
+  const app=new Hono();registerOperatorRoutes(app,t.accounts as never,t.invitations as never,origin,undefined,undefined,services as never);
+  const request=(method="GET",body='{"name":"abuse"}',extra:Record<string,string>={})=>app.request("/api/v1/operator/service-accounts",{method,
+    headers:{Origin:origin,Cookie:"hail_session=test","Content-Type":"application/json",...extra},...(method==="POST"?{body}:{})});
+  const listed=await request();
+  expect(listed.status).toBe(200);
+  expect(await listed.json()).toEqual({accounts:[{address:"admin@example.com"}],available:["abuse"],recoveryKeySet:true});
+  expect((await request("POST",undefined,{Origin:"https://evil.example"})).status).toBe(403);
+  t.session.passkey_verified_at=new Date(Date.now()-11*60_000);expect((await request("POST")).status).toBe(403);
+  t.session.passkey_verified_at=new Date();
+  for(const bad of ['{"name":1}','{"name":"abuse","extra":true}','[]','not json'])expect((await request("POST",bad)).status).toBe(400);
+  expect(services.create).not.toHaveBeenCalled();
+  expect(await (await request("POST")).json()).toEqual({address:"abuse@example.com"});
+  expect(services.create).toHaveBeenCalledExactlyOnceWith("abuse");
+  services.create.mockRejectedValueOnce(new ServiceAccountError("Only reserved provider names can be service accounts"));
+  const refused=await request("POST",'{"name":"alice"}');
+  expect([refused.status,await refused.json()]).toEqual([409,{error:"Only reserved provider names can be service accounts"}]);
+  services.create.mockRejectedValueOnce(new Error("postgres diagnostic"));
+  const unconfirmed=await request("POST");
+  expect(unconfirmed.status).toBe(503);expect(JSON.stringify(await unconfirmed.json())).not.toContain("postgres");
+  t.invitations.authorized.mockResolvedValue(false);expect((await request()).status).toBe(403);
+  t.accounts.authenticate.mockResolvedValue(null as never);expect((await request()).status).toBe(401);
+});

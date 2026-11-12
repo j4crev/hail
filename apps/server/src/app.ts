@@ -10,6 +10,7 @@ import type {BodyRequestVerifier} from "./bodies/request-proof.js";
 import {RegistrationPolicy} from "./onboarding/registration.js";
 import {OperatorStatistics} from "./operator/stats.js";
 import {registerOperatorRoutes} from "./operator/routes.js";
+import type {ProviderServiceAccounts} from "./onboarding/service-accounts.js";
 import {OperatorInvitations} from "./operator/invitations.js";
 import { Hono } from "hono";
 import { DEFAULT_INTAKE_LIMITS, type EmailBridgeIntake } from "./bridge/intake.js";
@@ -122,6 +123,7 @@ export interface AppDependencies {
   emailBridgeIntake?:EmailBridgeIntake;
   signupMonitor?:SignupMonitorService;
   signup?:SignupCoordinator;
+  serviceAccounts?:ProviderServiceAccounts;
   accountAccess?: { access: AccountAccess; sql: SQL };
   servingSql?:SQL;
   passkeys?:PasskeyAuth;
@@ -181,7 +183,8 @@ export function createApp(
     if(dependencies.passkeys)registerPasskeyRoutes(app,dependencies.passkeys,accounts);
     if(dependencies.passkeys&&dependencies.signup&&dependencies.signupEmail&&config.alphaSignup)
       registerOperatorRoutes(app,accounts,new OperatorInvitations(dependencies.signupEmail.sql,config.publicOrigin,
-        dependencies.passkeys.origin,config.alphaSignup.invitationKey,dependencies.signupEmail.client),dependencies.passkeys.origin,new OperatorStatistics(dependencies.signupEmail.sql),registration);
+        dependencies.passkeys.origin,config.alphaSignup.invitationKey,dependencies.signupEmail.client),dependencies.passkeys.origin,new OperatorStatistics(dependencies.signupEmail.sql),registration,
+        dependencies.serviceAccounts);
 
   }
 

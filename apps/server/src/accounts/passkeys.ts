@@ -6,6 +6,7 @@ import {COSEALG} from "@simplewebauthn/server/helpers";
 import {decodeBase64Url,encodeBase64Url} from "@racrproto/codec";
 import type {SQL} from "bun";
 import {tokenHash,type AccountApiSession,type AccountApiScope} from "./repository.js";
+import {OPERATOR_SERVICE_LOCAL_PART} from "../onboarding/service-accounts.js";
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const ID=/^[A-Za-z0-9_-]{1,1366}$/;
@@ -105,6 +106,12 @@ export class PasskeyAuth {
         await tx`UPDATE account_signup_ceremonies SET enrolled_at=COALESCE(enrolled_at,clock_timestamp()),
           enrolled_credential_id=COALESCE(enrolled_credential_id,${credential.id}) WHERE enrollment_capability_id=${capabilityId}
           AND account_id=${accountId} AND enrollment_generation=${generation}`;
+        // The provider's admin service account is the operator (spec/provider-service-accounts.md).
+        await tx`INSERT INTO provider_operators(account_id,serving_generation)
+          SELECT account.id,${generation} FROM provider_accounts account
+          JOIN provider_service_account_evidence service ON service.account_id=account.id
+          WHERE account.id=${accountId} AND split_part(account.canonical_address,'@',1)=${OPERATOR_SERVICE_LOCAL_PART}
+          ON CONFLICT(account_id) DO UPDATE SET granted_at=clock_timestamp(),serving_generation=excluded.serving_generation`;
       }
       return {registered:true,credentialId:credential.id,label:label.trim()};
     });}

@@ -299,7 +299,7 @@ export class AccountApiClient {
       (result.addressReleased!==undefined&&typeof result.addressReleased!=="boolean") ||
       typeof result.address !== "string" || result.address.length > 254 ||
       ![null, "fenced", "exported", "retired"].includes(result.migrationState as null | string) ||
-      !["owner-controlled", "managed", "custodial-poc", "unknown"].includes(result.custodyProfile as string) ||
+      !["owner-controlled", "managed", "provider-service", "custodial-poc", "unknown"].includes(result.custodyProfile as string) ||
       (result.custodyProfile === "managed" && ["strict-public-v1", "reduced-assurance-alpha-v1"].includes(result.monitorVerificationMode as string) &&
         result.managedProfileVersion !== MANAGED_CUSTODY_PROFILE_VERSION) ||
       (result.monitorVerificationMode === "reduced-assurance-alpha-v1" && result.custodyProfile !== "managed") ||

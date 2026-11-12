@@ -104,6 +104,18 @@ The Cloudflare Browser Integrity Check exception is verified for the provider
 and native-domain discovery/health paths: default non-browser requests return
 successful readiness and WebFinger responses.
 
+## Provider service accounts on Haili
+
+Releases from migration 126 support [provider service accounts](../spec/provider-service-accounts.md)
+and remove the console-only owner-key role claim. `admin@haili.app` remains the
+managed account recorded above: its existing claim stays valid and nothing
+converts it. Before creating any Haili service account (for example a new
+`email@haili.app` bridge sender), the operator must generate the provider
+recovery key and store its private half offline; it cannot be changed later.
+Replacing `admin@haili.app` with a service account would release the address and
+create a new DID, so it is a deliberate operator decision, not part of a routine
+application release.
+
 ## Pre-launch development policy — developers and agents
 
 **Build the intended system, not compatibility layers for our test data.** Hail
