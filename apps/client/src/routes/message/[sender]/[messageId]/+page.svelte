@@ -105,7 +105,7 @@
         <strong class="[overflow-wrap:anywhere]">{relayed.fromName ?? relayed.fromAddress}</strong>
         {#if relayed.fromName}<span class="text-sm text-muted [overflow-wrap:anywhere]">{relayed.fromAddress}</span>{/if}
         <span class="text-xs text-muted"><DateTime value={data.message.deliveredAt} /></span>
-        <span class="text-xs text-muted [overflow-wrap:anywhere]">Relayed from email by <ContactAddress owner={data.account.did} did={data.message.sender} address={data.message.senderAddress} />. {relayed.authenticated ? "The sender’s domain signed this email." : "The email sender could not be verified."}</span>
+        <span class="text-xs text-muted [overflow-wrap:anywhere]">{relayed.authenticated ? "The sender’s domain signed this email." : "The email sender could not be verified."}</span>
       {:else}
         <strong class="[overflow-wrap:anywhere]"><ContactAddress owner={data.account.did} did={data.message.sender} address={data.message.senderAddress} /></strong>
         <span class="text-xs text-muted"><DateTime value={data.message.deliveredAt} /></span>
