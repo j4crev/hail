@@ -6,6 +6,7 @@
   import {invalidateAll} from "$app/navigation";
   import {connectionRequest} from "$lib/connections.js";
   import {mailboxRequest} from "$lib/mailbox.js";
+  import {setInboundEmail} from "$lib/inbound-email.js";
   let {data}=$props();
   let conversationSaving=$state(false),conversationError=$state("");
   async function saveConversations(allowIntroductions:boolean){
@@ -13,6 +14,15 @@
     try{await connectionRequest("conversation-preferences",{allowIntroductions});await invalidateAll();}
     catch(e){conversationError=e instanceof Error?e.message:"Unable to save shared conversation preference.";}
     finally{conversationSaving=false;}
+  }
+  let inboundSaving=$state(false),inboundError=$state("");
+  async function saveInbound(enabled:boolean){
+    if(!data.inboundEmail.available)return;
+    inboundSaving=true;inboundError="";
+    try{await setInboundEmail(data.inboundEmail,enabled,data.account.did);}
+    catch(e){inboundError=e instanceof Error?e.message:"Unable to change inbound email.";}
+    // Refresh either way: an interrupted change may still have been saved.
+    finally{try{await invalidateAll();}catch{/* The toggle shows the last confirmed state. */}inboundSaving=false;}
   }
   let confirmDisable=$state(false),saving=$state(false),trashError=$state("");
   async function saveTrash(enabled:boolean){
@@ -88,6 +98,13 @@
       <label class="flex cursor-pointer items-center justify-between gap-6" for="shared-conversations"><span class="grid gap-2"><strong class="text-sm">Shared conversations</strong><span class="text-sm text-muted">Connections can add me to conversations with people I'm not connected with.</span></span><input id="shared-conversations" class="preference-switch" type="checkbox" role="switch" checked={data.allowIntroductions} disabled={conversationSaving||!ready} onchange={event=>{const allowed=event.currentTarget.checked;event.currentTarget.checked=data.allowIntroductions;void saveConversations(allowed);}} /></label>
       {#if conversationError}<Toast message={conversationError} error />{/if}
     </div>
+    {#if data.inboundEmail.available}
+      <div class="border-0 border-t border-solid border-line pt-6">
+        <label class="flex cursor-pointer items-center justify-between gap-6" for="inbound-email"><span class="grid gap-2"><strong class="text-sm">Inbound email</strong><span class="text-sm text-muted">Receive email newsletters in your Feed through <a href="/aliases">aliases</a>. You’ll confirm with your passkey.</span></span><input id="inbound-email" class="preference-switch" type="checkbox" role="switch" checked={data.inboundEmail.enabled} disabled={inboundSaving||!ready} onchange={event=>{const enabled=event.currentTarget.checked;event.currentTarget.checked=data.inboundEmail.available&&data.inboundEmail.enabled;void saveInbound(enabled);}} /></label>
+        {#if inboundSaving}<p class="m-0 mt-3 text-sm text-muted" role="status">Waiting for your passkey…</p>{/if}
+        {#if inboundError}<Toast message={inboundError} error />{/if}
+      </div>
+    {/if}
     <PushSettings />
     {#if displayError}<Toast message={displayError} error />{/if}
     {#if confirmDisable}

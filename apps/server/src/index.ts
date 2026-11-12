@@ -1,4 +1,5 @@
 import { EmailBridgeDelivery } from "./bridge/delivery.js";
+import { EmailAliasOperations } from "./bridge/operations.js";
 import { EmailBridgeIntake } from "./bridge/intake.js";
 import {JmapPush} from './jmap/push.js';
 import {EVENT_TYPES} from './jmap/events.js';
@@ -363,7 +364,8 @@ const app = createApp(config, schemaRehearsal ? {
 } : {
   servingSql:database.sql,
   ...(config.signupEmail?{signupEmail:{sql:database.sql,client:new SignupEmailClient(config.signupEmail)}}:{}),
-  ...(config.emailBridge?{emailBridgeIntake:new EmailBridgeIntake(database.sql,config.emailBridge.domain)}:{}),
+  ...(config.emailBridge?{emailBridgeIntake:new EmailBridgeIntake(database.sql,config.emailBridge.domain,undefined,
+    {address:config.emailBridge.senderAddress,category:config.emailBridge.category})}:{}),
   ...(config.signupMonitor?{signupMonitor:new SignupMonitorService(database.sql,new SignupEmailClient(config.signupEmail!),new SignupMonitorClient(config.signupMonitor))}:{}),
   ...(config.alphaSignup?(()=>{
     const policy={profile:"reduced-assurance-alpha-v1" as const,monitorOrigin:config.alphaSignup.monitorOrigin,monitorPublicKey:config.signupMonitor!.publicKey};
@@ -401,6 +403,8 @@ const app = createApp(config, schemaRehearsal ? {
     binding:new AccountBinding(database.sql,resolver,new KeyEncryptor(config.keyEncryptionKey),config.publicOrigin,
        new AddressVerifier(plc,transport.fetch,transport.validateTarget,undefined,resolver,addressDiscovery),undefined,config.nativeAddressDomain),
      messaging,publications,
+    ...(config.emailBridge?{emailAliases:new EmailAliasOperations(database.sql,grantRepository,config.emailBridge.domain,
+      {address:config.emailBridge.senderAddress,category:config.emailBridge.category})}:{}),
     avatarProfiles:onboardingRepository,
     profiles:new SenderProfileService(onboardingRepository,new KeyEncryptor(config.keyEncryptionKey),resolver,config.hailServiceBase),
     profileVerifier,

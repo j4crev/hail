@@ -12,6 +12,13 @@ import { EmailBridgeConverter, type DkimCheck } from "../src/bridge/converter.js
 import { EmailBridgeDelivery } from "../src/bridge/delivery.js";
 import { createDkimCheck } from "../src/bridge/dkim.js";
 import { createImageResolver } from "../src/bridge/image-fetcher.js";
+import { EmailAliasOperations } from "../src/bridge/operations.js";
+import { JmapOperations } from "../src/jmap/operations.js";
+import { Hono } from "hono";
+import { vi } from "vitest";
+import { registerEmailBridgeIntakeRoutes } from "../src/bridge/routes.js";
+import { handleEmail, handleRetry, type Env as WorkerEnv, type RetryBody } from "../deploy/cloudflare-email-worker/worker.js";
+import type { AccountApiSession } from "../src/accounts/repository.js";
 import { AccountMessaging } from "../src/accounts/messaging.js";
 import { BodyRepository } from "../src/bodies/repository.js";
 import { EnvelopeRepository } from "../src/envelopes/repository.js";
@@ -280,6 +287,111 @@ integration("email bridge conversion and delivery", () => {
       const delivery = new EmailBridgeDelivery(db.sql, messaging([]), { address: "missing@provider.example.com", category: "email" });
       await expect(withFreshServingGenerations(db.sql, () => delivery.workOne())).rejects.toThrow("not an active local account");
       expect((await row(intakeId)).state).toBe("converted");
+    });
+  });
+
+  describe("inbound email setting and aliases", () => {
+    it("is off until the user grants the bridge, and gates alias creation and intake on that Grant", async () => {
+      const { sender, subscribe, grants, service } = await bridge(), owner = await account("reader");
+      const operations = new EmailAliasOperations(db.sql, grants, DOMAIN, { address: sender.address, category: "email" });
+      const me = { account_id: owner.id, did: owner.did };
+      expect(await operations.get(me, true)).toEqual({ available: true, domain: DOMAIN, sender: { address: sender.address, category: "email" },
+        enabled: false, grant: null });
+      await expect(operations.create(me, "Field Notes")).rejects.toMatchObject({ status: 409 });
+
+      const grant = await subscribe(owner.address);
+      const on = await operations.get(me, false);
+      expect(on).toMatchObject({ enabled: true, grant: { grantId: grant.payload.grant_id, revision: grant.payload.revision,
+        digest: encodeBase64Url(grant.digest) }, aliases: [] });
+      const { alias } = await operations.create(me, "Field Notes");
+      expect(alias).toMatchObject({ label: "Field Notes", messageCount: 0, lastReceivedAt: null });
+      expect((await operations.get(me, false) as { aliases: unknown[] }).aliases).toEqual([alias]);
+
+      const intake = new EmailBridgeIntake(db.sql, DOMAIN, undefined, { address: sender.address, category: "email" });
+      expect(await intake.check(alias.address)).toBe("accept");
+      // Turning inbound email off refuses mail at the edge, before anything is stored.
+      await service.revoke(owner.address, grant.payload.grant_id);
+      expect(await intake.check(alias.address)).toBe("reject");
+      expect(await intake.submit({ recipient: alias.address, raw: bytes(email("off")), receivedAt: received })).toBe("reject");
+      expect((await operations.get(me, true)).enabled).toBe(false);
+      // A misconfigured bridge account defers rather than refusing every sender permanently.
+      const broken = new EmailBridgeIntake(db.sql, DOMAIN, undefined, { address: "missing@provider.example.com", category: "email" });
+      expect(await broken.check(alias.address)).toBe("defer");
+
+      expect(await operations.destroy(owner.id, [alias.id, randomUUID()])).toMatchObject({ destroyed: [alias.id] });
+      await expect(operations.destroy(owner.id, [])).rejects.toMatchObject({ status: 400 });
+      await expect(operations.destroy(owner.id, ["not-a-uuid"])).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("exposes the operations only to browser sessions with the right scopes, and reports when the provider has no bridge", async () => {
+      const { sender, subscribe, grants, service } = await bridge(), owner = await account("reader");
+      await subscribe(owner.address);
+      const emailAliases = new EmailAliasOperations(db.sql, grants, DOMAIN, { address: sender.address, category: "email" });
+      const base = { accounts: {} as never, grants, service };
+      const session = (scopes: string[], passkey = true) => ({ account_id: owner.id, did: owner.did, canonical_address: owner.address,
+        scopes, passkey_credential_id: passkey ? "fixture" : null, serving_generation: 1, migration_state: null }) as unknown as AccountApiSession;
+      const operations = new JmapOperations({ ...base, emailAliases });
+      const created = await operations.dispatch(session(["messages:read", "messages:write"]), "HailEmailAlias/create", { accountId: "a", label: "News" });
+      expect(created).toMatchObject({ accountId: "a", alias: { label: "News" } });
+      await expect(operations.dispatch(session(["messages:read", "messages:write"], false), "HailEmailAlias/create", { label: "Api" }))
+        .rejects.toMatchObject({ type: "forbidden" });
+      await expect(operations.dispatch(session(["messages:read"]), "HailEmailAlias/create", { label: "Read only" }))
+        .rejects.toMatchObject({ type: "forbidden" });
+      await expect(operations.dispatch(session(["messages:read", "messages:write"]), "HailEmailAlias/create", { label: "x", extra: 1 }))
+        .rejects.toMatchObject({ type: "invalidArguments" });
+      expect(await operations.dispatch(session(["messages:read"], false), "HailEmailAlias/get", { summary: true })).toMatchObject({ enabled: true });
+      expect(await new JmapOperations(base).dispatch(session(["messages:read"]), "HailEmailAlias/get", {})).toEqual({ available: false });
+    });
+  });
+
+  describe("Cloudflare adapter against the intake contract", () => {
+    it("accepts, refuses and retries exactly as the provider decides", async () => {
+      const { sender, subscribe } = await bridge(), owner = await account("reader"), stranger = await account("reader");
+      const senderConfig = { address: sender.address, category: "email" }, token = encodeBase64Url(randomBytes(32));
+      const app = new Hono();
+      registerEmailBridgeIntakeRoutes(app, new EmailBridgeIntake(db.sql, DOMAIN, undefined, senderConfig), token, 10 * 1024 * 1024);
+      let providerDown = false;
+      vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+        if (providerDown) throw new TypeError("fetch failed");
+        return app.request(url, { ...init, body: init.body ? new Uint8Array(await new Response(init.body).arrayBuffer()) : null });
+      });
+      const held = new Map<string, Uint8Array>(), queue: RetryBody[] = [];
+      const env: WorkerEnv = { PROVIDER_ORIGIN: ORIGIN, ALIAS_DOMAIN: DOMAIN, INTAKE_TOKEN: token,
+        PENDING: { put: async (key, value) => { held.set(key, value); }, get: async key => { const v = held.get(key); return v ? { arrayBuffer: async () => v.slice().buffer } : null; },
+          delete: async key => { held.delete(key); } },
+        RETRY: { send: async body => { queue.push(body); } } };
+      const deliver = async (to: string, id: string) => {
+        const rejected: string[] = [], bytesOut = bytes(email(id));
+        await handleEmail({ from: "bounce@fieldnotes.example", to, rawSize: bytesOut.length, setReject: reason => { rejected.push(reason); },
+          raw: new ReadableStream({ start(controller) { controller.enqueue(bytesOut); controller.close(); } }) }, env);
+        return rejected;
+      };
+      const stored = async (aliasId: string) => (await db.sql`SELECT id FROM email_bridge_intake WHERE alias_id = ${aliasId}`).length;
+      try {
+        await subscribe(owner.address);
+        const mine = await new EmailAliases(db.sql, DOMAIN).create(owner.id, { label: "Mine" });
+        const theirs = await new EmailAliases(db.sql, DOMAIN).create(stranger.id, { label: "No consent" });
+
+        expect(await deliver(mine.address, "c1")).toEqual([]);
+        expect(await deliver(mine.address, "c1")).toEqual([]);
+        expect(await stored(mine.id)).toBe(1);
+        expect(await deliver(theirs.address, "c2")).toEqual(["No such recipient"]);
+        expect(await deliver(`aaaaaaaaaaaa@${DOMAIN}`, "c3")).toEqual(["No such recipient"]);
+        expect(await stored(theirs.id)).toBe(0);
+
+        // During an outage the adapter keeps the message; the retry hands it over and the provider still decides.
+        providerDown = true;
+        expect(await deliver(mine.address, "c4")).toEqual([]);
+        expect(await deliver(theirs.address, "c5")).toEqual([]);
+        expect(queue).toHaveLength(2);
+        providerDown = false;
+        const acks: string[] = [];
+        await handleRetry(queue.map(body => ({ body, attempts: 1, ack: () => { acks.push(body.recipient); }, retry: () => { throw new Error("unexpected retry"); } })), env);
+        expect(acks).toEqual([mine.address, theirs.address]);
+        expect(held.size).toBe(0);
+        expect(await stored(mine.id)).toBe(2);
+        expect(await stored(theirs.id)).toBe(0);
+      } finally { vi.unstubAllGlobals(); }
     });
   });
 

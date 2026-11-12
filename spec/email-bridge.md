@@ -5,8 +5,9 @@ operation and no provider is required to offer it. The only protocol element it
 uses is the signed [relayed-origin](bodies.md#relayed-origin) body member.
 
 Implemented: aliases, the ingress contract, conversion, the converter worker,
-and delivery as the bridge's account. Not yet implemented: the account API and
-client screens for managing aliases, and any ingress adapter. See the
+delivery as the bridge's account, the account API and web client screens, and
+a [Cloudflare ingress adapter](../apps/server/deploy/cloudflare-email-worker/README.md).
+See the
 [implementation plan](../agents/email-bridge-plan.md).
 
 ## Model
@@ -109,12 +110,19 @@ policy.
   silently.
 - MUST NOT generate a bounce or any other email.
 - MUST treat a network failure, a timeout or any response other than those
-  defined above as `defer`. It MUST NOT accept mail it could not hand over.
+  defined above as `defer`. It MUST NOT accept mail it could not hand over,
+  unless it keeps that mail durably and submits it later; mail refused at that
+  point is discarded silently.
 - MUST pass message bytes unmodified apart from trace headers the edge itself
   prepends. The provider verifies DKIM from those bytes; an adapter's own
   authentication results are not trusted.
 - SHOULD give `reject` one fixed SMTP reply for every recipient, so the reply
   reveals nothing beyond the refusal.
+- An edge that cannot send a temporary SMTP failure MAY refuse on `defer`.
+
+The alias domain needs to receive mail for arbitrary local parts. On
+Cloudflare that means a dedicated zone: Email Routing allows a catch-all rule
+only on a zone's apex.
 
 ## Handling of accepted mail
 
@@ -179,6 +187,32 @@ retried delivery reuses the same envelope.
 | A transient failure | Retried with backoff, up to eight attempts |
 | The bridge account is missing or inactive | Kept, and retried; this is the operator's to fix |
 
+## Account API
+
+Three typed operations under the `https://racrproto.com/ns/jmap/account`
+capability manage inbound email. A provider without the bridge answers
+`HailEmailAlias/get` with `{"available":false}` and refuses the others.
+
+| Method | Arguments | Requires | Result |
+| --- | --- | --- | --- |
+| `HailEmailAlias/get` | optional `summary` (Boolean) | `messages:read` | The state below, plus `aliases` unless `summary` is true |
+| `HailEmailAlias/create` | `label` | `messages:write`, browser session, inbound email on | `{"alias": ALIAS}` |
+| `HailEmailAlias/destroy` | `ids`: 1 to 50 alias IDs | `messages:write`, browser session | `{"destroyed": [...], "notFound": [...]}` |
+
+The state is `{available:true, domain, sender:{address, category}, enabled,
+grant}`. `enabled` is true when the account holds an active Grant to the bridge
+for its category; `grant` then carries that Grant's `grantId`, `revision` and
+`digest`, and is otherwise null. An alias is `{id, address, label, createdAt,
+lastReceivedAt, messageCount}`, with RFC 3339 timestamps and
+`lastReceivedAt` null until mail arrives. Create fails with `stateMismatch`
+while inbound email is off.
+
+Inbound email has no separate switch. Turning it on is an ordinary Grant to
+the bridge account for its category, through the passkey-confirmed sender
+approval; turning it off revokes that Grant. It therefore also appears, and can
+be revoked, under Subscriptions. While it is off, intake refuses every alias of
+the account, and existing aliases are kept.
+
 ## Operator setup
 
 1. Create an ordinary local account for the bridge, give it a Sender Profile
@@ -199,6 +233,8 @@ through the same sender approval as any other publisher.
 ## Open items
 
 - Retention period for the content-free intake record, and for `dead` records.
+- Showing bridged messages in the Feed with the email sender and a relayed
+  label, without Reply.
 - A storage ceiling for delivered bridged content. Current storage accounting
   measures usage and does not limit it.
 - Whether aliases can continue after a provider transfer; see plan decision D8.

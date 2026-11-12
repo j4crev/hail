@@ -14,7 +14,7 @@ export function jmapReadFixture(rows:()=>{sender:string;messageId:string;isRead:
     const responses=(input.methodCalls??[]).map(([name,args,tag]:[string,Record<string,any>,string])=>{
       const error=(type:string)=>['error',{type},tag];
       if(args.accountId!==accountId)return error('accountNotFound');
-      if(operation&&/^(HailMailbox|HailSubmission|HailGrant|HailRelationship)\//.test(name)){
+      if(operation&&/^(HailMailbox|HailSubmission|HailGrant|HailRelationship|HailEmailAlias)\//.test(name)){
         try{return [name,{accountId,...operation(name,args)},tag];}
         catch(cause){const e=cause as Error&{httpStatus?:number;type?:string};return ['error',{type:e.type??'serverFail',httpStatus:e.httpStatus??500,description:e.message},tag];}
       }

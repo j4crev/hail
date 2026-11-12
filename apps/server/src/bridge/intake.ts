@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import { createHash, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { ALIAS_LOCAL_PART } from "./aliases.js";
+import { bridgeAccount, bridgeGrant, type BridgeSender } from "./consent.js";
 
 /**
  * What the mail edge should do with a message, in terms it can express in SMTP:
@@ -34,7 +35,7 @@ export interface IntakeMessage {
   receivedAt: Date;
 }
 
-interface Target { alias_id: string; account_id: string; state: "active" | "paused" | "deleted"; usable: boolean }
+interface Target { alias_id: string; account_id: string; did: string; state: "active" | "paused" | "deleted"; usable: boolean }
 
 /** The first Message-ID in the header block, found without parsing the message. */
 function messageId(raw: Uint8Array): string | null {
@@ -56,7 +57,13 @@ function dedupeDigest(raw: Uint8Array): Buffer {
  * locating its Message-ID, generates no email, and reveals no alias state.
  */
 export class EmailBridgeIntake {
-  constructor(private readonly sql: SQL, private readonly domain: string, private readonly limits: IntakeLimits = DEFAULT_INTAKE_LIMITS) {}
+  /**
+   * With a sender, mail is refused for an account that has not granted the
+   * bridge, so turning inbound email off takes effect at the mail edge. The
+   * provider always passes it; only isolated tests omit it.
+   */
+  constructor(private readonly sql: SQL, private readonly domain: string, private readonly limits: IntakeLimits = DEFAULT_INTAKE_LIMITS,
+    private readonly sender?: BridgeSender) {}
 
   private localPart(recipient: string): string | null {
     const value = recipient.trim().toLowerCase(), at = value.lastIndexOf("@");
@@ -71,13 +78,19 @@ export class EmailBridgeIntake {
     // Submission holds the alias row so concurrent deliveries are counted one at a time.
     if (lock) await sql`SELECT 1 FROM email_bridge_aliases WHERE local_part = ${local} FOR UPDATE`;
     const rows = await sql<Target[]>`
-      SELECT alias.id AS alias_id, alias.account_id, alias.state,
+      SELECT alias.id AS alias_id, alias.account_id, account.did, alias.state,
         (account.closed_at IS NULL AND account.onboarding_state = 'active' AND account.did IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM provider_migration_fences fence WHERE fence.account_id = account.id)) AS usable
       FROM email_bridge_aliases alias JOIN provider_accounts account ON account.id = alias.account_id
       WHERE alias.local_part = ${local}`;
     const target = rows[0];
     if (!target || target.state !== "active" || !target.usable) return { decision: "reject" };
+    if (this.sender) {
+      const bridge = await bridgeAccount(sql, this.sender);
+      // A missing bridge account is the operator's to fix; senders retry rather than lose mail.
+      if (!bridge) return { decision: "defer" };
+      if (!await bridgeGrant(sql, target.did, bridge, this.sender.category)) return { decision: "reject" };
+    }
     const [usage] = await sql<{ alias_hour: number; account_day: number; pending: string }[]>`
       SELECT
         count(*) FILTER (WHERE intake.alias_id = ${target.alias_id} AND intake.accepted_at > clock_timestamp() - interval '1 hour')::integer AS alias_hour,

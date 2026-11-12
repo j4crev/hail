@@ -11,13 +11,16 @@ export async function load({cookies, url, depends, untrack = <T>(fn:()=>T)=>fn()
   const hasAccountSession = isConfigured(cookies);
   let unseenConnections: number | null = null;
   let accountAvatar: {did: string; src: string} | null = null;
+  let inboundEmail = false;
   const focused = untrack(() => (url.pathname === "/" && url.searchParams.has("next")) ||
     url.pathname.startsWith("/auth/") || url.pathname.startsWith("/signup"));
   if (hasAccountSession && !focused) {
     try {
       const {account, client} = await canaryAccount(cookies, url);
       accountAvatar = {did:account.did,src:`/media/avatars/${encodeURIComponent(account.did)}`};
-      const counts = await client.jmap("HailMailbox/view",{view:"unreadCounts"});
+      const [counts, inbound] = await Promise.all([client.jmap("HailMailbox/view",{view:"unreadCounts"}),
+        client.jmap("HailEmailAlias/get",{summary:true}).catch(() => null)]);
+      inboundEmail = inbound?.available === true;
       if (typeof counts.unseenConnections === "number" && Number.isSafeInteger(counts.unseenConnections) && counts.unseenConnections >= 0) unseenConnections = counts.unseenConnections;
       if (typeof counts.subscriptions === "number" && typeof counts.connections === "number" && Number.isSafeInteger(counts.subscriptions) && counts.subscriptions >= 0 && Number.isSafeInteger(counts.connections) && counts.connections >= 0) unreadCounts = {subscriptions:counts.subscriptions,connections:counts.connections};
     } catch {
@@ -25,5 +28,5 @@ export async function load({cookies, url, depends, untrack = <T>(fn:()=>T)=>fn()
     }
   }
   const mailboxScope = scope(cookies);
-  return {mailboxScope,hasAccountSession, accountAvatar, unreadCounts, unseenConnections, branding: brandingFromEnvironment(env)};
+  return {mailboxScope,hasAccountSession, accountAvatar, inboundEmail, unreadCounts, unseenConnections, branding: brandingFromEnvironment(env)};
 }
