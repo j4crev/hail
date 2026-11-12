@@ -31,8 +31,6 @@
     "ALERT_RECIPIENT": "the@j4w8n.com",
     "ALERT_SENDER": "security@notify.racrproto.com",
     "SIGNUP_SENDER": "welcome@notify.racrproto.com",
-    // Temporary migration: recipients bound before registration v2 belong to Haili's provider.
-    "LEGACY_RECIPIENT_PROVIDER_ORIGIN": "https://svr.haili.app",
     // Optional operator check for this deployment's own provider.
     "PROVIDER_HEALTH_URL": "https://haili.app/health/ready"
   }
