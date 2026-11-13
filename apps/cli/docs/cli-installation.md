@@ -13,15 +13,18 @@ follow their release-specific instructions. Until a release with the new name
 is published, use the source-build instructions below.
 
 On Linux x86-64, choose the version explicitly from the release page. Run this in
-Bash, replacing `X.Y.Z` with that version (without the `v` prefix):
+Bash, replacing `X.Y.Z` with that version (without the tag prefix). CLI releases
+are tagged `cli-vX.Y.Z`; versions up to 0.1.5 were tagged `vX.Y.Z`, so for those
+set `tag="v${version}"` instead:
 
 ```bash
 (
   set -euo pipefail
   version='X.Y.Z'
+  tag="cli-v${version}"
   test "$(uname -s)" = Linux && test "$(uname -m)" = x86_64
   archive="racr-${version}-linux-x64.tar.gz"
-  base="https://github.com/j4crev/hail/releases/download/v${version}"
+  base="https://github.com/j4crev/hail/releases/download/${tag}"
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
   cd "$work"
@@ -35,7 +38,7 @@ Bash, replacing `X.Y.Z` with that version (without the `v` prefix):
   gh attestation verify "$archive" --bundle "$archive.sigstore.json" \
     --repo j4crev/hail \
     --signer-workflow j4crev/hail/.github/workflows/release-linux.yml \
-    --source-ref "refs/tags/v${version}" --deny-self-hosted-runners
+    --source-ref "refs/tags/${tag}" --deny-self-hosted-runners
   tar -xzf "$archive" racr
   test "$(./racr --version)" = "$version"
   install -Dm755 racr "$HOME/.local/bin/racr"

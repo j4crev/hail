@@ -1,0 +1,248 @@
+name: Release provider
+
+# A provider release is a `provider-vX.Y.Z` tag on a main commit whose CI passed.
+# It publishes multi-platform provider and web-client images, the standalone
+# Compose bundle, and a signed manifest that hailctl and Haili deploy from
+# (agents/release-process.md#provider-releases).
+on:
+  push:
+    tags: ["provider-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-provider-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Require the tagged commit on main
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF_NAME must point at a commit on main"; exit 1; }
+      - uses: ./.github/actions/setup-ts
+      - name: Require the tag to match the provider version
+        run: bun apps/server/src/cli/provider-release.ts check-tag "$GITHUB_REF_NAME"
+      - name: Require successful main verification for this exact commit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              ...context.repo,
+              workflow_id: 'ci.yml',
+              branch: 'main',
+              event: 'push',
+              head_sha: context.sha,
+              per_page: 100,
+            });
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const run = runs
+              .filter(run => run.head_sha === context.sha &&
+                run.head_branch === 'main' && run.event === 'push' &&
+                run.head_repository?.full_name === repository)
+              .sort((a, b) => b.id - a.id)[0];
+            if (!run || run.status !== 'completed' || run.conclusion !== 'success') {
+              core.setFailed(`Release requires successful main CI verification for ${context.sha}. ` +
+                (run ? `Latest run: ${run.html_url} (${run.status}/${run.conclusion}). ` : 'No matching CI run found. ') +
+                'Wait for CI to succeed, then rerun this release.');
+              return;
+            }
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              ...context.repo, run_id: run.id, per_page: 100,
+            });
+            const verification = jobs.find(job => job.name === 'verify-main');
+            if (verification?.conclusion !== 'success') {
+              core.setFailed(`Release requires a successful verify-main handoff for ${context.sha}. ` +
+                (verification ? `Job conclusion: ${verification.conclusion}. ` : 'No verify-main job found. ') +
+                'Wait for CI to succeed, then rerun this release.');
+              return;
+            }
+            core.info(`Using successful CI: ${run.html_url} (attempt ${run.run_attempt})`);
+            await core.summary
+              .addHeading('Verified merged PR CI')
+              .addLink(`Main verification for ${context.sha} (attempt ${run.run_attempt})`, run.html_url)
+              .write();
+
+  images:
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker-container
+          driver-opts: |
+            memory=4g
+            memory-swap=4g
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 2
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select image repository
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}/provider" >> "$GITHUB_OUTPUT"
+      - name: Require source-map upload credentials
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: test -n "$SENTRY_AUTH_TOKEN"
+      - name: Build and push provider image by digest
+        id: provider
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=provider-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=provider-${{ matrix.arch }}
+      - name: Build and push web-client image by digest
+        id: client
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/client/Dockerfile
+          build-args: |
+            HAIL_RELEASE=${{ github.sha }}
+            SENTRY_ORG=jason-creviston
+            SENTRY_PROJECT=haili-web
+          secrets: |
+            sentry_auth_token=${{ secrets.SENTRY_AUTH_TOKEN }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ steps.image.outputs.name }}-web-client,push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=web-client-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=web-client-${{ matrix.arch }}
+      - name: Record platform digests
+        env:
+          PROVIDER: ${{ steps.provider.outputs.digest }}
+          CLIENT: ${{ steps.client.outputs.digest }}
+        run: |
+          mkdir -p digests
+          printf '{"provider":"%s","client":"%s"}\n' "$PROVIDER" "$CLIENT" > "digests/${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}.json
+
+  release:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-ts
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          merge-multiple: true
+          path: digests
+      - name: Create multi-platform images
+        id: index
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          provider="ghcr.io/${REPOSITORY,,}/provider"
+          for image in provider client; do
+            name=$provider; [ "$image" = client ] && name="$provider-web-client"
+            amd64=$(jq -r ".$image" digests/amd64.json); arm64=$(jq -r ".$image" digests/arm64.json)
+            docker buildx imagetools create -t "$name:$GITHUB_REF_NAME" -t "$name:sha-$GITHUB_SHA" \
+              "$name@$amd64" "$name@$arm64"
+            index=$(docker buildx imagetools inspect "$name:$GITHUB_REF_NAME" --format '{{json .Manifest}}' | jq -r .digest)
+            {
+              echo "${image}_repository=$name"
+              echo "${image}_index=$index"
+              echo "${image}_amd64=$amd64"
+              echo "${image}_arm64=$arm64"
+            } >> "$GITHUB_OUTPUT"
+          done
+      - name: Build, sign and verify the release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_PROVIDER_REPOSITORY: ${{ steps.index.outputs.provider_repository }}
+          RELEASE_PROVIDER_DIGEST: ${{ steps.index.outputs.provider_index }}
+          RELEASE_PROVIDER_AMD64_DIGEST: ${{ steps.index.outputs.provider_amd64 }}
+          RELEASE_PROVIDER_ARM64_DIGEST: ${{ steps.index.outputs.provider_arm64 }}
+          RELEASE_CLIENT_REPOSITORY: ${{ steps.index.outputs.client_repository }}
+          RELEASE_CLIENT_DIGEST: ${{ steps.index.outputs.client_index }}
+          RELEASE_CLIENT_AMD64_DIGEST: ${{ steps.index.outputs.client_amd64 }}
+          RELEASE_CLIENT_ARM64_DIGEST: ${{ steps.index.outputs.client_arm64 }}
+          PROVIDER_RELEASE_SIGNING_KEY: ${{ secrets.PROVIDER_RELEASE_SIGNING_KEY }}
+        run: |
+          bun apps/server/src/cli/provider-release.ts build release
+          bun apps/server/src/cli/provider-release.ts verify release
+          cat release/provider-release.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest release files
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            release/hail-provider-*.tar.gz
+            release/provider-release.json
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes --prerelease \
+            --title "Provider $GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: provider-release
+          path: release/

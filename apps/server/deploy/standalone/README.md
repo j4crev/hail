@@ -24,18 +24,17 @@ service yourself.
 
 ## Choose the provider image
 
-The `HAIL_PROVIDER_IMAGE` value must be an immutable digest from a successful
-provider image publication for the reviewed source commit. In the repository
-that will publish the image, open **Actions → Publish provider and web-client
-images**, run it on `main`, and wait for success. The workflow requires successful
-push CI for that exact commit and publishes a `provider-release` artifact. Download
-that artifact and copy its provider digest into `.env`. The optional web-client
-digest is used in the next section if you choose to run the reference client.
+Use a provider release from the
+[releases page](https://github.com/j4crev/hail/releases): tags `provider-vX.Y.Z`.
+Each release ships the files in this directory as `hail-provider-X.Y.Z.tar.gz`,
+with a `release.env` that pins `HAIL_PROVIDER_IMAGE` and `HAIL_WEB_CLIENT_IMAGE` to
+immutable multi-platform digests (linux/amd64 and linux/arm64), plus a signed
+manifest. Verify a download with
+`bun apps/server/src/cli/provider-release.ts verify DIR`, then copy the two image
+lines from `release.env` into `.env`. Do not select an image by a mutable tag alone.
 
-For a fork, the same workflow publishes to that repository's image namespace;
-make sure the provider host has pull access to the selected package. Record the
-commit and digest together so later upgrades can be reviewed and reproduced. Do
-not select an image by a mutable tag alone.
+A fork releases to its own image namespace with the same tag workflow, using its
+own signing key; make sure the provider host has pull access to the packages.
 
 ## 1. Configure the server
 

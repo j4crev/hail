@@ -114,7 +114,7 @@ No live deployment or database update has been performed by this task.
   [version tags](https://github.com/j4crev/hail/rules/26294625).
   Main requires a pull request, resolved review threads and up-to-date `verify`
   status from GitHub Actions (app 15368); force-push/deletion are blocked.
-  Existing `v*` tags cannot be updated or deleted. Neither ruleset has bypass
+  Existing `v*`, `cli-v*` and `provider-v*` tags cannot be updated or deleted. Neither ruleset has bypass
   actors. The sole collaborator can create release tags; no second-person PR
   approval is required.
 - Built CLI 0.1.0 with pinned Rust 1.97.1 in Ubuntu 22.04. The same archive

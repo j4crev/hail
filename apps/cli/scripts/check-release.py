@@ -19,6 +19,7 @@ if package != rust or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', pac
 actual = subprocess.run([str(args.binary.resolve()), '--version'], capture_output=True, text=True, check=True)
 if actual.stdout != package + '\n' or actual.stderr:
     raise SystemExit('Binary version/output does not match package version')
-if args.tag is not None and args.tag != 'v' + package:
-    raise SystemExit(f'Tag must equal v{package}')
+# CLI releases use cli-vX.Y.Z; provider releases use provider-vX.Y.Z.
+if args.tag is not None and args.tag != 'cli-v' + package:
+    raise SystemExit(f'Tag must equal cli-v{package}')
 print(f'Release versions agree: {package}')

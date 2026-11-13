@@ -2,9 +2,10 @@ import {readFile} from "node:fs/promises";
 import {expect,it,vi} from "vitest";
 
 const workflow = Bun.YAML.parse(await readFile(
-  new URL("../../../.github/workflows/publish-provider.yml", import.meta.url), "utf8",
+  new URL("../../../.github/workflows/release-provider.yml", import.meta.url), "utf8",
 )) as any;
-const script = workflow.jobs.verify.steps[0].with.script;
+const gate = workflow.jobs.verify.steps.find((step: any) => step.name === "Require successful main verification for this exact commit");
+const script = gate.with.script;
 const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
 const sha = "a".repeat(40);
 const successfulRun = {
@@ -35,13 +36,18 @@ async function verify(
   return {core, paginate, listWorkflowRuns, listJobsForWorkflowRun};
 }
 
-it("keeps publication manual and dependent on a read-only CI gate on main", () => {
-  expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
-  expect(workflow.jobs.verify.if).toBe("github.ref == 'refs/heads/main'");
-  expect(workflow.jobs.verify.permissions).toEqual({actions: "read"});
-  expect(workflow.jobs.verify.uses).toBeUndefined();
-  expect(workflow.jobs.publish.needs).toBe("verify");
-  expect(workflow.jobs.publish.if).toBeUndefined();
+it("releases only provider tags, after a read-only gate on main, its version and exact-commit CI", () => {
+  expect(workflow.on).toEqual({push: {tags: ["provider-v*"]}});
+  expect(workflow.permissions).toEqual({contents: "read"});
+  expect(workflow.jobs.verify.permissions).toEqual({actions: "read", contents: "read"});
+  const steps = workflow.jobs.verify.steps.map((step: any) => step.run ?? "").join("\n");
+  expect(steps).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main');
+  expect(steps).toContain('provider-release.ts check-tag "$GITHUB_REF_NAME"');
+  expect(workflow.jobs.images.needs).toBe("verify");
+  expect(workflow.jobs.release.needs).toBe("images");
+  // Only the final job may write releases; image builds cannot.
+  expect(workflow.jobs.images.permissions).toEqual({contents: "read", packages: "write"});
+  expect(workflow.jobs.images.strategy.matrix.include.map((entry: any) => entry.platform)).toEqual(["linux/amd64", "linux/arm64"]);
 });
 
 it("accepts exact-commit main CI after verify-main succeeds and records the attempt", async () => {
@@ -64,7 +70,7 @@ it.each([
   ["missing", []],
   ["failed", [{name: "verify-main", conclusion: "failure"}]],
   ["skipped", [{name: "verify-main", conclusion: "skipped"}]],
-])("rejects publication when verify-main is %s", async (_state, jobs) => {
+])("rejects a release when verify-main is %s", async (_state, jobs) => {
   const {core} = await verify([successfulRun], undefined, jobs);
   expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining("successful verify-main handoff"));
   expect(core.summary.write).not.toHaveBeenCalled();
