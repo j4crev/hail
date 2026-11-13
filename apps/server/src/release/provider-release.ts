@@ -7,7 +7,7 @@ import { base58btc } from "multiformats/bases/base58";
 export const RELEASE_TYPE = "hail.provider-release";
 export const RELEASE_SIGNATURE_CONTEXT = "hail.provider-release.v2\0";
 /** Files from apps/server/deploy/standalone shipped in every release bundle. */
-export const BUNDLE_FILES = [".env.example", "Caddyfile", "Caddyfile.web-client", "compose.web-client.yaml", "compose.yaml", "README.md"] as const;
+export const BUNDLE_FILES = [".env.example", "Caddyfile", "Caddyfile.tunnel", "Caddyfile.web-client", "compose.tunnel.yaml", "compose.web-client.yaml", "compose.yaml", "README.md"] as const;
 export const PLATFORMS = ["linux/amd64", "linux/arm64"] as const;
 export type Platform = typeof PLATFORMS[number];
 

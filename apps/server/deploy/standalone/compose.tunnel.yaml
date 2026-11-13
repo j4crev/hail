@@ -1,0 +1,29 @@
+# Cloudflare Tunnel ingress, layered after compose.yaml and compose.web-client.yaml
+# (hailctl `ingress = "cloudflare-tunnel"`). The server opens no ports: cloudflared
+# connects out to Cloudflare and reaches Caddy on the internal edge network, and
+# Cloudflare terminates HTTPS. In the tunnel's settings, route both public hostnames
+# to http://caddy:8080.
+services:
+  caddy:
+    ports: !reset []
+    volumes:
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    command: [tunnel, --no-autoupdate, --metrics, "127.0.0.1:20241", run]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+    healthcheck:
+      test: [CMD, cloudflared, tunnel, --metrics, "127.0.0.1:20241", ready]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      caddy:
+        condition: service_started
+    networks: [edge]

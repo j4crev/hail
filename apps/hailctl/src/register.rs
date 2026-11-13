@@ -160,7 +160,7 @@ pub fn apply(env: &mut Env, answers: &Answers, credentials: &Value) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::DEFAULT_MONITOR_API;
+    use crate::state::{DEFAULT_MONITOR_API, Ingress};
 
     fn answers() -> Answers {
         Answers {
@@ -170,6 +170,8 @@ mod tests {
             operator_email: "ops@example.org".into(),
             monitor_api: DEFAULT_MONITOR_API.into(),
             secrets_to_file: false,
+            ingress: Ingress::Direct,
+            tunnel_token: None,
         }
     }
 

@@ -28,10 +28,45 @@ pub struct Answers {
     /// Shared monitor registration API.
     #[serde(default = "default_monitor_api")]
     pub monitor_api: String,
-    /// Unattended installs: write secrets that must be backed up to a root-only file
+    /// Unattended installs: write secrets that must be backed up to a private file
     /// instead of showing them and asking for confirmation.
     #[serde(default)]
     pub secrets_to_file: bool,
+    /// How HTTPS reaches the server.
+    #[serde(default)]
+    pub ingress: Ingress,
+    /// `cloudflare-tunnel`: the tunnel's connector token. Written to `.env` only, never
+    /// kept in hailctl.json.
+    #[serde(default, skip_serializing)]
+    pub tunnel_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Ingress {
+    /// Caddy on public ports 80 and 443 with its own certificates.
+    #[default]
+    Direct,
+    /// No open ports: a cloudflared container connects out to Cloudflare, which
+    /// terminates HTTPS and forwards to Caddy.
+    CloudflareTunnel,
+}
+
+impl Ingress {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Ingress::Direct => "direct",
+            Ingress::CloudflareTunnel => "cloudflare-tunnel",
+        }
+    }
+}
+
+/// A Cloudflare Tunnel connector token: base64 of a small JSON document.
+pub fn valid_tunnel_token(token: &str) -> bool {
+    (32..=4096).contains(&token.len())
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+/=-_".contains(&b))
 }
 
 fn default_monitor_api() -> String {
@@ -100,6 +135,16 @@ impl Answers {
             self.monitor_api.starts_with("https://") && valid_hostname(&self.monitor_api[8..]),
             "monitor_api must be an https:// origin"
         );
+        if let Some(token) = &self.tunnel_token {
+            ensure!(
+                self.ingress == Ingress::CloudflareTunnel,
+                "tunnel_token is only used with ingress = \"cloudflare-tunnel\""
+            );
+            ensure!(
+                valid_tunnel_token(token),
+                "tunnel_token is not a Cloudflare Tunnel token"
+            );
+        }
         Ok(())
     }
     pub fn api_origin(&self) -> String {
@@ -355,6 +400,8 @@ pub fn base_env(env: &mut Env, answers: &Answers) {
     env.ensure("PUBLIC_ALPHA_SIGNUP", || "false".into());
     env.ensure("HAIL_WEB_CLIENT_NAME", || "Hail".into());
     env.ensure("HAIL_WEB_CLIENT_FAVICON_PATH", || "/favicon.svg".into());
+    // Selects the Compose overlay (compose::Compose) and travels with backups.
+    env.set("HAIL_INGRESS", answers.ingress.as_str());
 }
 
 #[cfg(test)]
@@ -369,6 +416,8 @@ mod tests {
             operator_email: "ops@example.org".into(),
             monitor_api: DEFAULT_MONITOR_API.into(),
             secrets_to_file: false,
+            ingress: Ingress::Direct,
+            tunnel_token: None,
         }
     }
 
@@ -433,6 +482,35 @@ mod tests {
         assert_eq!(reloaded.get("KEY_ENCRYPTION_KEY"), Some(key.as_str()));
         assert_eq!(reloaded.get("PROVIDER_ID"), Some("renamed"));
         assert!(Env::parse("NOEQUALS\n").is_err());
+    }
+
+    #[test]
+    fn tunnel_ingress_keeps_its_token_out_of_saved_state() {
+        let token = "eyJhIjoiYWNjb3VudCIsInQiOiJ0dW5uZWwiLCJzIjoic2VjcmV0In0=";
+        let parsed: Answers = toml::from_str(&format!(
+            "api_host = \"svr.example.org\"\nweb_host = \"example.org\"\nprovider_id = \"example\"\noperator_email = \"ops@example.org\"\ningress = \"cloudflare-tunnel\"\ntunnel_token = \"{token}\"\n"
+        ))
+        .unwrap();
+        parsed.check().unwrap();
+        assert_eq!(parsed.ingress, Ingress::CloudflareTunnel);
+        let saved = serde_json::to_string(&parsed).unwrap();
+        assert!(saved.contains("\"ingress\":\"cloudflare-tunnel\""));
+        assert!(!saved.contains(token));
+        let mut env = Env::default();
+        base_env(&mut env, &parsed);
+        assert_eq!(env.get("HAIL_INGRESS"), Some("cloudflare-tunnel"));
+        // Older answers files default to direct ingress; a token without a tunnel is refused.
+        assert_eq!(answers().ingress, Ingress::Direct);
+        assert!(
+            Answers {
+                tunnel_token: Some(token.into()),
+                ..answers()
+            }
+            .check()
+            .is_err()
+        );
+        assert!(!valid_tunnel_token("short"));
+        assert!(!valid_tunnel_token(&format!("{token} rm -rf")));
     }
 
     #[test]

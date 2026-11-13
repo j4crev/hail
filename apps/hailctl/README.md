@@ -15,8 +15,14 @@ installer cannot start a provider).
 - Ubuntu 26.04 LTS or Debian 13, on amd64 or arm64. Root (`sudo`) is needed once, to
   prepare the server; see [who runs what](#who-runs-what).
 - At least 2 GiB of memory and 10 GiB of free disk.
-- Ports 80 and 443 free and reachable from the internet. `hailctl` runs its own
-  HTTPS server (Caddy) and obtains certificates automatically.
+- One way for HTTPS to reach the server:
+  - **Direct:** ports 80 and 443 free and reachable from the internet. Caddy obtains
+    certificates automatically.
+  - **Cloudflare Tunnel:** no open ports. A `cloudflared` container connects out to
+    Cloudflare, which terminates HTTPS. You need a Cloudflare account with both
+    hostnames' zones, and a tunnel created in Zero Trust (Networks > Tunnels) whose
+    token you give to `hailctl`. Route both hostnames to `http://caddy:8080` in the
+    tunnel's public hostnames. The token is kept only in `/opt/hail-provider/.env`.
 - Two DNS names for this server: an **API hostname** (such as `svr.example.com`) and
   a **web hostname**, which is also the address domain (such as `example.com`, for
   addresses like `alice@example.com`).
@@ -53,8 +59,10 @@ for example in `/opt/hail-provider`. The installer copies the ones it is given.
 
 1. Checks the server, then prepares it as root (above).
 2. Asks for the two hostnames, a provider ID and your operator email.
-3. Shows the DNS records to create (A/AAAA for both hostnames and the
-   `_hail-provider` TXT record) and waits until public DNS has them.
+3. Asks how HTTPS reaches the server (direct or Cloudflare Tunnel), shows the DNS
+   records to create (direct: A/AAAA for both hostnames; tunnel: the tunnel's public
+   hostnames; always the `_hail-provider` TXT record) and waits until public DNS has
+   them.
 4. Downloads the newest provider release, verifies its signed manifest against the
    key built into `hailctl`, checks the bundle checksum, and unpacks it into
    `/opt/hail-provider/release`.
@@ -86,6 +94,9 @@ operator_email = "ops@example.com"
 # (readable only by hail and root) instead of showing them. Copy them offline, then
 # delete that file.
 secrets_to_file = true
+# Optional: no open ports, through a Cloudflare Tunnel (default "direct").
+# ingress = "cloudflare-tunnel"
+# tunnel_token = "eyJ..."   # moved into .env, never stored in hailctl.json
 ```
 
 ```bash
@@ -194,9 +205,10 @@ again: bucket settings are not part of a backup.
 
 ## Not yet included
 
-- Running behind an existing reverse proxy or tunnel. `hailctl` requires direct
-  public ports 80 and 443; see the [standalone guide](../server/deploy/standalone/README.md)
-  for manual deployments.
+- Running behind your own reverse proxy, or another tunnel service. `hailctl` supports
+  direct ports 80/443 and Cloudflare Tunnel; see the
+  [standalone guide](../server/deploy/standalone/README.md) for manual deployments.
+- Changing the ingress of an installed provider.
 
 ## Development
 

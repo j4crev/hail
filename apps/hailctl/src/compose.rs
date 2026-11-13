@@ -1,11 +1,17 @@
 //! Docker Compose for the installed release: the release's Compose files, the
 //! operator `.env`, and the release's image pins (which always win).
-use crate::state::Paths;
+use crate::state::{Env, Ingress, Paths};
 use anyhow::{Context, Result, ensure};
 use std::fs::File;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
+
+/// Whether this installation reaches the internet through a Cloudflare Tunnel.
+pub fn tunnel(paths: &Paths) -> bool {
+    Env::load(&paths.env())
+        .is_ok_and(|env| env.get("HAIL_INGRESS") == Some(Ingress::CloudflareTunnel.as_str()))
+}
 
 pub struct Compose {
     args: Vec<String>,
@@ -29,7 +35,15 @@ impl Compose {
                 path("compose.yaml"),
                 "-f".into(),
                 path("compose.web-client.yaml"),
-            ],
+            ]
+            .into_iter()
+            .chain(
+                tunnel(paths)
+                    .then(|| ["-f".to_string(), path("compose.tunnel.yaml")])
+                    .into_iter()
+                    .flatten(),
+            )
+            .collect(),
         }
     }
 
@@ -126,5 +140,37 @@ impl Compose {
     pub fn up(&self) -> Result<()> {
         self.run(&["pull", "--quiet"])?;
         self.run(&["up", "-d", "--wait", "--remove-orphans"])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adds_the_tunnel_overlay_only_for_tunnel_ingress() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        let files = |compose: &Compose| -> Vec<String> {
+            compose
+                .args
+                .windows(2)
+                .filter(|pair| pair[0] == "-f")
+                .map(|pair| pair[1].rsplit('/').next().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(
+            files(&Compose::new(&paths)),
+            ["compose.yaml", "compose.web-client.yaml"]
+        );
+        std::fs::write(paths.env(), "HAIL_INGRESS=cloudflare-tunnel\n").unwrap();
+        assert_eq!(
+            files(&Compose::new(&paths)),
+            [
+                "compose.yaml",
+                "compose.web-client.yaml",
+                "compose.tunnel.yaml"
+            ]
+        );
     }
 }

@@ -2,8 +2,8 @@
 //! hailctl.json, so running `hailctl install` again resumes where it stopped.
 use crate::compose::Compose;
 use crate::state::{
-    Answers, Env, Paths, State, base_env, load_answers, valid_email, valid_hostname,
-    valid_provider_id,
+    Answers, Env, Ingress, Paths, State, base_env, load_answers, valid_email, valid_hostname,
+    valid_provider_id, valid_tunnel_token,
 };
 use crate::{backup, dns, host, recovery, register, release, system, ui};
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -62,7 +62,14 @@ pub fn install(options: &Options) -> Result<()> {
         state = recovery::seed(&paths, file)?;
     }
 
-    let answers = gather_answers(&state, options)?;
+    let mut answers = gather_answers(&state, options)?;
+    // The tunnel token goes to .env only, as soon as it is given, so a resumed install
+    // still has it; a token given again replaces the old one.
+    if let Some(token) = answers.tunnel_token.take() {
+        let mut env = Env::load(&paths.env())?;
+        env.set("CLOUDFLARE_TUNNEL_TOKEN", &token);
+        env.save(&paths.env())?;
+    }
     if state.configured && state.answers.as_ref() != Some(&answers) {
         bail!(
             "these answers differ from the installed configuration; edit {} instead",
@@ -91,6 +98,12 @@ pub fn install(options: &Options) -> Result<()> {
         state.save(&paths)?;
     }
 
+    if answers.ingress == Ingress::CloudflareTunnel {
+        ensure!(
+            paths.release().join("compose.tunnel.yaml").is_file(),
+            "this provider release has no Cloudflare Tunnel support; install provider-v0.4.0 or later"
+        );
+    }
     if !state.configured {
         ui::step("Configuring");
         let mut env = Env::load(&paths.env())?;
@@ -115,6 +128,13 @@ pub fn install(options: &Options) -> Result<()> {
     let mut env = Env::load(&paths.env())?;
     if crate::state::repair_env(&mut env) {
         env.save(&paths.env())?;
+    }
+    ensure!(
+        answers.ingress == Ingress::Direct || env.get("CLOUDFLARE_TUNNEL_TOKEN").is_some(),
+        "the Cloudflare Tunnel token is missing; give it again (tunnel_token in the answers file)"
+    );
+    if answers.ingress == Ingress::Direct && !state.started {
+        host::ports_free()?;
     }
     if state.restoring.is_some() {
         recovery::finish_seed(&paths, &mut state, &compose)?;
@@ -226,6 +246,22 @@ fn gather_answers(state: &State, options: &Options) -> Result<Answers> {
         valid_email,
         "Enter a valid email address",
     )?;
+    const DIRECT: &str = "Direct: this server's ports 80 and 443, with its own certificates";
+    const TUNNEL: &str = "Cloudflare Tunnel: no open ports; Cloudflare terminates HTTPS";
+    let ingress = match ui::choose("How should HTTPS reach this server?", vec![DIRECT, TUNNEL])? {
+        TUNNEL => Ingress::CloudflareTunnel,
+        _ => Ingress::Direct,
+    };
+    let tunnel_token = match ingress {
+        Ingress::Direct => None,
+        Ingress::CloudflareTunnel => {
+            ui::info("Create a tunnel in Cloudflare (Zero Trust > Networks > Tunnels, connector");
+            ui::info("type cloudflared) and copy its token from the install command it shows.");
+            let token = ui::secret("Tunnel token:")?.trim().to_string();
+            ensure!(valid_tunnel_token(&token), "that is not a tunnel token");
+            Some(token)
+        }
+    };
     let answers = Answers {
         api_host,
         web_host,
@@ -233,6 +269,8 @@ fn gather_answers(state: &State, options: &Options) -> Result<Answers> {
         operator_email,
         monitor_api: crate::state::DEFAULT_MONITOR_API.into(),
         secrets_to_file: false,
+        ingress,
+        tunnel_token,
     };
     answers.check()?;
     ensure!(
@@ -253,6 +291,9 @@ fn check_dns(answers: &Answers) -> Result<()> {
     if skip_public_checks() {
         ui::info("Skipping the DNS check (debug build).");
         return Ok(());
+    }
+    if answers.ingress == Ingress::CloudflareTunnel {
+        return check_tunnel_dns(answers);
     }
     let public = dns::public_addresses();
     ensure!(
@@ -285,6 +326,55 @@ fn check_dns(answers: &Answers) -> Result<()> {
             }
         }
         ui::info(&format!("  {delegation_name:<40} TXT  \"{expected}\""));
+        for problem in &problems {
+            ui::info(&format!("Not yet: {problem}"));
+        }
+        if ui::interactive() {
+            match ui::choose(
+                "DNS is not ready.",
+                vec!["Check again", "Continue anyway", "Stop"],
+            )? {
+                "Check again" => continue,
+                "Continue anyway" => return Ok(()),
+                _ => bail!("stopped; run hailctl install again once DNS is ready"),
+            }
+        }
+        ensure!(
+            Instant::now() < deadline,
+            "DNS was not ready after 30 minutes"
+        );
+        std::thread::sleep(Duration::from_secs(30));
+    }
+}
+
+/// Tunnel ingress: the hostnames are Cloudflare-proxied routes of the tunnel, so they
+/// resolve to Cloudflare rather than this server; only the delegation record is checked
+/// here, and the routes themselves when the provider must answer over HTTPS.
+fn check_tunnel_dns(answers: &Answers) -> Result<()> {
+    let delegation_name = format!("_hail-provider.{}", answers.web_host);
+    let expected = dns::delegation(&answers.api_host);
+    ui::info("In the tunnel's settings (Cloudflare Zero Trust > Networks > Tunnels > your");
+    ui::info("tunnel > Public hostnames), route both hostnames to the service http://caddy:8080:");
+    for host in [&answers.api_host, &answers.web_host] {
+        ui::info(&format!("  {host:<40} -> http://caddy:8080"));
+    }
+    ui::info("and create this DNS record:");
+    ui::info(&format!("  {delegation_name:<40} TXT  \"{expected}\""));
+    let deadline = Instant::now() + Duration::from_secs(30 * 60);
+    loop {
+        let mut problems = Vec::new();
+        for host in [&answers.api_host, &answers.web_host] {
+            if dns::addresses(host)?.is_empty() {
+                problems.push(format!("{host} does not resolve yet"));
+            }
+        }
+        if !dns::txt(&delegation_name)?.contains(&expected) {
+            problems.push(format!("{delegation_name} has no matching TXT record"));
+        }
+        if problems.is_empty() {
+            ui::info("DNS is ready; the tunnel routes are checked once the provider starts.");
+            return Ok(());
+        }
         for problem in &problems {
             ui::info(&format!("Not yet: {problem}"));
         }
@@ -476,9 +566,8 @@ fn passkey_link(compose: &Compose) -> Result<String> {
 /// Docker, then the rest of the install as `hail`.
 fn prepare(options: &Options) -> Result<()> {
     let paths = Paths::new(&options.dir);
-    let started = State::load(&paths).is_ok_and(|state| state.started);
     ui::step("Checking this server");
-    let preflight = host::preflight(!started)?;
+    let preflight = host::preflight()?;
     ui::info(&format!(
         "{} {} on {}",
         preflight.os.id,
