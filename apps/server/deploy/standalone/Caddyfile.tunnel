@@ -1,0 +1,65 @@
+{
+	admin off
+	auto_https off
+}
+
+# Cloudflare Tunnel ingress (compose.tunnel.yaml; hailctl `ingress = "cloudflare-tunnel"`).
+# The cloudflared container is the only client of this plain-HTTP listener: it has no
+# host port. Cloudflare terminates TLS and supplies CF-Connecting-IP, which is trusted
+# only because nothing else can reach this listener.
+:8080 {
+	@provider {
+		host {$PROVIDER_DOMAIN}
+		header CF-Connecting-IP *
+	}
+	handle @provider {
+		@http header X-Forwarded-Proto http
+		redir @http https://{$PROVIDER_DOMAIN}{uri} 308
+		# Registration v2 proof (spec/monitor-receiver.md).
+		handle /.well-known/hail-monitor-registration {
+			header Cache-Control no-store
+			root * /srv/hail-registration
+			rewrite * /hail-monitor-registration.json
+			file_server
+		}
+		handle {
+			reverse_proxy provider:3000 {
+				header_up X-Hail-Trusted-Client-IP {http.request.header.CF-Connecting-IP}
+				header_up X-Forwarded-Proto https
+			}
+		}
+	}
+	@client {
+		host {$WEB_CLIENT_DOMAIN}
+		header CF-Connecting-IP *
+	}
+	handle @client {
+		@http header X-Forwarded-Proto http
+		redir @http https://{$WEB_CLIENT_DOMAIN}{uri} 308
+		handle /.well-known/hail-monitor-registration {
+			header Cache-Control no-store
+			root * /srv/hail-registration
+			rewrite * /hail-monitor-registration.json
+			file_server
+		}
+		# Address discovery and health remain reachable at the native address domain.
+		@metadata path /.well-known/webfinger /health/ready /health/live
+		handle @metadata {
+			reverse_proxy provider:3000 {
+				header_up -Cookie
+				header_up -Authorization
+				header_up X-Hail-Trusted-Client-IP {http.request.header.CF-Connecting-IP}
+				header_up X-Forwarded-Proto https
+			}
+		}
+		handle {
+			reverse_proxy web-client:3000 {
+				header_up X-Hail-Trusted-Client-IP {http.request.header.CF-Connecting-IP}
+				header_up X-Forwarded-Proto https
+			}
+		}
+	}
+	handle {
+		respond 400
+	}
+}

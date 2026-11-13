@@ -84,8 +84,8 @@ describe("provider release CLI", () => {
     const name = `hail-provider-${version}.tar.gz`;
     expect(Buffer.compare(await readFile(join(first, name)), await readFile(join(second, name)))).toBe(0);
     const listing = Bun.spawnSync(["tar", "-tzf", join(first, name)]).stdout.toString().trim().split("\n").sort();
-    expect(listing).toEqual([`hail-provider-${version}/`, ...[".env.example", "Caddyfile", "Caddyfile.web-client", "README.md",
-      "compose.web-client.yaml", "compose.yaml", "release.env"].map(file => `hail-provider-${version}/${file}`)].sort());
+    expect(listing).toEqual([`hail-provider-${version}/`, ...[".env.example", "Caddyfile", "Caddyfile.tunnel", "Caddyfile.web-client", "README.md",
+      "compose.tunnel.yaml", "compose.web-client.yaml", "compose.yaml", "release.env"].map(file => `hail-provider-${version}/${file}`)].sort());
     const pins = Bun.spawnSync(["tar", "-xzOf", join(first, name), `hail-provider-${version}/release.env`]).stdout.toString();
     expect(pins).toContain(`HAIL_PROVIDER_IMAGE=ghcr.io/j4crev/hail/provider@${digest(1)}`);
     expect(pins).toContain(`HAIL_WEB_CLIENT_IMAGE=ghcr.io/j4crev/hail/provider-web-client@${digest(4)}`);

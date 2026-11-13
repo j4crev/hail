@@ -106,9 +106,8 @@ pub struct Preflight {
     pub warnings: Vec<String>,
 }
 
-/// Checks the host before anything is installed. `ports` is false when this provider
-/// already owns ports 80/443 (a resumed or repeated install).
-pub fn preflight(ports: bool) -> Result<Preflight> {
+/// Checks the host, as root, before anything is installed.
+pub fn preflight() -> Result<Preflight> {
     ensure!(is_root(), "run hailctl as root (for example with sudo)");
     let os = supported_os(&parse_os_release(
         &fs::read_to_string("/etc/os-release").context("cannot read /etc/os-release")?,
@@ -129,15 +128,19 @@ pub fn preflight(ports: bool) -> Result<Preflight> {
         disk >= MIN_DISK_GIB,
         "{disk} GiB free on /; at least {MIN_DISK_GIB} GiB is needed"
     );
-    if ports {
-        for port in [80, 443] {
-            ensure!(
-                TcpListener::bind(("0.0.0.0", port)).is_ok(),
-                "port {port} is already in use; this installer runs its own HTTPS server on 80 and 443"
-            );
-        }
-    }
     Ok(Preflight { os, warnings })
+}
+
+/// Direct ingress needs ports 80 and 443 free (checked as the `hail` user, after the root
+/// setup allowed unprivileged processes to bind them).
+pub fn ports_free() -> Result<()> {
+    for port in [80, 443] {
+        ensure!(
+            TcpListener::bind(("0.0.0.0", port)).is_ok(),
+            "port {port} is already in use; direct ingress runs its own HTTPS server on 80 and 443 (or choose Cloudflare Tunnel ingress)"
+        );
+    }
+    Ok(())
 }
 
 /// Whether this user's Docker daemon answers (rootless, through DOCKER_HOST).

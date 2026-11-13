@@ -217,6 +217,17 @@ the client CSP. Names, accessible labels and page titles use the configured name
 protocol references say RACR. Recreate the client after changing settings.
 
 
+
+### Cloudflare Tunnel instead of public ports
+
+With the web client, `compose.tunnel.yaml` replaces public ports 80/443 with a
+`cloudflared` container: the server opens no ports, Cloudflare terminates HTTPS, and
+Caddy (`Caddyfile.tunnel`) listens only on the internal edge network, trusting
+`CF-Connecting-IP` because cloudflared is its only client. Create a tunnel in Cloudflare
+Zero Trust, set `CLOUDFLARE_TUNNEL_TOKEN` in `.env`, route both public hostnames to
+`http://caddy:8080`, and add `-f compose.tunnel.yaml` after the web-client overlay in
+every Compose command.
+
 ## First administrator
 
 `admin@` is a [provider service account](../../../../spec/provider-service-accounts.md):
