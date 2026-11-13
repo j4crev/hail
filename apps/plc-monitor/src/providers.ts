@@ -19,6 +19,26 @@ export function canonicalOrigin(value: string): string {
   if (assertWebhookUrl(value).origin !== value) throw new Error("Use a canonical HTTPS origin");
   return value;
 }
+/**
+ * Retires a registration inside the caller's transaction (holding lock 686169156): stops
+ * monitoring every identity it enrolled, queues their receiver cleanup, and frees its
+ * origin. Its receiver record must then be re-provisioned as disabled.
+ */
+export async function retireProvider(tx: SQL, id: string): Promise<number> {
+  const rows = await tx`SELECT did FROM monitored_dids WHERE enrollment_provider_id=${id} AND stopped_at IS NULL FOR UPDATE`;
+  await tx`UPDATE monitor_enrollment_providers SET enabled=false,retired_at=coalesce(retired_at,clock_timestamp()),
+    receiver_provisioned_at=NULL WHERE id=${id}`;
+  await tx`INSERT INTO monitor_receiver_cleanup(did,operation_cid,receiver_url)
+    SELECT w.did,b.operation_cid,w.alert_webhook_url FROM monitored_dids w
+    JOIN monitor_bootstrap_checkpoints b ON b.did=w.did
+    WHERE w.enrollment_provider_id=${id} AND w.stopped_at IS NULL ON CONFLICT(did) DO NOTHING`;
+  await tx`UPDATE monitored_dids SET stopped_at=coalesce(stopped_at,clock_timestamp()),poll_ready=false
+    WHERE enrollment_provider_id=${id}`;
+  await tx`UPDATE monitor_alerts SET lease_token=NULL,lease_expires_at=NULL
+    WHERE sent_at IS NULL AND did IN (SELECT did FROM monitored_dids WHERE enrollment_provider_id=${id})`;
+  return rows.length;
+}
+
 export class EnrollmentProviders {
   constructor(readonly sql: SQL) {}
   async create(providerOrigin: string, alertOrigin: string, token = randomBytes(32).toString("base64url")) {
@@ -76,17 +96,28 @@ export class EnrollmentProviders {
       if (!provider) throw Error("Unknown provider");
       const rows = await tx`SELECT did FROM monitored_dids WHERE enrollment_provider_id=${id} AND stopped_at IS NULL ORDER BY did FOR UPDATE`;
       if (rows.length !== expectedActive) throw Error("Active enrollment count changed; review before retiring");
-      await tx`UPDATE monitor_enrollment_providers SET enabled=false,retired_at=coalesce(retired_at,clock_timestamp()) WHERE id=${id}`;
-      await tx`INSERT INTO monitor_receiver_cleanup(did,operation_cid,receiver_url)
-        SELECT w.did,b.operation_cid,w.alert_webhook_url FROM monitored_dids w
-        JOIN monitor_bootstrap_checkpoints b ON b.did=w.did
-        WHERE w.enrollment_provider_id=${id} AND w.stopped_at IS NULL ON CONFLICT(did) DO NOTHING`;
-      await tx`UPDATE monitored_dids SET stopped_at=coalesce(stopped_at,clock_timestamp()),poll_ready=false
-        WHERE enrollment_provider_id=${id}`;
-      await tx`UPDATE monitor_alerts SET lease_token=NULL,lease_expires_at=NULL
-        WHERE sent_at IS NULL AND did IN (SELECT did FROM monitored_dids WHERE enrollment_provider_id=${id})`;
-      return rows.length;
+      return retireProvider(tx, id);
     });
+  }
+  /** A provider leaving the monitor with its own credential (spec/monitor-receiver.md). Idempotent. */
+  async deregister(token: string, providerOrigin: string): Promise<{ id: string; stopped: number }> {
+    return this.sql.begin(async tx => {
+      await tx`SELECT pg_advisory_xact_lock(686169156)`;
+      const row = (await tx<{ id: string; provider_origin: string; retired_at: Date | null }[]>`SELECT id,provider_origin,retired_at
+        FROM monitor_enrollment_providers WHERE token_hash=${await hash(token)} FOR UPDATE`)[0];
+      if (!row) throw new ProviderAdmissionError(401, "Unauthorized");
+      if (row.provider_origin !== providerOrigin) throw new ProviderAdmissionError(409, "The credential belongs to another provider origin");
+      return { id: row.id, stopped: row.retired_at ? 0 : await retireProvider(tx, row.id) };
+    });
+  }
+  /** Pushes the disabled receiver record of each retired registration of this origin not yet updated there. */
+  async syncRetiredReceivers(providerOrigin: string, provision: (record: NonNullable<Awaited<ReturnType<EnrollmentProviders["receiverRecord"]>>>) => Promise<void>) {
+    const rows = await this.sql<{ id: string }[]>`SELECT id FROM monitor_enrollment_providers WHERE provider_origin=${providerOrigin}
+      AND retired_at IS NOT NULL AND receiver_token_hash IS NOT NULL AND receiver_provisioned_at IS NULL ORDER BY retired_at`;
+    for (const { id } of rows) {
+      const record = await this.receiverRecord(id);
+      if (record) { await provision(record); await this.markProvisioned(id); }
+    }
   }
   async authenticate(request: Request): Promise<EnrollmentProvider> {
     const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("Authorization") ?? "")?.[1];

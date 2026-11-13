@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { randomInt } from "node:crypto";
 import { decodeBase64Url } from "@racrproto/codec/base64url";
 import type { EnrollmentProviders } from "./providers.js";
-import { ProviderAdmissionError } from "./providers.js";
+import { ProviderAdmissionError, retireProvider } from "./providers.js";
 import { boundedBody, hash } from "./http.js";
 import type { MonitorSigner } from "./signing.js";
 import { PinnedHttpsClient } from "./public-http.js";
@@ -90,14 +90,24 @@ export function createProviderRegistrationApi(providers: EnrollmentProviders, si
         await tx`SELECT pg_advisory_xact_lock(686169156)`;
         if (doc.expiresAt <= Math.floor(Date.now() / 1000))
           throw new ProviderAdmissionError(409, "Verification document expired; publish a fresh document");
-        let row = (await tx`SELECT * FROM monitor_enrollment_providers WHERE provider_origin=${doc.providerOrigin} FOR UPDATE`)[0];
-        if (row) {
+        let row = (await tx`SELECT * FROM monitor_enrollment_providers
+          WHERE provider_origin=${doc.providerOrigin} AND retired_at IS NULL FOR UPDATE`)[0];
+        // A different registration for an active origin replaces it (lost credentials or
+        // a rebuilt server). Proving the origins is not enough: whoever controls the server
+        // could otherwise switch off monitoring of its users, so the code goes only to the
+        // operator email already on file.
+        const replacing = row && row.registration_hash !== doc.registrationHash ? row : undefined;
+        if (row && !replacing) {
           // An exact retry of a completed registration returns the same credentials.
-          if (!row.enabled || row.registration_hash !== doc.registrationHash || row.web_origin !== webOrigin ||
+          if (!row.enabled || row.web_origin !== webOrigin ||
             row.token_hash !== await hash(token) || row.receiver_token_hash !== await hash(receiverToken))
             throw new ProviderAdmissionError(409, "Provider already registered; use its credentials or contact the operator");
           return { row };
         }
+        if (replacing && !replacing.enabled)
+          throw new ProviderAdmissionError(409, "This provider's registration is disabled; contact the monitor operator");
+        if (replacing && replacing.operator_email?.toLowerCase() !== operatorEmail.toLowerCase())
+          throw new ProviderAdmissionError(409, "This provider is already registered; to replace the registration, use its registered operator email");
         const pending = (await tx<PendingCode[]>`SELECT * FROM monitor_provider_registration_codes
           WHERE registration_hash=${doc.registrationHash} FOR UPDATE`)[0];
         if (pending && (pending.provider_origin !== doc.providerOrigin || pending.web_origin !== webOrigin || pending.operator_email !== operatorEmail))
@@ -119,8 +129,10 @@ export function createProviderRegistrationApi(providers: EnrollmentProviders, si
           await tx`UPDATE monitor_provider_registration_codes SET attempts=attempts+1 WHERE registration_hash=${doc.registrationHash}`;
           return { wrongCode: true };
         }
-        if ((await tx`SELECT count(*)::integer AS count FROM monitor_enrollment_providers`)[0]!.count >= 100)
+        if (!replacing && (await tx`SELECT count(*)::integer AS count FROM monitor_enrollment_providers
+          WHERE retired_at IS NULL`)[0]!.count >= 100)
           throw new ProviderAdmissionError(429, "Provider capacity reached");
+        if (replacing) await retireProvider(tx, replacing.id);
         row = (await tx`INSERT INTO monitor_enrollment_providers(id,provider_origin,alert_origin,web_origin,operator_email,
             token_hash,receiver_token_hash,registration_hash)
           VALUES (${crypto.randomUUID()},${doc.providerOrigin},${receiver.origin},${webOrigin},${operatorEmail},
@@ -139,6 +151,8 @@ export function createProviderRegistrationApi(providers: EnrollmentProviders, si
         return json({ verification: "email-sent", expiresAt: Math.floor(result.send!.expiresAt.getTime() / 1000) }, 202);
       }
       const row = result.row!;
+      // A replaced registration's receiver credential stops working before the new one is issued.
+      await providers.syncRetiredReceivers(row.provider_origin, record => receiver.provision(record));
       if (!row.receiver_provisioned_at) {
         // Provisioning is retried by an exact retry of the completed request.
         await receiver.provision({ providerId: row.id, providerOrigin: row.provider_origin, webOrigin: row.web_origin,
@@ -152,5 +166,41 @@ export function createProviderRegistrationApi(providers: EnrollmentProviders, si
       return json({ error: error instanceof ProviderAdmissionError ? error.message : "Registration temporarily unavailable" },
         error instanceof ProviderAdmissionError ? error.status : 503);
     } finally { active--; }
+  } };
+}
+
+/**
+ * `POST /api/v1/providers/deregister`: a provider leaves the monitor with its own monitor
+ * credential (spec/monitor-receiver.md). Monitoring of every identity it enrolled stops,
+ * both credentials stop working, and its origin may register again. Retries are safe.
+ */
+export function createProviderDeregistrationApi(providers: EnrollmentProviders, receiver: Pick<ReceiverClient, "provision"> | undefined) {
+  const json = (value: unknown, status: number) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
+  return { async fetch(request: Request) {
+    if (request.method !== "POST") return json({ error: "Use POST" }, 405);
+    if (request.headers.get("content-type") !== "application/json" || request.headers.has("content-encoding"))
+      return json({ error: "Use uncoded JSON" }, 415);
+    const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("Authorization") ?? "")?.[1];
+    if (!token) return json({ error: "Unauthorized" }, 401);
+    let providerOrigin: string;
+    try {
+      const bytes = await boundedBody(request, 1024);
+      if (!bytes) return json({ error: "Deregistration exceeds limit" }, 413);
+      const input = parseJsonWithoutDuplicateKeys(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as Record<string, unknown>;
+      if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).join(",") !== "providerOrigin" ||
+        !httpsOrigin(input.providerOrigin)) throw Error();
+      providerOrigin = input.providerOrigin;
+    } catch { return json({ error: "Send exactly the provider origin" }, 400); }
+    let result: { id: string; stopped: number };
+    try { result = await providers.deregister(token, providerOrigin); }
+    catch (error) {
+      return json({ error: error instanceof ProviderAdmissionError ? error.message : "Deregistration temporarily unavailable" },
+        error instanceof ProviderAdmissionError ? error.status : 503);
+    }
+    if (receiver) {
+      try { await providers.syncRetiredReceivers(providerOrigin, record => receiver.provision(record)); }
+      catch { return json({ error: "Deregistered, but the receiver was not updated yet; retry" }, 503); }
+    }
+    return json({ providerId: result.id, providerOrigin, deregistered: true, stoppedIdentities: result.stopped }, 200);
   } };
 }

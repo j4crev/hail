@@ -76,8 +76,8 @@ try {
       await tx`SELECT pg_advisory_xact_lock(686169156)`;
       const tokenHash = await hash(token);
       await tx`INSERT INTO monitor_enrollment_providers(id,provider_origin,alert_origin,token_hash)
-        VALUES (${crypto.randomUUID()},${origin},${alerts},${tokenHash}) ON CONFLICT (provider_origin) DO NOTHING`;
-      const row = (await tx`SELECT * FROM monitor_enrollment_providers WHERE provider_origin=${origin} FOR UPDATE`)[0]!;
+        VALUES (${crypto.randomUUID()},${origin},${alerts},${tokenHash}) ON CONFLICT (provider_origin) WHERE retired_at IS NULL DO NOTHING`;
+      const row = (await tx`SELECT * FROM monitor_enrollment_providers WHERE provider_origin=${origin} AND retired_at IS NULL FOR UPDATE`)[0]!;
       if (row.alert_origin !== alerts || row.token_hash !== tokenHash) throw new Error("Existing provider differs; review configuration");
       // PostgreSQL historical JSONB values may contain an encoded JSON string.
       const rows = await tx`SELECT w.did,b.reviewed_state FROM monitored_dids w

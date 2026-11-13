@@ -79,6 +79,52 @@ A verified operator email is the operator contact for credential rotation,
 quota and policy notices. It is not shown to users and is not a security-email
 destination for any DID.
 
+### Replacing a registration
+
+A provider that lost its credentials, for example after rebuilding its server,
+registers again. When its origin already has an active registration with a
+different `registrationHash`, the request **replaces** that registration:
+
+- `operatorEmail` must equal the registered operator email, compared without
+  regard to case; otherwise `409`. The error does not reveal the email on file. Origin
+  proof alone is not enough: whoever controls the server could otherwise switch off
+  monitoring of the provider's users, while a replacement also needs the operator's
+  mailbox.
+- A registration the monitor operator disabled cannot be replaced (`409`).
+- Steps 2 and 3 are unchanged; the code goes to the registered email. Nothing changes
+  until the code is confirmed. Confirmation then, in one transaction, retires the old
+  registration (as [deregistration](#deregistration) does) and creates the new one.
+- The monitor provisions the old registration's receiver record as disabled before
+  the new one as enabled, so the old receiver credential stops working first. If
+  either push fails, the monitor returns `503` and an exact retry completes it.
+
+Monitoring of the identities enrolled by the old registration stops. The new
+registration enrolls identities again as they are created or re-onboarded.
+
+### Deregistration
+
+`POST /api/v1/providers/deregister` with `Authorization: Bearer {token}` (the
+monitor credential) and a body of exactly `{"providerOrigin": "..."}` naming the
+credential's own origin. In one transaction the monitor retires the registration
+exactly as operator retirement does: it disables both credentials, stops monitoring
+every identity the registration currently owns, and durably queues receiver cleanup
+for each. It then provisions the receiver record as disabled.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | `{"providerId", "providerOrigin", "deregistered": true, "stoppedIdentities"}`. A retry of a completed deregistration also returns `200`, with `stoppedIdentities: 0`. |
+| `400` | The body is not exactly a canonical provider origin. |
+| `401` | Unknown credential. |
+| `409` | The credential belongs to a different origin. |
+| `503` | Retired, but the receiver was not updated yet; retry. |
+
+The credential remains usable only for retrying deregistration. A retired
+registration no longer reserves its origin: the provider may register again later
+and receives a new `providerId` and new credentials. Identities stop being monitored
+without an email to their users; the provider should tell them itself. A provider
+holding the credential can already stop monitoring each identity it manages, so
+deregistration grants no additional authority.
+
 ## Monitor → receiver provisioning
 
 `POST {receiverOrigin}/hail/providers`, signed with the monitor key under
@@ -143,6 +189,8 @@ hours.
 - Operator commands: `monitor:register-provider prepare|request|finish` and
   `monitor:providers provision|receiver-import|rotate-receiver`. Enabling,
   disabling and retiring a provider re-provision it.
+- Deregistration: `createProviderDeregistrationApi` in `src/provider-registration.ts`;
+  migration 12 limits origin uniqueness to registrations that are not retired.
 - Receiver: the Cloudflare Worker in `deploy/cloudflare-alert-worker`. The
   temporary `LEGACY_RECIPIENT_PROVIDER_ORIGIN` setting assigns recipients bound
   before v2 to that provider when it is provisioned.
@@ -153,8 +201,11 @@ unattended installer needs a reader of the operator mailbox to finish.
 ## Conformance coverage
 
 `provider-registration.integration.test.ts` covers origin proof, the operator code
-(attempts, cooldown, resend, receiver outage), exact retries, credential secrecy
-and disabled registrations. `alert-worker.test.ts` covers provisioning signatures
+(attempts, cooldown, resend, receiver outage), exact retries, credential secrecy,
+disabled registrations, deregistration (authentication, origin match, receiver
+outage, idempotency, registering again) and replacement (registered email only,
+nothing changes before confirmation, old credential disabled first, operator-disabled
+registrations). `alert-worker.test.ts` covers provisioning signatures
 and ordering, token rotation, provider isolation, genesis ownership on bind,
 scoped tombstones, operator-verification email and the legacy migration.
 `signup-monitor.integration.test.ts` runs provider signup, monitor enrollment and

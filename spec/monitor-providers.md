@@ -124,7 +124,12 @@ separate: `monitor:providers retire ID EXPECTED_ACTIVE_COUNT` disables credentia
 permanently retires the registration, stops only its currently owned enrollments,
 and queues receiver cleanup in one transaction. A count mismatch aborts. Previously
 transferred identities and manually managed identities are untouched. Retirement
-cannot be reversed using credential enablement or self-service registration.
+cannot be reversed using credential enablement or self-service registration. A
+provider can also retire its own registration
+([deregistration](monitor-receiver.md#deregistration)), and a confirmed
+[replacement](monitor-receiver.md#replacing-a-registration) retires the registration
+it replaces. A retired registration no longer reserves its origin, so the origin can
+register again as a new provider with new credentials.
 
 ### Signed receiver lifecycle v1
 
