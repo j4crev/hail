@@ -54,12 +54,14 @@ task, without asking for confirmation again at each step:
    protection; do not skip checks or bypass protections to release.
 4. Merge the verified PR, then wait for successful main verification of the exact
    merged revision. If the work is already merged, start from this verification.
-5. Manually dispatch `publish-provider.yml` on `main`, verify its exact `headSha`,
-   and wait for the whole run to succeed. If `main` advances, review the additional
-   changes rather than silently deploying a different revision.
-6. Download `provider-release`, verify its commit and both immutable image
-   digests, complete the production preflight, and deploy through the installed
-   `hail-provider-ops` wrapper as specified in the rollout procedure.
+5. Cut a provider release: bump `apps/server/package.json` to the next version in
+   its own PR (verified and merged like any change), then push the annotated tag
+   `provider-vX.Y.Z` on that exact merged `main` commit. Wait for the whole
+   `release-provider.yml` run to succeed. If `main` advances, review the additional
+   changes rather than silently releasing a different revision.
+6. Download the GitHub release, verify its signed manifest, commit and the
+   immutable image digests, complete the production preflight, and deploy through
+   the installed `hail-provider-ops` wrapper as specified in the rollout procedure.
 7. Verify running image references, service health, public homepage/readiness,
    registration policy, database/Caddy uptime and rollback retention. Report the
    PR, publication run and deployed commit, or the precise blocker if unfinished.
@@ -69,8 +71,8 @@ or installation of privileged operations tooling. The constraints below and the
 linked rollout procedure still apply.
 
 - Never build Docker images, run Vite, or package adapter-node on the live provider.
-  Publish with `.github/workflows/publish-provider.yml` on GitHub Actions.
-- Deploy only the exact commit and both image digests from a successful publication run,
+  Publish with a `provider-vX.Y.Z` tag and `.github/workflows/release-provider.yml`.
+- Deploy only the exact commit and both image digests from a successful release,
   using the installed `hail-provider-ops deploy COMMIT PROVIDER@sha256:DIGEST CLIENT@sha256:DIGEST` wrapper.
   A Git push alone neither publishes an image nor deploys production.
 - Preserve the image-selection and PostgreSQL overlays, existing database volumes,

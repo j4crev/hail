@@ -69,15 +69,15 @@ Both ordinary CI and the release workflow check freshness and version agreement.
 6. Confirm required branch/tag protections and who can publish releases. Active
    rules require PRs, resolved review threads and up-to-date GitHub Actions
    `verify` checks for `main`, with no bypass actors. No second-person approval is
-   required while there is only one collaborator. `v*` tags cannot be updated,
-   force-pushed or deleted; repository writers can create them. These are host
+   required while there is only one collaborator. `v*`, `cli-v*` and `provider-v*`
+   tags cannot be updated, force-pushed or deleted; repository writers can create them. These are host
    settings, not established by workflow YAML alone. Inspect the current rules
    before release rather than assuming this record is still current.
 
 ## Publication
 
-Only after the release gates pass, create/push the reviewed `vX.Y.Z` tag matching
-both manifests. The release workflow publishes the archive and SHA-256 checksum
+Only after the release gates pass, create/push the reviewed `cli-vX.Y.Z` tag matching
+both manifests (releases up to 0.1.5 used `vX.Y.Z`). The release workflow publishes the archive and SHA-256 checksum
 and signed provenance bundle through GitHub Releases, marked as a prerelease
 while the pre-launch policy remains active. A manual workflow dispatch verifies
 and builds artifacts but does not publish a release from a branch. Inspect the resulting release and amend
@@ -92,7 +92,7 @@ that download succeeds. Save the run, commit, archive digest, attestation result
 OS/glibc and quickstart results. The workflow verifies the attestation's repository,
 signer workflow, source ref and exact commit before uploading or publishing assets.
 An attested manual-dispatch artifact is not a tagged release: consumers must
-require the selected `refs/tags/vX.Y.Z`. Hosted qualification and first downloaded
+require the selected `refs/tags/cli-vX.Y.Z`. Hosted qualification and first downloaded
 release acceptance remain separate evidence gates.
 
 ## Stable-release policy decision
@@ -104,16 +104,34 @@ changes, and how their accounts, keys and accepted messages survive upgrades.
 This document does not silently change the current pre-launch policy or promise
 an untested migration/rollback path.
 
-## Provider and GUI images
+## Provider releases
 
-The **Publish provider and web-client images** workflow (`publish-provider.yml`)
-requires a successful `verify-main` handoff for the exact reviewed commit on
-`main`. Full verification is required on the PR; the main push check reuses that
-successful run only when the merged PR head has the identical Git tree. It
-publishes separate `ghcr.io/j4crev/hail/provider` and
-`ghcr.io/j4crev/hail/provider-web-client` images. The `provider-release`
-artifact records the full commit and both immutable digest references. Initial
-platform support is Linux amd64. A push alone neither publishes nor deploys.
+A provider release is the tag `provider-vX.Y.Z`, where `X.Y.Z` is the version in
+`apps/server/package.json`. The **Release provider** workflow (`release-provider.yml`)
+runs on that tag and requires the tagged commit to be on `main`, the tag to match
+the version, and a successful `verify-main` handoff for that exact commit. Full
+verification is required on the PR; the main push check reuses that successful run
+only when the merged PR head has the identical Git tree. A push alone neither
+releases nor deploys.
+
+It builds the `ghcr.io/j4crev/hail/provider` and `ghcr.io/j4crev/hail/provider-web-client`
+images natively for linux/amd64 and linux/arm64, publishes them as multi-platform
+images tagged with the release and commit, and creates a GitHub prerelease with:
+
+| Asset | Contents |
+| --- | --- |
+| `hail-provider-X.Y.Z.tar.gz` | The standalone deployment files plus `release.env` pinning both multi-platform image digests; reproducible |
+| `provider-release.json` | Manifest (`hail.provider-release` v1): version, tag, commit, each image's multi-platform and per-platform digests, bundle SHA-256 |
+| `provider-release.json.sig` | Unpadded base64url Ed25519 signature over `hail.provider-release.v1\0` followed by the exact manifest bytes |
+| `provider-release.txt` | Haili's three-argument wrapper command, using the amd64 per-platform digests |
+| `SHA256SUMS` | Checksums of the files above |
+
+The signing key is the `PROVIDER_RELEASE_SIGNING_KEY` repository secret; its public
+key is pinned in `apps/server/deploy/release/provider-release-signing.did`, and the
+workflow refuses to publish a manifest that does not verify against it. The bundle
+and manifest also carry GitHub build provenance. Verify a downloaded release with
+`bun apps/server/src/cli/provider-release.ts verify DIR`. Rotating the key requires
+replacing the pinned public key, and the copy built into `hailctl`, in the same change.
 
 Provider builds contain no reference web-client source, Vite build or client
 runtime. Both images currently share a release revision; this does not promise
@@ -133,28 +151,34 @@ existing Compose project/service names, `.env`, database/image overlays, volumes
 rollback record and retained images. `deploy/public` remains Haili's site profile;
 do not replace it with the new fresh-install profile.
 
-1. Review/commit only the intended changes, preserving other agents' edits. Push
-   and require successful main verification for that exact `main` revision. The
-   quick main check proves the merged PR passed full CI for the identical tree.
-2. Dispatch publication and identify its run by the exact `headSha`:
+1. Review/commit only the intended changes, preserving other agents' edits, and
+   bump `apps/server/package.json` to the next version, in the change itself or in
+   its own PR. Merge, and require successful main verification for that exact `main`
+   revision. The quick main check proves the merged PR passed full CI for the
+   identical tree.
+2. Tag that exact commit and wait for the release:
 
    ```bash
-   gh workflow run publish-provider.yml --ref main
-   gh run list --workflow publish-provider.yml --limit 5
+   git tag -a provider-vX.Y.Z -m "Provider X.Y.Z" COMMIT
+   git push origin provider-vX.Y.Z
+   gh run list --workflow release-provider.yml --limit 5
    gh run view RUN_ID --json headSha,status,conclusion,url
    ```
 
-   Require `completed`/`success` for the whole run. If `main` advanced before the
-   dispatch resolved, review that commit rather than silently substituting it.
-3. Download the artifact into a fresh directory:
+   Require `completed`/`success` for the whole run and `headSha` equal to the tagged
+   commit. If `main` advanced, review that commit rather than silently releasing it.
+   Tags are immutable; a failed release is fixed with a new version.
+3. Download and verify the release into a fresh directory:
 
    ```bash
-   gh run download RUN_ID --name provider-release --dir /tmp/hail-provider-RUN_ID
-   cat /tmp/hail-provider-RUN_ID/provider-release.txt
+   gh release download provider-vX.Y.Z --dir /tmp/hail-provider-X.Y.Z
+   bun apps/server/src/cli/provider-release.ts verify /tmp/hail-provider-X.Y.Z
+   cat /tmp/hail-provider-X.Y.Z/provider-release.txt
    ```
 
-   Verify the commit and both repository/digest references against the successful
-   run. Never substitute a mutable tag or publish/build on the provider host.
+   `verify` checks the signature against the pinned key, the bundle checksum, and
+   that the deploy command matches the signed manifest. Never substitute a mutable
+   tag or publish/build on the provider host.
 4. Connect to `haili-hostinger` as `hailops` using the Tailscale and host-key
    procedure in [operations](haili-operations.md#connect-to-the-provider). Verify
    the installed wrapper, clean checkout, backups, free disk and memory.

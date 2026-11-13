@@ -3,7 +3,7 @@ name: release-linux
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    tags: ["cli-v*"]
 
 permissions:
   contents: read
