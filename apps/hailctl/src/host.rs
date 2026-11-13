@@ -140,55 +140,10 @@ pub fn preflight(ports: bool) -> Result<Preflight> {
     Ok(Preflight { os, warnings })
 }
 
+/// Whether this user's Docker daemon answers (rootless, through DOCKER_HOST).
 pub fn docker_ready() -> bool {
     run("docker", &["version", "--format", "{{.Server.Version}}"]).is_ok()
         && run("docker", &["compose", "version"]).is_ok()
-}
-
-/// Installs Docker Engine and the Compose plugin from Docker's official apt repository.
-pub fn install_docker(os: &Os) -> Result<()> {
-    run_visible("apt-get", &["update"])?;
-    run_visible("apt-get", &["install", "-y", "ca-certificates", "curl"])?;
-    run_visible("install", &["-m", "0755", "-d", "/etc/apt/keyrings"])?;
-    let key = format!("https://download.docker.com/linux/{}/gpg", os.id);
-    run_visible(
-        "curl",
-        &[
-            "-fsSL",
-            "--proto",
-            "=https",
-            &key,
-            "-o",
-            "/etc/apt/keyrings/docker.asc",
-        ],
-    )?;
-    run_visible("chmod", &["a+r", "/etc/apt/keyrings/docker.asc"])?;
-    let architecture = run("dpkg", &["--print-architecture"])?;
-    fs::write(
-        "/etc/apt/sources.list.d/docker.sources",
-        format!(
-            "Types: deb\nURIs: https://download.docker.com/linux/{}\nSuites: {}\nComponents: stable\nArchitectures: {}\nSigned-By: /etc/apt/keyrings/docker.asc\n",
-            os.id,
-            os.codename,
-            architecture.trim()
-        ),
-    )?;
-    run_visible("apt-get", &["update"])?;
-    run_visible(
-        "apt-get",
-        &[
-            "install",
-            "-y",
-            "docker-ce",
-            "docker-ce-cli",
-            "containerd.io",
-            "docker-buildx-plugin",
-            "docker-compose-plugin",
-        ],
-    )?;
-    run_visible("systemctl", &["enable", "--now", "docker"])?;
-    ensure!(docker_ready(), "Docker was installed but is not responding");
-    Ok(())
 }
 
 #[cfg(test)]

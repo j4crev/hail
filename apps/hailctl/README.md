@@ -12,7 +12,8 @@ installer cannot start a provider).
 
 ## Requirements
 
-- Ubuntu 26.04 LTS or Debian 13, on amd64 or arm64, with root access.
+- Ubuntu 26.04 LTS or Debian 13, on amd64 or arm64. Root (`sudo`) is needed once, to
+  prepare the server; see [who runs what](#who-runs-what).
 - At least 2 GiB of memory and 10 GiB of free disk.
 - Ports 80 and 443 free and reachable from the internet. `hailctl` runs its own
   HTTPS server (Caddy) and obtains certificates automatically.
@@ -21,9 +22,36 @@ installer cannot start a provider).
   addresses like `alice@example.com`).
 - An email address you can read during the install.
 
+## Who runs what
+
+Root is used once, by the installer, and never again:
+
+| As root (the installer, once) | As the unprivileged `hail` user (everything else) |
+| --- | --- |
+| Installs Docker Engine with rootless support, `uidmap`, `dbus-user-session` and `passt` from Docker's and the distribution's apt repositories | Downloads and verifies releases, writes the configuration |
+| Creates the `hail` user and its subordinate IDs, lets its systemd manager run at boot (lingering) | Runs the provider in its own **rootless Docker** daemon |
+| Lets unprivileged processes bind ports 80 and 443 (`net.ipv4.ip_unprivileged_port_start=80`) | Registers with the monitor, creates accounts, backs up, upgrades, rolls back |
+| Disables the system Docker daemon if it installed it | Runs the daily backup as a systemd user timer |
+| Installs `hailctl` for `hail` and a root-owned `/usr/local/bin/hailctl` shim | Updates its own `hailctl` on upgrade |
+
+`hail` cannot become root. It has no sudo rights, and it is not in the `docker` group,
+whose members can take over the host. Its Docker daemon runs in a user namespace, so
+root inside a container is an unprivileged user outside it. The daemon uses pasta
+networking, so the provider still sees each client's real address.
+
+Run `hailctl` either way:
+
+- `sudo hailctl status` and so on: the root-owned shim switches to `hail` before it
+  runs `hail`'s binary, so that binary never runs as root.
+- As `hail`, for example over SSH. Add a key to `/home/hail/.ssh/authorized_keys` to
+  give an operator or agent full control of the provider without any root access.
+
+Files you pass to `sudo hailctl` (an answers file, a backup) must be readable by `hail`,
+for example in `/opt/hail-provider`. The installer copies the ones it is given.
+
 ## What `hailctl install` does
 
-1. Checks the server, and offers to install Docker from Docker's official apt repository.
+1. Checks the server, then prepares it as root (above).
 2. Asks for the two hostnames, a provider ID and your operator email.
 3. Shows the DNS records to create (A/AAAA for both hostnames and the
    `_hail-provider` TXT record) and waits until public DNS has them.
@@ -41,8 +69,9 @@ installer cannot start a provider).
 9. Schedules a daily backup, then prints a link to create the `admin@` passkey.
 
 Each step is recorded in `/opt/hail-provider/hailctl.json`. If anything stops the
-install, run `hailctl install` again; it resumes where it stopped and never
-regenerates secrets.
+install, run the installer (or `sudo hailctl install`) again; it resumes where it
+stopped and never regenerates secrets. Running the installer again also repairs the
+root setup and installs its `hailctl` version.
 
 ## Unattended installs
 
@@ -54,12 +83,13 @@ web_host = "example.com"
 provider_id = "example"
 operator_email = "ops@example.com"
 # Write secrets that must be backed up to /opt/hail-provider/BACK-UP-THESE-SECRETS.txt
-# (root-only) instead of showing them. Copy them offline, then delete that file.
+# (readable only by hail and root) instead of showing them. Copy them offline, then
+# delete that file.
 secrets_to_file = true
 ```
 
 ```bash
-hailctl install --answers answers.toml
+curl -fsSL https://get.racrproto.com | sh -s -- --answers answers.toml
 ```
 
 The emailed operator code is still required: `hailctl` reads it from
@@ -84,7 +114,9 @@ The emailed operator code is still required: `hailctl` reads it from
 
 `install.sh` belongs to one release. It downloads that release's manifest and
 signature, verifies the signature with `openssl` against the pinned public key, and
-installs `hailctl` only if its SHA-256 matches the signed manifest. `hailctl` embeds
+runs `hailctl` (as root, from a private temporary directory) only if its SHA-256
+matches the signed manifest. That verified binary is what the root setup installs for
+`hail`. `hailctl` embeds
 the same key and verifies every release it installs or upgrades to. The images are
 pulled by the immutable digests in the signed manifest. The release key's public half
 is `apps/server/deploy/release/provider-release-signing.did`; see
@@ -113,10 +145,10 @@ taken:
 **Copy backups off the server.** A disk or server loss takes local backups with it.
 `hailctl backup configure` asks for an S3-compatible bucket (Cloudflare R2, Backblaze
 B2, AWS S3, MinIO). It checks that it can write, read and delete there and saves the
-settings, credentials included, in `/opt/hail-provider/backup-remote.toml` (root
-only). From then on every backup is uploaded and read back. A scheduled backup that
-cannot be uploaded fails, so the timer shows it (`systemctl status
-hail-provider-backup`). `hailctl` never deletes from the bucket, so set a lifecycle
+settings, credentials included, in `/opt/hail-provider/backup-remote.toml` (readable
+only by `hail`). From then on every backup is uploaded and read back. A scheduled
+backup that cannot be uploaded fails, so the timer shows it (`systemctl --user status
+hail-provider-backup` as `hail`). `hailctl` never deletes from the bucket, so set a lifecycle
 rule that expires old objects. For unattended setup, pass the same settings as TOML:
 
 ```toml
@@ -151,9 +183,7 @@ or key rotations, cannot be undone. Accounts affected by them may need recovery.
 On the new server (Ubuntu 26.04 or Debian 13), with the old one stopped:
 
 ```bash
-curl -fsSL https://get.racrproto.com/provider-v0.3.0 > install.sh
-HAILCTL_NO_RUN=1 sh install.sh
-hailctl install --restore example-20261112T030000Z-scheduled.tar.age
+curl -fsSL https://get.racrproto.com | sh -s -- --restore example-20261112T030000Z-scheduled.tar.age
 ```
 
 `hailctl` asks for `KEY_ENCRYPTION_KEY` (or reads `HAILCTL_KEY_ENCRYPTION_KEY`), and

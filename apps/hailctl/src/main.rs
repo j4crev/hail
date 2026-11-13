@@ -9,6 +9,7 @@ mod register;
 mod release;
 mod s3;
 mod state;
+mod system;
 mod ui;
 
 use clap::{Parser, Subcommand};
@@ -112,7 +113,32 @@ enum ServiceAccount {
     Create { name: String },
 }
 
+/// As the `hail` user, points Docker and `systemctl --user` at this user's own session
+/// when the caller (SSH, cron, an agent) did not.
+fn user_session_environment() {
+    let uid = system::uid();
+    let runtime = format!("/run/user/{uid}");
+    if uid == 0 || !std::path::Path::new(&runtime).is_dir() {
+        return;
+    }
+    let defaults = [
+        ("XDG_RUNTIME_DIR", runtime.clone()),
+        (
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!("unix:path={runtime}/bus"),
+        ),
+        ("DOCKER_HOST", format!("unix://{runtime}/docker.sock")),
+    ];
+    for (name, value) in defaults {
+        if std::env::var_os(name).is_none() {
+            // SAFETY: runs first in main, before any other thread exists.
+            unsafe { std::env::set_var(name, value) };
+        }
+    }
+}
+
 fn main() {
+    user_session_environment();
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Install {

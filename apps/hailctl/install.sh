@@ -1,21 +1,22 @@
 #!/bin/sh
-# Installs hailctl from one Hail provider release, then runs `hailctl install`.
+# Downloads hailctl from one Hail provider release and runs `hailctl install` as root.
 #
 #   curl -fsSL https://get.racrproto.com | sh
+#   curl -fsSL https://get.racrproto.com | sh -s -- --restore BACKUP   # arguments pass through
 #
 # This copy belongs to release @RELEASE_TAG@. It downloads that release's signed
 # manifest, verifies the signature with the pinned release key using openssl, and
-# installs hailctl only if its SHA-256 matches the signed manifest.
-# Set HAILCTL_NO_RUN=1 to install without starting the installer. HAILCTL_INSTALL_DIR
-# (default /usr/local/bin) and HAILCTL_RELEASE_BASE (default GitHub releases) exist
-# for mirrors and tests; the signature is still checked against the pinned key.
+# runs hailctl only if its SHA-256 matches the signed manifest. That root run prepares
+# the server and the unprivileged `hail` user, which manages the provider from then on.
+# HAILCTL_NO_RUN=1 only saves the verified binary to HAILCTL_INSTALL_DIR (default: the
+# current directory). HAILCTL_RELEASE_BASE (default GitHub releases) exists for mirrors
+# and tests; the signature is still checked against the pinned key.
 set -eu
 
 # Everything runs inside main, so a partially downloaded script does nothing.
 main() {
   tag='@RELEASE_TAG@'
   repository="${HAILCTL_RELEASE_BASE:-https://github.com/j4crev/hail/releases/download}"
-  bin="${HAILCTL_INSTALL_DIR:-/usr/local/bin}"
   public_key='@SIGNING_PUBLIC_KEY_PEM@'
 
   say() { printf '%s\n' "$*" >&2; }
@@ -30,7 +31,6 @@ main() {
   esac
   for tool in curl openssl sha256sum awk mktemp install; do need "$tool"; done
 
-  if [ "$(id -u)" -eq 0 ] || [ -w "$bin" ]; then sudo=''; else need sudo; sudo='sudo'; fi
 
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT INT TERM
@@ -62,15 +62,22 @@ main() {
   actual=$(sha256sum "$work/$asset" | awk '{print $1}')
   [ "$actual" = "$expected" ] || fail "hailctl checksum does not match the signed manifest"
 
-  $sudo install -m 0755 "$work/$asset" "$bin/hailctl"
-  say "Installed $bin/hailctl ($tag, signature verified)."
-  [ "${HAILCTL_NO_RUN:-}" = 1 ] && exit 0
-
-  # stdin is this script when piped from curl; give the installer the terminal.
-  if [ -r /dev/tty ]; then
-    exec $sudo "$bin/hailctl" install --release "$tag" < /dev/tty
+  chmod 0755 "$work/$asset"
+  say "Verified hailctl from $tag (signature and checksum)."
+  if [ "${HAILCTL_NO_RUN:-}" = 1 ]; then
+    bin="${HAILCTL_INSTALL_DIR:-.}"
+    install -m 0755 "$work/$asset" "$bin/hailctl"
+    say "Saved $bin/hailctl. Run: sudo $bin/hailctl install --release $tag"
+    exit 0
   fi
-  say "No terminal is attached. Run: ${sudo:+sudo }$bin/hailctl install --release $tag"
+
+  if [ "$(id -u)" -eq 0 ]; then sudo=''; else need sudo; sudo='sudo'; fi
+  # stdin is this script when piped from curl; give the installer the terminal.
+  if [ -r /dev/tty ] && [ -c /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+    $sudo "$work/$asset" install --release "$tag" "$@" < /dev/tty
+  else
+    $sudo "$work/$asset" install --release "$tag" "$@"
+  fi
 }
 
 main "$@"

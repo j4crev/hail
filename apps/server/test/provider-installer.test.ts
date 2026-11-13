@@ -61,7 +61,7 @@ describe("install.sh", () => {
   it("installs the host's hailctl after verifying the signature and hash", async () => {
     const result = await install();
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stderr).toContain("signature verified");
+    expect(result.stderr).toContain("Verified hailctl from");
     expect(await readFile(join(work, "install", "hailctl"), "utf8")).toBe(`hailctl ${arch}\n`);
   });
 
