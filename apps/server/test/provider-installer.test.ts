@@ -15,9 +15,11 @@ const arch = process.arch === "arm64" ? "arm64" : "amd64";
 // that install.sh downloads from runs in this same process.
 async function spawn(command: string[], env: Record<string, string | undefined> = process.env) {
   const child = Bun.spawn(command, { env, stdout: "pipe", stderr: "pipe" });
-  const [code, , stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
-  return { code, stderr };
+  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  return { code, stdout, stderr };
 }
+
+const fake = (platform: string) => `#!/bin/sh\necho "ran hailctl ${platform}: $*"\n`;
 
 describe("install.sh", () => {
   let work: string, server: ReturnType<typeof Bun.serve>, releaseDir: string, certificate: string;
@@ -28,7 +30,8 @@ describe("install.sh", () => {
     work = await mkdtemp(join(tmpdir(), "hailctl-installer-"));
     releaseDir = join(work, "releases", tag);
     await mkdir(join(work, "bin")); await mkdir(join(work, "install"));
-    for (const platform of ["amd64", "arm64"]) await writeFile(join(work, "bin", `hailctl-linux-${platform}`), `hailctl ${platform}\n`);
+    // Stand-ins for hailctl that report how the installer ran them.
+    for (const platform of ["amd64", "arm64"]) await writeFile(join(work, "bin", `hailctl-linux-${platform}`), fake(platform));
     const build = await spawn(["bun", cli, "build", releaseDir], { ...process.env,
       PROVIDER_RELEASE_SIGNING_DID: publicDidKey(keys.publicKey),
       PROVIDER_RELEASE_SIGNING_KEY: keys.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
@@ -62,7 +65,18 @@ describe("install.sh", () => {
     const result = await install();
     expect(result.code, result.stderr).toBe(0);
     expect(result.stderr).toContain("Verified hailctl from");
-    expect(await readFile(join(work, "install", "hailctl"), "utf8")).toBe(`hailctl ${arch}\n`);
+    expect(await readFile(join(work, "install", "hailctl"), "utf8")).toBe(fake(arch));
+  });
+
+  it("runs the verified hailctl as root with the caller's arguments when no terminal is attached", async () => {
+    // A stand-in sudo, and setsid so that /dev/tty cannot be opened (agents, automation).
+    const path = join(work, "path");
+    await mkdir(path, { recursive: true });
+    await writeFile(join(path, "sudo"), "#!/bin/sh\nexec \"$@\"\n", { mode: 0o755 });
+    const result = await spawn(["setsid", "sh", join(releaseDir, "install.sh"), "--answers", "answers.toml"], { ...process.env,
+      PATH: `${path}:${process.env.PATH}`, CURL_CA_BUNDLE: certificate, HAILCTL_RELEASE_BASE: `https://localhost:${server.port}` });
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toBe(`ran hailctl ${arch}: install --release ${tag} --answers answers.toml\n`);
   });
 
   it("refuses a tampered binary, manifest or signature", async () => {

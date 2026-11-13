@@ -73,7 +73,8 @@ main() {
 
   if [ "$(id -u)" -eq 0 ]; then sudo=''; else need sudo; sudo='sudo'; fi
   # stdin is this script when piped from curl; give the installer the terminal.
-  if [ -r /dev/tty ] && [ -c /dev/tty ] && { : < /dev/tty; } 2>/dev/null; then
+  # Probe in a subshell: a failed redirection on a special builtin would end this shell.
+  if [ -r /dev/tty ] && [ -c /dev/tty ] && (: < /dev/tty) 2>/dev/null; then
     $sudo "$work/$asset" install --release "$tag" "$@" < /dev/tty
   else
     $sudo "$work/$asset" install --release "$tag" "$@"

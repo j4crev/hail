@@ -1,7 +1,7 @@
 [package]
 name = "hailctl"
 # Tracks the provider release version (apps/server/package.json); checked on release.
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 publish = false
 
