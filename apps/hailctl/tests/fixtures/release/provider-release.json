@@ -1,0 +1,36 @@
+{
+  "type": "hail.provider-release",
+  "version": 2,
+  "release": "0.1.0",
+  "tag": "provider-v0.1.0",
+  "commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "images": {
+    "provider": {
+      "repository": "ghcr.io/j4crev/hail/provider",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "platforms": {
+        "linux/amd64": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "linux/arm64": "sha256:0000000000000000000000000000000000000000000000000000000000000003"
+      }
+    },
+    "webClient": {
+      "repository": "ghcr.io/j4crev/hail/provider-web-client",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+      "platforms": {
+        "linux/amd64": "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+        "linux/arm64": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      }
+    }
+  },
+  "tools": {
+    "hailctl": {
+      "linux/amd64": "06585ecea6d9c348a2b126061537546a1f96b6971a0109729dde158d91044110",
+      "linux/arm64": "f90ac7e335ba0c5ffb45c59cf16172466c7a8017c2ce5bf4da9bd9814195c3f3"
+    }
+  },
+  "bundle": {
+    "name": "hail-provider-0.1.0.tar.gz",
+    "sha256": "d39dfb636321314ce11d4e8d7589294c5c1711d2003be8b61a19274f7d4d3230"
+  },
+  "createdAt": "2026-11-13T00:50:36.362Z"
+}

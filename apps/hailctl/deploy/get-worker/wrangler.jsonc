@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hail-get",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "get.racrproto.com", "custom_domain": true }
+  ]
+}

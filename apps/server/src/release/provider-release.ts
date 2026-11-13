@@ -5,7 +5,7 @@ import { createHash, createPrivateKey, createPublicKey, sign, verify, type KeyOb
 import { base58btc } from "multiformats/bases/base58";
 
 export const RELEASE_TYPE = "hail.provider-release";
-export const RELEASE_SIGNATURE_CONTEXT = "hail.provider-release.v1\0";
+export const RELEASE_SIGNATURE_CONTEXT = "hail.provider-release.v2\0";
 /** Files from apps/server/deploy/standalone shipped in every release bundle. */
 export const BUNDLE_FILES = [".env.example", "Caddyfile", "Caddyfile.web-client", "compose.web-client.yaml", "compose.yaml", "README.md"] as const;
 export const PLATFORMS = ["linux/amd64", "linux/arm64"] as const;
@@ -23,9 +23,11 @@ export interface ReleaseImage {
   platforms: Record<Platform, string>;
 }
 export interface ProviderRelease {
-  type: typeof RELEASE_TYPE; version: 1;
+  type: typeof RELEASE_TYPE; version: 2;
   release: string; tag: string; commit: string;
   images: { provider: ReleaseImage; webClient: ReleaseImage };
+  /** SHA-256 (hex) of each `hailctl-<os>-<arch>` binary in the release. */
+  tools: { hailctl: Record<Platform, string> };
   bundle: { name: string; sha256: string };
   createdAt: string;
 }
@@ -33,6 +35,11 @@ export interface ProviderRelease {
 export function releaseTag(version: string): string {
   if (!VERSION.test(version)) throw new Error("Provider release versions are MAJOR.MINOR.PATCH");
   return `provider-v${version}`;
+}
+
+/** The release asset name of the hailctl binary for a platform. */
+export function hailctlAsset(platform: Platform): string {
+  return `hailctl-${platform.replace("/", "-")}`;
 }
 
 export function bundleName(version: string): string {
@@ -51,8 +58,8 @@ export function checkRelease(value: unknown): asserts value is ProviderRelease {
   const fail = (): never => { throw new Error("Invalid provider release manifest"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) fail();
   const row = value as Record<string, unknown>;
-  if (Object.keys(row).join() !== "type,version,release,tag,commit,images,bundle,createdAt" ||
-    row.type !== RELEASE_TYPE || row.version !== 1 || typeof row.release !== "string" || !VERSION.test(row.release) ||
+  if (Object.keys(row).join() !== "type,version,release,tag,commit,images,tools,bundle,createdAt" ||
+    row.type !== RELEASE_TYPE || row.version !== 2 || typeof row.release !== "string" || !VERSION.test(row.release) ||
     row.tag !== `provider-v${row.release}` || typeof row.commit !== "string" || !COMMIT.test(row.commit) ||
     typeof row.createdAt !== "string" || Number.isNaN(Date.parse(row.createdAt))) fail();
   const images = row.images as Record<string, unknown>;
@@ -64,6 +71,9 @@ export function checkRelease(value: unknown): asserts value is ProviderRelease {
     if (!platforms || Object.keys(platforms).join() !== PLATFORMS.join() ||
       PLATFORMS.some(platform => typeof platforms[platform] !== "string" || !DIGEST.test(platforms[platform] as string))) fail();
   }
+  const tools = row.tools as Record<string, unknown>, hailctl = tools?.hailctl as Record<string, unknown>;
+  if (!tools || Object.keys(tools).join() !== "hailctl" || !hailctl || Object.keys(hailctl).join() !== PLATFORMS.join() ||
+    PLATFORMS.some(platform => typeof hailctl[platform] !== "string" || !/^[0-9a-f]{64}$/.test(hailctl[platform] as string))) fail();
   const bundle = row.bundle as Record<string, unknown>;
   if (!bundle || Object.keys(bundle).join() !== "name,sha256" || bundle.name !== bundleName(row.release as string) ||
     typeof bundle.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(bundle.sha256)) fail();
@@ -85,6 +95,11 @@ function signingInput(bytes: Uint8Array): Uint8Array {
 export function publicDidKey(key: KeyObject): string {
   const raw = (key.type === "public" ? key : createPublicKey(key)).export({ format: "der", type: "spki" }).subarray(-32);
   return `did:key:${base58btc.encode(new Uint8Array([0xed, 0x01, ...raw]))}`;
+}
+
+/** PEM (SPKI) form of a pinned did:key, for verifiers such as openssl in install.sh. */
+export function publicKeyPem(didKey: string): string {
+  return publicKeyFromDid(didKey).export({ format: "pem", type: "spki" }).toString().trim();
 }
 
 function publicKeyFromDid(didKey: string): KeyObject {

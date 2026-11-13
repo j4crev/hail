@@ -107,7 +107,7 @@ an untested migration/rollback path.
 ## Provider releases
 
 A provider release is the tag `provider-vX.Y.Z`, where `X.Y.Z` is the version in
-`apps/server/package.json`. The **Release provider** workflow (`release-provider.yml`)
+`apps/server/package.json`; `apps/hailctl/Cargo.toml` must carry the same version. The **Release provider** workflow (`release-provider.yml`)
 runs on that tag and requires the tagged commit to be on `main`, the tag to match
 the version, and a successful `verify-main` handoff for that exact commit. Full
 verification is required on the PR; the main push check reuses that successful run
@@ -116,15 +116,22 @@ releases nor deploys.
 
 It builds the `ghcr.io/j4crev/hail/provider` and `ghcr.io/j4crev/hail/provider-web-client`
 images natively for linux/amd64 and linux/arm64, publishes them as multi-platform
-images tagged with the release and commit, and creates a GitHub prerelease with:
+images tagged with the release and commit, builds static `hailctl` binaries on the
+same native runners, and creates a GitHub prerelease with:
 
 | Asset | Contents |
 | --- | --- |
 | `hail-provider-X.Y.Z.tar.gz` | The standalone deployment files plus `release.env` pinning both multi-platform image digests; reproducible |
-| `provider-release.json` | Manifest (`hail.provider-release` v1): version, tag, commit, each image's multi-platform and per-platform digests, bundle SHA-256 |
-| `provider-release.json.sig` | Unpadded base64url Ed25519 signature over `hail.provider-release.v1\0` followed by the exact manifest bytes |
+| `provider-release.json` | Manifest (`hail.provider-release` v2): version, tag, commit, each image's multi-platform and per-platform digests, each `hailctl` binary's SHA-256, bundle SHA-256 |
+| `provider-release.json.sig` | Unpadded base64url Ed25519 signature over `hail.provider-release.v2\0` followed by the exact manifest bytes |
+| `hailctl-linux-amd64`, `hailctl-linux-arm64` | Static [hailctl](../apps/hailctl/README.md) installer binaries |
+| `install.sh` | The `curl \| sh` entry point for this release: verifies the manifest signature with `openssl` and installs `hailctl` only if its hash matches |
 | `provider-release.txt` | Haili's three-argument wrapper command, using the amd64 per-platform digests |
 | `SHA256SUMS` | Checksums of the files above |
+
+`https://get.racrproto.com` (the Worker in `apps/hailctl/deploy/get-worker`) redirects
+to `install.sh` in the newest provider release that ships it. Releases before 0.2.0
+have no installer and a v1 manifest.
 
 The signing key is the `PROVIDER_RELEASE_SIGNING_KEY` repository secret; its public
 key is pinned in `apps/server/deploy/release/provider-release-signing.did`, and the
@@ -152,8 +159,8 @@ rollback record and retained images. `deploy/public` remains Haili's site profil
 do not replace it with the new fresh-install profile.
 
 1. Review/commit only the intended changes, preserving other agents' edits, and
-   bump `apps/server/package.json` to the next version, in the change itself or in
-   its own PR. Merge, and require successful main verification for that exact `main`
+   bump `apps/server/package.json` and `apps/hailctl/Cargo.toml` (then `cargo build`
+   to refresh its lockfile) to the next version, in the change itself or in its own PR. Merge, and require successful main verification for that exact `main`
    revision. The quick main check proves the merged PR passed full CI for the
    identical tree.
 2. Tag that exact commit and wait for the release:

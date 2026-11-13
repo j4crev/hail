@@ -157,6 +157,27 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=web-client-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=web-client-${{ matrix.arch }}
+      - name: Build static hailctl
+        working-directory: apps/hailctl
+        env:
+          TARGET: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}-unknown-linux-musl
+        run: |
+          sudo apt-get install -y -qq musl-tools
+          command -v rustup >/dev/null || {
+            curl --proto '=https' -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; export PATH="$HOME/.cargo/bin:$PATH"; }
+          rustup show active-toolchain
+          rustup target add "$TARGET"
+          export "CC_${TARGET//-/_}=musl-gcc"
+          cargo build --release --locked --target "$TARGET"
+          binary="target/$TARGET/release/hailctl"
+          test "$("$binary" --version)" = "hailctl ${GITHUB_REF_NAME#provider-v}"
+          mkdir -p "$GITHUB_WORKSPACE/hailctl-out"
+          cp "$binary" "$GITHUB_WORKSPACE/hailctl-out/hailctl-linux-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hailctl-${{ matrix.arch }}
+          path: hailctl-out/hailctl-linux-${{ matrix.arch }}
       - name: Record platform digests
         env:
           PROVIDER: ${{ steps.provider.outputs.digest }}
@@ -194,6 +215,11 @@ jobs:
           pattern: digests-*
           merge-multiple: true
           path: digests
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hailctl-*
+          merge-multiple: true
+          path: hailctl
       - name: Create multi-platform images
         id: index
         env:
@@ -225,6 +251,7 @@ jobs:
           RELEASE_CLIENT_DIGEST: ${{ steps.index.outputs.client_index }}
           RELEASE_CLIENT_AMD64_DIGEST: ${{ steps.index.outputs.client_amd64 }}
           RELEASE_CLIENT_ARM64_DIGEST: ${{ steps.index.outputs.client_arm64 }}
+          RELEASE_HAILCTL_DIR: hailctl
           PROVIDER_RELEASE_SIGNING_KEY: ${{ secrets.PROVIDER_RELEASE_SIGNING_KEY }}
         run: |
           bun apps/server/src/cli/provider-release.ts build release
@@ -236,6 +263,8 @@ jobs:
           subject-path: |
             release/hail-provider-*.tar.gz
             release/provider-release.json
+            release/hailctl-linux-*
+            release/install.sh
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

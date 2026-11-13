@@ -7,7 +7,7 @@ import subprocess
 
 JOBS = (
     "codec-ts", "codec-go", "web", "server", "cli", "database-server",
-    "monitor", "database-monitor", "images", "monitor-image",
+    "monitor", "database-monitor", "images", "monitor-image", "hailctl",
 )
 
 # These are test dependencies, not just runtime package dependencies. In
@@ -16,6 +16,10 @@ COMPONENTS = {
     "apps/content-builder/": {"web"},
     "packages/hail-content-builder/": set(JOBS),
     "apps/client/": {"web", "images"},
+    # hailctl embeds the pinned release key; the server suite tests install.sh and
+    # the release tooling that packages hailctl.
+    "apps/server/deploy/release/": {"hailctl", "server"},
+    "apps/hailctl/": {"hailctl", "server"},
     "apps/server/": {"server", "database-server", "web", "monitor", "database-monitor", "images"},
     "apps/cli/": {"cli", "database-server"},
     "apps/plc-monitor/": {"monitor", "database-monitor", "database-server", "monitor-image"},
