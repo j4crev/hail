@@ -5,8 +5,11 @@
 // Worker only chooses which release to start from.
 const FEED = "https://github.com/j4crev/hail/releases.atom";
 const DOWNLOAD = "https://github.com/j4crev/hail/releases/download";
-/** The first provider release whose installer works (0.2.0's cannot start a provider). */
-export const MINIMUM: [number, number, number] = [0, 3, 0];
+/**
+ * The first provider release whose installer is still supported: 0.4.0 runs providers as
+ * an unprivileged user; earlier installers ran them as root (and 0.2.0's cannot start one).
+ */
+export const MINIMUM: [number, number, number] = [0, 4, 0];
 const CACHE_SECONDS = 300;
 
 type Version = [number, number, number];

@@ -7,8 +7,8 @@ curl -fsSL https://get.racrproto.com | sh
 ```
 
 To install a specific release instead of the newest, name it:
-`curl -fsSL https://get.racrproto.com/provider-v0.3.0 | sh` (0.3.0 or later; the 0.2.0
-installer cannot start a provider).
+`curl -fsSL https://get.racrproto.com/provider-v0.4.0 | sh` (0.4.0 or later: earlier
+installers run the provider as root, which later versions do not manage).
 
 ## Requirements
 
@@ -143,6 +143,7 @@ finishes.
 | `hailctl backup configure [--from FILE \| --remove]` | Copy every backup to an S3-compatible bucket |
 | `hailctl restore FILE [--yes]` | Replace this provider's data (and release) with a backup's |
 | `hailctl install --restore FILE` | Rebuild a provider from a backup on a new server |
+| `hailctl decommission [--confirm ID]` | Take the provider out of service; see [decommissioning](#decommissioning) |
 | `hailctl admin passkey-link` | A new single-use, ten-minute passkey link for `admin@` |
 | `hailctl service-account create NAME` | Create a reserved service account such as `abuse` |
 
@@ -227,6 +228,34 @@ restores the configuration and data. Point both hostnames' DNS at the new server
 `hailctl` then waits for DNS, starts the backup's release, and schedules backups. The
 monitor registration, accounts and passkeys carry over. Run `hailctl backup configure`
 again: bucket settings are not part of a backup.
+
+## Decommissioning
+
+To retire a provider, or to rebuild it from scratch:
+
+```bash
+sudo hailctl decommission     # asks you to type the provider ID
+sudo hailctl-uninstall
+```
+
+`hailctl decommission`, running as `hail`, does the following:
+
+1. Warns about active user accounts. Their users lose them unless they move to another
+   provider first.
+2. Keeps a final backup (skip with `--no-backup`) and copies it to the bucket if one is
+   configured.
+3. Leaves the shared monitor. This stops monitoring of the provider's identities and
+   frees its hostnames to register again later. `--skip-monitor` keeps the registration,
+   for example when the monitor cannot be reached; its operator can retire it.
+4. Deletes the containers, volumes, images, configuration and secrets.
+5. Lists what only you can remove elsewhere: DNS records, the Cloudflare tunnel, the
+   email bridge's routing and Worker, backup copies in the bucket.
+
+`hailctl-uninstall`, a root-owned script the installer put in place, then removes the
+`hail` user with its rootless Docker data, `/opt/hail-provider`, `hailctl` and the
+low-port setting. It moves the final backup to `/root/hail-provider-final-backups`.
+Docker Engine stays installed. The provider's PLC identities remain in the public
+directory and cannot be deleted.
 
 ## Not yet included
 

@@ -628,7 +628,7 @@ fn prepare(options: &Options) -> Result<()> {
     system::continue_as_user(&account, &args)
 }
 
-fn owned_by_me(path: &Path) -> bool {
+pub(crate) fn owned_by_me(path: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
     fs::metadata(path).is_ok_and(|m| m.uid() == system::uid())
 }

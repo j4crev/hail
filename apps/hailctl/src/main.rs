@@ -2,6 +2,7 @@
 mod backup;
 mod bridge;
 mod compose;
+mod decommission;
 mod dns;
 mod host;
 mod install;
@@ -72,6 +73,19 @@ enum Command {
         /// Run by the daily timer.
         #[arg(long, hide = true)]
         scheduled: bool,
+    },
+    /// Take this provider out of service: final backup, leave the shared monitor, delete
+    /// its containers and data. `sudo hailctl-uninstall` then removes the root setup.
+    Decommission {
+        /// Confirm without a prompt by giving the provider ID.
+        #[arg(long, value_name = "PROVIDER_ID")]
+        confirm: Option<String>,
+        /// Skip the final backup.
+        #[arg(long)]
+        no_backup: bool,
+        /// Keep the monitor registration (for example when the monitor cannot be reached).
+        #[arg(long)]
+        skip_monitor: bool,
     },
     /// Show the installed release and service health.
     Status,
@@ -153,6 +167,16 @@ fn main() {
             restore,
         }),
         Command::Upgrade { release } => recovery::upgrade(&cli.dir, release),
+        Command::Decommission {
+            confirm,
+            no_backup,
+            skip_monitor,
+        } => decommission::decommission(&decommission::Options {
+            dir: cli.dir,
+            confirm,
+            no_backup,
+            skip_monitor,
+        }),
         Command::Rollback { yes } => recovery::rollback(&cli.dir, yes),
         Command::Restore { file, yes } => recovery::restore(&cli.dir, &file, yes),
         Command::Backup {
