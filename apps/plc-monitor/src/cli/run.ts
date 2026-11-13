@@ -1,6 +1,6 @@
 import { ReceiverLifecycleClient, cleanMonitorReceiver } from "../receiver-lifecycle.js";
 import { SourceAdmission } from "../admission.js";
-import { createProviderRegistrationApi } from "../provider-registration.js";
+import { createProviderDeregistrationApi, createProviderRegistrationApi } from "../provider-registration.js";
 import { ReceiverClient } from "../receiver-provisioning.js";
 import { EnrollmentProviders } from "../providers.js";
 import { IncidentCapabilities } from "../incident-capabilities.js";
@@ -36,6 +36,7 @@ if (enrollment) {
   // Registration v2 requires the shared receiver (spec/monitor-receiver.md).
   const sharedReceiver = Bun.env.MONITOR_RECEIVER_ORIGIN ? new ReceiverClient(signer, Bun.env.MONITOR_RECEIVER_ORIGIN) : undefined;
   const registration = createProviderRegistrationApi(providers, signer, enrollment.monitorOrigin, sharedReceiver, undefined, enrollment.apiOrigin);
+  const deregistration = createProviderDeregistrationApi(providers, sharedReceiver);
   const api = createMonitorEnrollmentApi(enrollment, monitor, signer, providers);
   const admission = new SourceAdmission();
   Bun.serve({ hostname: enrollment.hostname, port: enrollment.port, maxRequestBodySize: 32_768,
@@ -45,9 +46,11 @@ if (enrollment) {
       const source = Bun.env.MONITOR_TRUST_PROXY === "true"
         ? request.headers.get("X-Hail-Monitor-Client-IP") ?? "unknown"
         : server.requestIP(request)?.address ?? "unknown";
-      if (!admission.take(source, path === "/api/v1/providers/register"))
+      const providerRequest = path === "/api/v1/providers/register" || path === "/api/v1/providers/deregister";
+      if (!admission.take(source, providerRequest))
         return Response.json({ error: "Source request limit reached" }, { status: 429,
           headers: { "Retry-After": "60", "Cache-Control": "no-store" } });
+      if (path === "/api/v1/providers/deregister") return deregistration.fetch(request);
       return path === "/api/v1/providers/register" ? registration.fetch(request) : api.fetch(request);
     },
   });
