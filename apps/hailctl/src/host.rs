@@ -86,14 +86,15 @@ fn memory_mib() -> Result<u64> {
     Ok(kib / 1024)
 }
 
-fn available_gib(path: &str) -> Result<u64> {
-    let output = run("df", &["-Pk", path])?;
+/// Free bytes on the filesystem holding `path`.
+pub fn available_bytes(path: &std::path::Path) -> Result<u64> {
+    let output = run("df", &["-Pk", &path.to_string_lossy()])?;
     let kib: u64 = output
         .lines()
         .nth(1)
         .and_then(|line| line.split_whitespace().nth(3)?.parse().ok())
         .context("could not read free disk space")?;
-    Ok(kib / 1024 / 1024)
+    Ok(kib * 1024)
 }
 
 pub fn is_root() -> bool {
@@ -123,7 +124,7 @@ pub fn preflight(ports: bool) -> Result<Preflight> {
             "{memory} MiB of memory; 2 GiB or more is recommended"
         ));
     }
-    let disk = available_gib("/")?;
+    let disk = available_bytes(std::path::Path::new("/"))? >> 30;
     ensure!(
         disk >= MIN_DISK_GIB,
         "{disk} GiB free on /; at least {MIN_DISK_GIB} GiB is needed"

@@ -2,7 +2,7 @@
 //! from the answers file and a few values from environment variables.
 use anyhow::{Context, Result, bail};
 use inquire::validator::Validation;
-use inquire::{Confirm, Select, Text};
+use inquire::{Confirm, Password, PasswordDisplayMode, Select, Text};
 use std::io::{BufRead, IsTerminal};
 
 pub fn interactive() -> bool {
@@ -43,6 +43,15 @@ pub fn confirm(prompt: &str, default: bool) -> Result<bool> {
     }
     Confirm::new(prompt)
         .with_default(default)
+        .prompt()
+        .context("cancelled")
+}
+
+/// A hidden single entry, such as a key the operator pastes.
+pub fn secret(prompt: &str) -> Result<String> {
+    Password::new(prompt)
+        .without_confirmation()
+        .with_display_mode(PasswordDisplayMode::Masked)
         .prompt()
         .context("cancelled")
 }

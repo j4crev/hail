@@ -150,6 +150,8 @@ pub fn apply(env: &mut Env, answers: &Answers, credentials: &Value) -> Result<()
     env.set("SIGNUP_MONITOR_TOKEN", field("token")?);
     env.set("SIGNUP_MONITOR_PUBLIC_KEY", field("monitorPublicKey")?);
     env.set("ALPHA_SIGNUP_MONITOR_ORIGIN", field("monitorOrigin")?);
+    // Signs signup invitations; independent of every other secret.
+    env.ensure("ALPHA_SIGNUP_INVITE_KEY", secret);
     env.set("PUBLIC_SELF_SERVICE_ONBOARDING", "true");
     env.set("PUBLIC_ALPHA_SIGNUP", "true");
     Ok(())
@@ -216,6 +218,7 @@ mod tests {
         assert_eq!(env.get("SIGNUP_EMAIL_TOKEN"), Some("r"));
         assert_eq!(env.get("SIGNUP_MONITOR_TOKEN"), Some("t"));
         assert_eq!(env.get("PUBLIC_ALPHA_SIGNUP"), Some("true"));
+        assert_eq!(env.get("ALPHA_SIGNUP_INVITE_KEY").map(str::len), Some(43));
         let mut other = credentials.clone();
         other["providerOrigin"] = json!("https://svr.other.org");
         assert!(apply(&mut Env::default(), &answers(), &other).is_err());
