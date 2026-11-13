@@ -38,6 +38,7 @@ jobs:
       database-monitor: ${{ steps.select.outputs.database-monitor }}
       images: ${{ steps.select.outputs.images }}
       monitor-image: ${{ steps.select.outputs.monitor-image }}
+      hailctl: ${{ steps.select.outputs.hailctl }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -320,10 +321,35 @@ jobs:
           # Main full runs populate shared caches; PR uploads cost more than these builds.
           cache-to: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'type=gha,mode=max,scope=ci-monitor' || '' }}
 
+  hailctl:
+    needs: changes
+    if: needs.changes.outputs.hailctl == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/hailctl/target
+          key: hailctl-${{ runner.os }}-${{ hashFiles('apps/hailctl/rust-toolchain.toml', 'apps/hailctl/Cargo.lock') }}
+      - name: Verify hailctl and a static release build
+        working-directory: apps/hailctl
+        run: |
+          sudo apt-get install -y -qq musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          CC_x86_64_unknown_linux_musl=musl-gcc cargo build --release --locked --target x86_64-unknown-linux-musl
+          test "$(target/x86_64-unknown-linux-musl/release/hailctl --version)" = "hailctl $(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)"
+
   # Keep the required ruleset context stable. Unexpected skips cannot pass it.
   verify:
     if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/main' || inputs.force_full)
-    needs: [changes, codec-ts, codec-go, web, server, cli, database-server, monitor, database-monitor, images, monitor-image]
+    needs: [changes, codec-ts, codec-go, web, server, cli, database-server, monitor, database-monitor, images, monitor-image, hailctl]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

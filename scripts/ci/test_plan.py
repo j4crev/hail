@@ -26,6 +26,11 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.selected("apps/plc-monitor/src/monitor.ts"),
                          {"monitor", "database-monitor", "database-server", "monitor-image"})
 
+    def test_hailctl_and_its_release_key(self):
+        self.assertEqual(self.selected("apps/hailctl/src/main.rs"), {"hailctl", "server"})
+        self.assertEqual(self.selected("apps/hailctl/install.sh"), {"hailctl", "server"})
+        self.assertEqual(self.selected("apps/server/deploy/release/provider-release-signing.did"), {"hailctl", "server"})
+
     def test_builder_ownership(self):
         self.assertEqual(self.selected("apps/content-builder/src/main.ts"), {"web"})
         self.assertEqual(self.selected("packages/hail-content-builder/src/core.ts"), set(JOBS))

@@ -54,8 +54,8 @@ task, without asking for confirmation again at each step:
    protection; do not skip checks or bypass protections to release.
 4. Merge the verified PR, then wait for successful main verification of the exact
    merged revision. If the work is already merged, start from this verification.
-5. Cut a provider release: bump `apps/server/package.json` to the next version in
-   its own PR (verified and merged like any change), then push the annotated tag
+5. Cut a provider release: bump `apps/server/package.json` and `apps/hailctl/Cargo.toml`
+   to the next version in its own PR (verified and merged like any change), then push the annotated tag
    `provider-vX.Y.Z` on that exact merged `main` commit. Wait for the whole
    `release-provider.yml` run to succeed. If `main` advances, review the additional
    changes rather than silently releasing a different revision.

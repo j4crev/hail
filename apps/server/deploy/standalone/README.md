@@ -6,6 +6,11 @@ peer providers use its federation endpoints. The optional reference web client
 is published as a separate image. Keep the same reviewed revision for both until
 an explicit cross-version compatibility policy is established.
 
+**Most operators should use [hailctl](../../../hailctl/README.md):**
+`curl -fsSL https://get.racrproto.com | sh` performs everything below on Ubuntu 26.04
+or Debian 13, including DNS checks, monitor registration and the first administrator.
+This guide is the manual equivalent, for other hosts or ingress setups.
+
 Hail is pre-launch. This guide is for a **fresh installation**, not a PostgreSQL
 upgrade or a replacement for an existing deployment's volumes and configuration.
 It is the provider deployment and first-administrator runbook. The PLC monitor is

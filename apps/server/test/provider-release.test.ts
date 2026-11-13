@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -12,9 +12,10 @@ const keys = generateKeyPairSync("ed25519");
 const pem = keys.privateKey.export({ format: "pem", type: "pkcs8" }).toString(), did = publicDidKey(keys.publicKey);
 const image = (repository: string, base: number) => ({ repository, digest: digest(base),
   platforms: { "linux/amd64": digest(base + 1), "linux/arm64": digest(base + 2) } });
-const release: ProviderRelease = { type: "hail.provider-release", version: 1, release: "0.1.0", tag: "provider-v0.1.0",
+const release: ProviderRelease = { type: "hail.provider-release", version: 2, release: "0.1.0", tag: "provider-v0.1.0",
   commit: "a".repeat(40), images: { provider: image("ghcr.io/j4crev/hail/provider", 1),
     webClient: image("ghcr.io/j4crev/hail/provider-web-client", 4) },
+  tools: { hailctl: { "linux/amd64": "1".repeat(64), "linux/arm64": "2".repeat(64) } },
   bundle: { name: "hail-provider-0.1.0.tar.gz", sha256: "f".repeat(64) }, createdAt: "2026-11-13T00:00:00.000Z" };
 
 describe("provider release manifest", () => {
@@ -34,6 +35,7 @@ describe("provider release manifest", () => {
       { ...release, bundle: { ...release.bundle, name: "other.tar.gz" } },
       { ...release, images: { ...release.images, provider: { ...release.images.provider, repository: "docker.io/x/provider" } } },
       { ...release, images: { ...release.images, provider: { ...release.images.provider, platforms: { "linux/amd64": digest(2) } } } },
+      { ...release, tools: { hailctl: { "linux/amd64": "1".repeat(64) } } }, { ...release, version: 1 },
       { ...release, extra: true }])
       expect(() => encodeRelease(bad as ProviderRelease)).toThrow("Invalid provider release manifest");
     expect(() => releaseTag("v1.2.3")).toThrow();
@@ -50,7 +52,7 @@ describe("provider release CLI", () => {
   let out: string;
   const cli = new URL("../src/cli/provider-release.ts", import.meta.url).pathname;
 
-  const env = { ...process.env, PROVIDER_RELEASE_SIGNING_DID: did, PROVIDER_RELEASE_SIGNING_KEY: pem,
+  const env: Record<string, string | undefined> = { ...process.env, PROVIDER_RELEASE_SIGNING_DID: did, PROVIDER_RELEASE_SIGNING_KEY: pem,
     RELEASE_TAG: `provider-v${version}`, RELEASE_COMMIT: "b".repeat(40),
     RELEASE_PROVIDER_REPOSITORY: "ghcr.io/j4crev/hail/provider", RELEASE_PROVIDER_DIGEST: digest(1),
     RELEASE_PROVIDER_AMD64_DIGEST: digest(2), RELEASE_PROVIDER_ARM64_DIGEST: digest(3),
@@ -61,7 +63,12 @@ describe("provider release CLI", () => {
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
     return { code, stdout, stderr };
   };
-  beforeAll(async () => { out = await mkdtemp(join(tmpdir(), "provider-release-test-")); });
+  beforeAll(async () => {
+    out = await mkdtemp(join(tmpdir(), "provider-release-test-"));
+    await mkdir(join(out, "bin"));
+    for (const arch of ["amd64", "arm64"]) await writeFile(join(out, "bin", `hailctl-linux-${arch}`), `fake hailctl ${arch}\n`);
+    env.RELEASE_HAILCTL_DIR = join(out, "bin");
+  });
   afterAll(async () => { await rm(out, { recursive: true, force: true }); });
 
   it("accepts only the tag matching the server package version", async () => {
@@ -84,10 +91,18 @@ describe("provider release CLI", () => {
     expect(pins).toContain(`HAIL_WEB_CLIENT_IMAGE=ghcr.io/j4crev/hail/provider-web-client@${digest(4)}`);
     const sums = await readFile(join(first, "SHA256SUMS"), "utf8");
     expect(sums.trim().split("\n").map(line => line.split("  ")[1]).sort())
-      .toEqual([name, "provider-release.json", "provider-release.json.sig", "provider-release.txt"].sort());
+      .toEqual([name, "provider-release.json", "provider-release.json.sig", "provider-release.txt", "install.sh",
+        "hailctl-linux-amd64", "hailctl-linux-arm64"].sort());
+    const installer = await readFile(join(first, "install.sh"), "utf8");
+    expect(installer).toContain(`tag='provider-v${version}'`);
+    expect(installer).toContain("-----BEGIN PUBLIC KEY-----");
+    expect(installer).not.toMatch(/@[A-Z_]+@/);
     const verified = await run(["verify", first]);
     expect(verified.code).toBe(0);
     expect(JSON.parse(verified.stdout)).toMatchObject({ verified: true, commit: "b".repeat(40) });
+    await writeFile(join(first, "hailctl-linux-arm64"), "tampered");
+    expect((await run(["verify", first])).stderr).toContain("hailctl-linux-arm64 does not match");
+    await writeFile(join(first, "hailctl-linux-arm64"), "fake hailctl arm64\n");
     await writeFile(join(first, name), "tampered");
     expect((await run(["verify", first])).stderr).toContain("Bundle checksum does not match");
     expect((await run(["verify", second], { ...env, PROVIDER_RELEASE_SIGNING_DID: publicDidKey(generateKeyPairSync("ed25519").publicKey) })).code).not.toBe(0);
