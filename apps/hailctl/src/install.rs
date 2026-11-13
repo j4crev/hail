@@ -5,7 +5,7 @@ use crate::state::{
     Answers, Env, Paths, State, base_env, load_answers, valid_email, valid_hostname,
     valid_provider_id,
 };
-use crate::{backup, dns, host, recovery, register, release, ui};
+use crate::{backup, dns, host, recovery, register, release, system, ui};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::fs;
 use std::io::Write;
@@ -23,11 +23,21 @@ pub struct Options {
 
 const SERVICE_ACCOUNT: &str = "src/cli/service-account.ts";
 
+/// As root (the installer's verified binary): prepares the server, then continues as the
+/// `hail` user. As `hail`: installs, or resumes installing, the provider.
 pub fn install(options: &Options) -> Result<()> {
+    if host::is_root() {
+        return prepare(options);
+    }
     let paths = Paths::new(&options.dir);
     ensure!(
-        host::is_root(),
-        "run hailctl as root (for example with sudo)"
+        paths.dir.is_dir() && owned_by_me(&paths.dir),
+        "{} is not set up for this user; run the installer as root first (curl -fsSL https://get.racrproto.com | sh)",
+        paths.dir.display()
+    );
+    ensure!(
+        host::docker_ready(),
+        "this user's rootless Docker is not answering; run the installer again to repair it"
     );
     let _lock = crate::state::lock(&paths, false)?;
     let mut state = State::load(&paths)?;
@@ -36,32 +46,6 @@ pub fn install(options: &Options) -> Result<()> {
             "a provider is already installed in {}; use `hailctl restore FILE`",
             paths.dir.display()
         );
-    }
-
-    ui::step("Checking this server");
-    let preflight = host::preflight(!state.started)?;
-    ui::info(&format!(
-        "{} {} on {}",
-        preflight.os.id,
-        preflight.os.version,
-        std::env::consts::ARCH
-    ));
-    for warning in &preflight.warnings {
-        ui::info(&format!("Warning: {warning}"));
-    }
-
-    ui::step("Docker");
-    if host::docker_ready() {
-        ui::info("Docker Engine and Compose are installed.");
-    } else {
-        ensure!(
-            ui::confirm(
-                "Docker is not installed. Install it from Docker's official apt repository?",
-                options.answers.is_some()
-            )?,
-            "Docker is required; install it and run hailctl install again"
-        );
-        host::install_docker(&preflight.os)?;
     }
     if state.answers.is_none() {
         let volumes = host::run(
@@ -165,6 +149,8 @@ pub fn install(options: &Options) -> Result<()> {
         ui::info("Copy them off this server with `hailctl backup configure`.");
     }
 
+    // Copies of the operator's files handed over by the root step are no longer needed.
+    let _ = fs::remove_dir_all(paths.dir.join("incoming"));
     if options.restore.is_some() {
         ui::step("Done");
         ui::info(&format!(
@@ -486,17 +472,67 @@ fn passkey_link(compose: &Compose) -> Result<String> {
         .ok_or_else(|| anyhow!("no passkey link was returned"))
 }
 
+/// The root part of `install`: checks, packages, the `hail` user and its rootless
+/// Docker, then the rest of the install as `hail`.
+fn prepare(options: &Options) -> Result<()> {
+    let paths = Paths::new(&options.dir);
+    let started = State::load(&paths).is_ok_and(|state| state.started);
+    ui::step("Checking this server");
+    let preflight = host::preflight(!started)?;
+    ui::info(&format!(
+        "{} {} on {}",
+        preflight.os.id,
+        preflight.os.version,
+        std::env::consts::ARCH
+    ));
+    for warning in &preflight.warnings {
+        ui::info(&format!("Warning: {warning}"));
+    }
+    let account = system::bootstrap(&preflight.os, &paths.dir, options.answers.is_some())?;
+    let mut args = vec![
+        "--dir".to_string(),
+        paths.dir.to_string_lossy().into_owned(),
+        "install".into(),
+    ];
+    if let Some(tag) = &options.release {
+        args.extend(["--release".into(), tag.clone()]);
+    }
+    // Files root can read may be unreadable for hail: hand over copies.
+    if let Some(file) = &options.answers {
+        let copy = system::hand_over(&account, &paths.dir, file)?;
+        args.extend(["--answers".into(), copy.to_string_lossy().into_owned()]);
+    }
+    if let Some(file) = &options.restore {
+        let copy = system::hand_over(&account, &paths.dir, file)?;
+        args.extend(["--restore".into(), copy.to_string_lossy().into_owned()]);
+    }
+    system::continue_as_user(&account, &args)
+}
+
+fn owned_by_me(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(path).is_ok_and(|m| m.uid() == system::uid())
+}
+
 pub(crate) fn configured(dir: &Path) -> Result<(Paths, State)> {
+    ensure!(
+        !host::is_root(),
+        "run `sudo hailctl ...` (the installed shim switches to the {} user) or run hailctl as {}",
+        system::USER,
+        system::USER
+    );
     let paths = Paths::new(dir);
+    ensure!(
+        owned_by_me(&paths.dir),
+        "{} belongs to another user; run hailctl as the {} user",
+        dir.display(),
+        system::USER
+    );
     let state = State::load(&paths)?;
     ensure!(
         state.configured && state.release.is_some(),
         "no provider is installed in {}; run hailctl install",
         dir.display()
-    );
-    ensure!(
-        host::is_root(),
-        "run hailctl as root (for example with sudo)"
     );
     Ok((paths, state))
 }

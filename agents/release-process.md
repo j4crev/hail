@@ -125,7 +125,7 @@ same native runners, and creates a GitHub prerelease with:
 | `provider-release.json` | Manifest (`hail.provider-release` v2): version, tag, commit, each image's multi-platform and per-platform digests, each `hailctl` binary's SHA-256, bundle SHA-256 |
 | `provider-release.json.sig` | Unpadded base64url Ed25519 signature over `hail.provider-release.v2\0` followed by the exact manifest bytes |
 | `hailctl-linux-amd64`, `hailctl-linux-arm64` | Static [hailctl](../apps/hailctl/README.md) installer binaries |
-| `install.sh` | The `curl \| sh` entry point for this release: verifies the manifest signature with `openssl` and installs `hailctl` only if its hash matches |
+| `install.sh` | The `curl \| sh` entry point for this release: verifies the manifest signature with `openssl` and runs `hailctl install` as root only if its hash matches; that root step prepares the server and the unprivileged `hail` user |
 | `provider-release.txt` | Haili's three-argument wrapper command, using the amd64 per-platform digests |
 | `SHA256SUMS` | Checksums of the files above |
 

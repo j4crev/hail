@@ -540,27 +540,34 @@ pub fn save_remote(paths: &Paths, remote: &Remote) -> Result<()> {
     write_private(&paths.remote(), toml::to_string(remote)?.as_bytes())
 }
 
-/// Installs and starts the daily backup timer.
+/// Installs and starts the daily backup timer, as a systemd user unit of the `hail` user
+/// (its manager runs at boot through lingering).
 pub fn schedule(paths: &Paths) -> Result<()> {
     let executable = std::env::current_exe().context("cannot locate the hailctl executable")?;
     let directory = paths.dir.to_string_lossy();
+    let units = PathBuf::from(std::env::var("HOME").context("HOME is not set")?)
+        .join(".config/systemd/user");
+    fs::create_dir_all(&units)?;
     for (path, text) in [
         (
-            format!("/etc/systemd/system/{UNIT}.service"),
+            units.join(format!("{UNIT}.service")),
             format!(
                 "[Unit]\nDescription=Hail provider backup\nRequires=docker.service\nAfter=docker.service\n\n[Service]\nType=oneshot\nExecStart={} --dir {directory} backup --scheduled\nNice=10\nIOSchedulingClass=idle\n",
                 executable.display()
             ),
         ),
         (
-            format!("/etc/systemd/system/{UNIT}.timer"),
+            units.join(format!("{UNIT}.timer")),
             "[Unit]\nDescription=Daily Hail provider backup\n\n[Timer]\nOnCalendar=daily\nRandomizedDelaySec=1h\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n".to_string(),
         ),
     ] {
-        fs::write(&path, text).with_context(|| format!("cannot write {path}"))?;
+        fs::write(&path, text).with_context(|| format!("cannot write {}", path.display()))?;
     }
-    crate::host::run("systemctl", &["daemon-reload"])?;
-    crate::host::run("systemctl", &["enable", "--now", &format!("{UNIT}.timer")])?;
+    crate::host::run("systemctl", &["--user", "daemon-reload"])?;
+    crate::host::run(
+        "systemctl",
+        &["--user", "enable", "--now", &format!("{UNIT}.timer")],
+    )?;
     Ok(())
 }
 
