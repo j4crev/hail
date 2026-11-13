@@ -7,8 +7,8 @@ curl -fsSL https://get.racrproto.com | sh
 ```
 
 To install a specific release instead of the newest, name it:
-`curl -fsSL https://get.racrproto.com/provider-v0.3.0 | sh` (0.3.0 or later; the 0.2.0
-installer cannot start a provider).
+`curl -fsSL https://get.racrproto.com/provider-v0.4.0 | sh` (0.4.0 or later: earlier
+installers run the provider as root, which later versions do not manage).
 
 ## Requirements
 
