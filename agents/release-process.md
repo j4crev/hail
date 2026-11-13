@@ -130,8 +130,9 @@ same native runners, and creates a GitHub prerelease with:
 | `SHA256SUMS` | Checksums of the files above |
 
 `https://get.racrproto.com` (the Worker in `apps/hailctl/deploy/get-worker`) redirects
-to `install.sh` in the newest provider release that ships it. Releases before 0.2.0
-have no installer and a v1 manifest.
+to `install.sh` in the newest provider release with a working installer (0.3.0 or
+later). Releases before 0.2.0 have no installer and a v1 manifest; 0.2.0's installer
+cannot start a provider.
 
 The signing key is the `PROVIDER_RELEASE_SIGNING_KEY` repository secret; its public
 key is pinned in `apps/server/deploy/release/provider-release-signing.did`, and the

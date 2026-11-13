@@ -295,6 +295,51 @@ pub fn unpack(bundle: &[u8], root: &str, target: &Path) -> Result<()> {
     Ok(())
 }
 
+/// This machine's release platform.
+pub fn platform() -> Result<&'static str> {
+    match std::env::consts::ARCH {
+        "x86_64" => Ok("linux/amd64"),
+        "aarch64" => Ok("linux/arm64"),
+        other => bail!("unsupported architecture {other}"),
+    }
+}
+
+/// Replaces the running hailctl with the release's binary for this machine, verified
+/// against the signed manifest. Returns the installed path.
+pub fn install_hailctl(release: &Release) -> Result<std::path::PathBuf> {
+    let platform = platform()?;
+    let expected = release
+        .tools
+        .hailctl
+        .get(platform)
+        .ok_or_else(|| anyhow!("the release has no hailctl for {platform}"))?;
+    let asset = format!("hailctl-{}", platform.replace('/', "-"));
+    let binary = download(
+        &format!("{RELEASES}/{}/{asset}", release.tag),
+        64 * 1024 * 1024,
+    )?;
+    ensure!(
+        &sha256_hex(&binary) == expected,
+        "{asset} does not match the signed manifest"
+    );
+    let path = std::env::current_exe().context("cannot locate the hailctl executable")?;
+    let staged = path.with_extension("new");
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o755)
+            .open(&staged)?;
+        file.write_all(&binary)?;
+        file.sync_all()?;
+    }
+    fs::rename(&staged, &path)?;
+    Ok(path)
+}
+
 /// Refuses releases older than `current`; installing the same version again is allowed.
 pub fn check_upgrade(current: &str, next: &str) -> Result<()> {
     match (parse_version(current), parse_version(next)) {

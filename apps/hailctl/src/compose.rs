@@ -2,6 +2,9 @@
 //! operator `.env`, and the release's image pins (which always win).
 use crate::state::Paths;
 use anyhow::{Context, Result, ensure};
+use std::fs::File;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub struct Compose {
@@ -63,6 +66,52 @@ impl Compose {
             extra.join(" ")
         );
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    /// Runs, streaming standard output into a new private file.
+    pub fn to_file(&self, extra: &[&str], path: &Path) -> Result<()> {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)?;
+        let status = self
+            .command(extra)
+            .stdout(file)
+            .status()
+            .context("could not run docker compose")?;
+        ensure!(
+            status.success(),
+            "docker compose {} failed",
+            extra.join(" ")
+        );
+        ensure!(
+            path.metadata()?.len() > 0,
+            "docker compose {} produced no output",
+            extra.join(" ")
+        );
+        Ok(())
+    }
+
+    /// Runs with standard input read from a file, discarding standard output.
+    pub fn feed_file(&self, extra: &[&str], path: &Path) -> Result<()> {
+        let status = self
+            .command(extra)
+            .stdin(File::open(path)?)
+            .stdout(Stdio::null())
+            .status()
+            .context("could not run docker compose")?;
+        ensure!(
+            status.success(),
+            "docker compose {} failed",
+            extra.join(" ")
+        );
+        Ok(())
+    }
+
+    /// Stops the services that write to the database. PostgreSQL and Caddy keep running.
+    pub fn stop_writers(&self) -> Result<()> {
+        self.run(&["stop", "provider", "web-client"])
     }
 
     /// Runs a provider command (from its image's working directory) and parses its JSON output.

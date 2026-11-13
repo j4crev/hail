@@ -138,6 +138,20 @@ pub struct State {
     pub registration: Option<Registration>,
     pub registered: bool,
     pub accounts: bool,
+    /// The daily backup timer is installed.
+    pub backups_scheduled: bool,
+    /// Set by a successful upgrade: what `hailctl rollback` returns to.
+    pub rollback: Option<RollbackPoint>,
+    /// `install --restore`: the backup's release, until its database is restored.
+    pub restoring: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RollbackPoint {
+    /// The release before the upgrade.
+    pub release: String,
+    /// The pre-upgrade backup's file name in the backups directory.
+    pub backup: String,
 }
 
 pub struct Paths {
@@ -165,6 +179,43 @@ impl Paths {
     pub fn secrets(&self) -> PathBuf {
         self.dir.join("BACK-UP-THESE-SECRETS.txt")
     }
+    pub fn backups(&self) -> PathBuf {
+        self.dir.join("backups")
+    }
+    /// Off-host backup bucket settings (holds credentials).
+    pub fn remote(&self) -> PathBuf {
+        self.dir.join("backup-remote.toml")
+    }
+    /// Backup contents being restored.
+    pub fn restore(&self) -> PathBuf {
+        self.dir.join("restore")
+    }
+    /// The next release, verified and unpacked before it replaces `release()`.
+    pub fn next_release(&self) -> PathBuf {
+        self.dir.join("release-next")
+    }
+    pub fn previous_release(&self) -> PathBuf {
+        self.dir.join("release-previous")
+    }
+}
+
+/// Holds an exclusive lock on the install directory, so two hailctl commands never
+/// change one provider at once.
+pub fn lock(paths: &Paths, wait: bool) -> Result<fs::File> {
+    fs::create_dir_all(&paths.dir)?;
+    fs::set_permissions(&paths.dir, fs::Permissions::from_mode(0o700))?;
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open(paths.dir.join(".hailctl.lock"))?;
+    if wait {
+        file.lock()?;
+    } else if file.try_lock().is_err() {
+        bail!("another hailctl command is running on this provider");
+    }
+    Ok(file)
 }
 
 /// Writes a file readable only by its owner, replacing it atomically.
@@ -242,6 +293,9 @@ impl Env {
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
     }
+    pub fn remove(&mut self, key: &str) {
+        self.lines.retain(|(k, _)| k != key);
+    }
     pub fn set(&mut self, key: &str, value: &str) {
         match self.lines.iter_mut().find(|(k, _)| k == key) {
             Some(line) => line.1 = value.to_string(),
@@ -271,6 +325,19 @@ impl Env {
     }
 }
 
+/// Repairs a `.env` written by hailctl 0.2.0, which added the signup invitation key
+/// before registration; the provider refuses to start with it while signup is off.
+/// Returns whether anything changed.
+pub fn repair_env(env: &mut Env) -> bool {
+    if env.get("PUBLIC_ALPHA_SIGNUP") != Some("true")
+        && env.get("ALPHA_SIGNUP_INVITE_KEY").is_some()
+    {
+        env.remove("ALPHA_SIGNUP_INVITE_KEY");
+        return true;
+    }
+    false
+}
+
 /// The base provider configuration for these answers. Monitor credentials are added
 /// after registration.
 pub fn base_env(env: &mut Env, answers: &Answers) {
@@ -284,7 +351,6 @@ pub fn base_env(env: &mut Env, answers: &Answers) {
     );
     env.ensure("DB_PASSWORD", secret);
     env.ensure("KEY_ENCRYPTION_KEY", secret);
-    env.ensure("ALPHA_SIGNUP_INVITE_KEY", secret);
     env.ensure("PUBLIC_SELF_SERVICE_ONBOARDING", || "false".into());
     env.ensure("PUBLIC_ALPHA_SIGNUP", || "false".into());
     env.ensure("HAIL_WEB_CLIENT_NAME", || "Hail".into());
@@ -367,6 +433,22 @@ mod tests {
         assert_eq!(reloaded.get("KEY_ENCRYPTION_KEY"), Some(key.as_str()));
         assert_eq!(reloaded.get("PROVIDER_ID"), Some("renamed"));
         assert!(Env::parse("NOEQUALS\n").is_err());
+    }
+
+    #[test]
+    fn starts_with_signup_off_and_repairs_0_2_0_configuration() {
+        let mut env = Env::default();
+        base_env(&mut env, &answers());
+        // The provider refuses an invitation key while signup is off.
+        assert_eq!(env.get("PUBLIC_ALPHA_SIGNUP"), Some("false"));
+        assert_eq!(env.get("ALPHA_SIGNUP_INVITE_KEY"), None);
+        assert!(!repair_env(&mut env));
+        env.set("ALPHA_SIGNUP_INVITE_KEY", "k");
+        assert!(repair_env(&mut env));
+        assert_eq!(env.get("ALPHA_SIGNUP_INVITE_KEY"), None);
+        env.set("PUBLIC_ALPHA_SIGNUP", "true");
+        env.set("ALPHA_SIGNUP_INVITE_KEY", "k");
+        assert!(!repair_env(&mut env));
     }
 
     #[test]

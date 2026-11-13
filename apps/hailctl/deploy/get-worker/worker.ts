@@ -5,8 +5,8 @@
 // Worker only chooses which release to start from.
 const FEED = "https://github.com/j4crev/hail/releases.atom";
 const DOWNLOAD = "https://github.com/j4crev/hail/releases/download";
-/** The first provider release that ships install.sh and hailctl. */
-export const MINIMUM: [number, number, number] = [0, 2, 0];
+/** The first provider release whose installer works (0.2.0's cannot start a provider). */
+export const MINIMUM: [number, number, number] = [0, 3, 0];
 const CACHE_SECONDS = 300;
 
 type Version = [number, number, number];
@@ -36,7 +36,7 @@ export async function handle(request: Request, fetcher: typeof fetch, cache?: Ca
   const pinned = TAG.exec(url.pathname);
   if (pinned) {
     const version: Version = [Number(pinned[2]), Number(pinned[3]), Number(pinned[4])];
-    if (compare(version, MINIMUM) < 0) return new Response(`${pinned[1]} has no installer; use provider-v${MINIMUM.join(".")} or later.\n`, { status: 404 });
+    if (compare(version, MINIMUM) < 0) return new Response(`${pinned[1]} has no working installer; use provider-v${MINIMUM.join(".")} or later.\n`, { status: 404 });
     // A release's assets never change, so this redirect can be cached for a day.
     return redirect(pinned[1]!, 86400);
   }

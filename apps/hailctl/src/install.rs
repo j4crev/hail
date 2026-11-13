@@ -5,7 +5,7 @@ use crate::state::{
     Answers, Env, Paths, State, base_env, load_answers, valid_email, valid_hostname,
     valid_provider_id,
 };
-use crate::{dns, host, register, release, ui};
+use crate::{backup, dns, host, recovery, register, release, ui};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::fs;
 use std::io::Write;
@@ -17,13 +17,26 @@ pub struct Options {
     pub dir: PathBuf,
     pub release: Option<String>,
     pub answers: Option<PathBuf>,
+    /// A backup to restore instead of creating a new provider.
+    pub restore: Option<PathBuf>,
 }
 
 const SERVICE_ACCOUNT: &str = "src/cli/service-account.ts";
 
 pub fn install(options: &Options) -> Result<()> {
     let paths = Paths::new(&options.dir);
+    ensure!(
+        host::is_root(),
+        "run hailctl as root (for example with sudo)"
+    );
+    let _lock = crate::state::lock(&paths, false)?;
     let mut state = State::load(&paths)?;
+    if options.restore.is_some() && state.started && state.restoring.is_none() {
+        bail!(
+            "a provider is already installed in {}; use `hailctl restore FILE`",
+            paths.dir.display()
+        );
+    }
 
     ui::step("Checking this server");
     let preflight = host::preflight(!state.started)?;
@@ -61,6 +74,9 @@ pub fn install(options: &Options) -> Result<()> {
             "this server already has hail-provider data volumes; hailctl will not reuse another installation's data"
         );
     }
+    if let (Some(file), None) = (&options.restore, &state.answers) {
+        state = recovery::seed(&paths, file)?;
+    }
 
     let answers = gather_answers(&state, options)?;
     if state.configured && state.answers.as_ref() != Some(&answers) {
@@ -77,9 +93,10 @@ pub fn install(options: &Options) -> Result<()> {
 
     if state.release.is_none() {
         ui::step("Downloading the provider release");
-        let tag = match &options.release {
-            Some(tag) => tag.clone(),
-            None => release::latest_tag()?,
+        // A restore runs the release its database was dumped from.
+        let tag = match (&state.restoring, &options.release) {
+            (Some(tag), _) | (None, Some(tag)) => tag.clone(),
+            (None, None) => release::latest_tag()?,
         };
         let fetched = release::fetch(&tag, &paths.release())?;
         ui::info(&format!(
@@ -103,7 +120,7 @@ pub fn install(options: &Options) -> Result<()> {
             &paths,
             &answers,
             "KEY_ENCRYPTION_KEY",
-            "Encrypts the keys this server holds. Without it, a database backup cannot be used.",
+            "Encrypts the keys this server holds and every backup. Without it, no backup can be restored.",
             &key,
         )?;
         state.configured = true;
@@ -111,6 +128,13 @@ pub fn install(options: &Options) -> Result<()> {
     }
 
     let compose = Compose::new(&paths);
+    let mut env = Env::load(&paths.env())?;
+    if crate::state::repair_env(&mut env) {
+        env.save(&paths.env())?;
+    }
+    if state.restoring.is_some() {
+        recovery::finish_seed(&paths, &mut state, &compose)?;
+    }
     ui::step("Starting the provider");
     compose.up()?;
     wait_ready(&answers)?;
@@ -131,6 +155,28 @@ pub fn install(options: &Options) -> Result<()> {
         state.save(&paths)?;
     }
 
+    if !state.backups_scheduled {
+        ui::step("Scheduling daily backups");
+        recovery::ensure_schedule(&paths, &mut state)?;
+        ui::info(&format!(
+            "A backup runs daily; the newest seven are kept in {}.",
+            paths.backups().display()
+        ));
+        ui::info("Copy them off this server with `hailctl backup configure`.");
+    }
+
+    if options.restore.is_some() {
+        ui::step("Done");
+        ui::info(&format!(
+            "Your provider is restored and running at {} (API {}).",
+            answers.web_origin(),
+            answers.api_origin()
+        ));
+        ui::info(
+            "Existing passkeys keep working. `hailctl admin passkey-link` adds one for admin@.",
+        );
+        return Ok(());
+    }
     let link = passkey_link(&compose)?;
     ui::step("Done");
     ui::info(&format!(
@@ -145,8 +191,8 @@ pub fn install(options: &Options) -> Result<()> {
     println!("\n    {link}\n");
     ui::info("Then sign in and open /admin. Run `hailctl admin passkey-link` for a new link.");
     ui::info(&format!(
-        "Back up {} (it holds the provider's secrets) and the server's database.",
-        paths.env().display()
+        "Backups are encrypted with {}: keep it offline to be able to restore them.",
+        backup::KEY
     ));
     Ok(())
 }
@@ -210,7 +256,18 @@ fn gather_answers(state: &State, options: &Options) -> Result<Answers> {
     Ok(answers)
 }
 
+/// Debug builds only: skips the public DNS and HTTPS checks, so the install, upgrade
+/// and restore flows can be exercised against a local Docker daemon. Release builds
+/// ignore the variable.
+fn skip_public_checks() -> bool {
+    cfg!(debug_assertions) && std::env::var_os("HAILCTL_DEV_SKIP_PUBLIC_CHECKS").is_some()
+}
+
 fn check_dns(answers: &Answers) -> Result<()> {
+    if skip_public_checks() {
+        ui::info("Skipping the DNS check (debug build).");
+        return Ok(());
+    }
     let public = dns::public_addresses();
     ensure!(
         !public.is_empty(),
@@ -263,7 +320,11 @@ fn check_dns(answers: &Answers) -> Result<()> {
     }
 }
 
-fn wait_ready(answers: &Answers) -> Result<()> {
+pub(crate) fn wait_ready(answers: &Answers) -> Result<()> {
+    if skip_public_checks() {
+        ui::info("Skipping the HTTPS check (debug build).");
+        return Ok(());
+    }
     ui::info("Waiting for HTTPS (certificates can take a minute)...");
     let deadline = Instant::now() + Duration::from_secs(10 * 60);
     let agent = release::agent();
@@ -425,7 +486,7 @@ fn passkey_link(compose: &Compose) -> Result<String> {
         .ok_or_else(|| anyhow!("no passkey link was returned"))
 }
 
-fn configured(dir: &Path) -> Result<(Paths, State)> {
+pub(crate) fn configured(dir: &Path) -> Result<(Paths, State)> {
     let paths = Paths::new(dir);
     let state = State::load(&paths)?;
     ensure!(
@@ -438,58 +499,6 @@ fn configured(dir: &Path) -> Result<(Paths, State)> {
         "run hailctl as root (for example with sudo)"
     );
     Ok((paths, state))
-}
-
-pub fn upgrade(dir: &Path, tag: Option<String>) -> Result<()> {
-    let (paths, mut state) = configured(dir)?;
-    let answers = state
-        .answers
-        .clone()
-        .ok_or_else(|| anyhow!("hailctl.json has no answers"))?;
-    let current = state.release.clone().unwrap_or_default();
-    let tag = match tag {
-        Some(tag) => tag,
-        None => release::latest_tag()?,
-    };
-    let version = |tag: &str| tag.strip_prefix("provider-v").unwrap_or(tag).to_string();
-    release::check_upgrade(&version(&current), &version(&tag))?;
-    ui::step(&format!("Upgrading {current} to {tag}"));
-    let rollback = paths.dir.join("release-rollback");
-    if rollback.exists() {
-        fs::remove_dir_all(&rollback)?;
-    }
-    fs::rename(paths.release(), &rollback)?;
-    let result = release::fetch(&tag, &paths.release()).and_then(|fetched| {
-        ui::info(&format!(
-            "{tag} (commit {}), signature verified.",
-            &fetched.release.commit[..12]
-        ));
-        let compose = Compose::new(&paths);
-        compose.up()?;
-        wait_ready(&answers)
-    });
-    match result {
-        Ok(()) => {
-            fs::remove_dir_all(&rollback)?;
-            state.release = Some(tag.clone());
-            state.save(&paths)?;
-            ui::info(&format!("Upgraded to {tag}."));
-            Ok(())
-        }
-        Err(error) => {
-            ui::info(&format!(
-                "Upgrade failed: {error:#}. Restoring {current}..."
-            ));
-            if paths.release().exists() {
-                fs::remove_dir_all(paths.release())?;
-            }
-            fs::rename(&rollback, paths.release())?;
-            Compose::new(&paths).run(&["up", "-d", "--wait"])?;
-            bail!(
-                "upgrade to {tag} failed and {current} was restored (database migrations are not rolled back)"
-            )
-        }
-    }
 }
 
 pub fn status(dir: &Path) -> Result<()> {
