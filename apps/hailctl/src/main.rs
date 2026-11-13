@@ -1,5 +1,6 @@
 //! hailctl: install and operate a Hail provider from a signed release.
 mod backup;
+mod bridge;
 mod compose;
 mod dns;
 mod host;

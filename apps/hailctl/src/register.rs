@@ -172,6 +172,7 @@ mod tests {
             secrets_to_file: false,
             ingress: Ingress::Direct,
             tunnel_token: None,
+            email_bridge_domain: None,
         }
     }
 

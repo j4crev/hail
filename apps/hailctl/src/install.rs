@@ -5,7 +5,7 @@ use crate::state::{
     Answers, Env, Ingress, Paths, State, base_env, load_answers, valid_email, valid_hostname,
     valid_provider_id, valid_tunnel_token,
 };
-use crate::{backup, dns, host, recovery, register, release, system, ui};
+use crate::{backup, bridge, dns, host, recovery, register, release, system, ui};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::fs;
 use std::io::Write;
@@ -108,6 +108,7 @@ pub fn install(options: &Options) -> Result<()> {
         ui::step("Configuring");
         let mut env = Env::load(&paths.env())?;
         base_env(&mut env, &answers);
+        bridge::configure(&mut env, &answers);
         env.save(&paths.env())?;
         let key = env
             .get("KEY_ENCRYPTION_KEY")
@@ -156,6 +157,21 @@ pub fn install(options: &Options) -> Result<()> {
         ui::step("Creating the administrator account");
         accounts(&paths, &answers, &compose)?;
         state.accounts = true;
+        state.save(&paths)?;
+    }
+
+    if answers.email_bridge_domain.is_some() && !state.bridge {
+        ui::step("Setting up the email bridge");
+        let mut env = Env::load(&paths.env())?;
+        bridge::database_roles(&compose, &env)?;
+        env.set(bridge::READY, "on");
+        env.save(&paths.env())?;
+        // A new Compose: the converter's profile is now on.
+        let compose = Compose::new(&paths);
+        compose.run(&["up", "-d", "--wait"])?;
+        bridge::sender(&compose, &answers, SERVICE_ACCOUNT)?;
+        bridge::adapter_instructions(&answers, &paths.env().to_string_lossy());
+        state.bridge = true;
         state.save(&paths)?;
     }
 
@@ -262,6 +278,19 @@ fn gather_answers(state: &State, options: &Options) -> Result<Answers> {
             Some(token)
         }
     };
+    let email_bridge_domain = if ui::confirm(
+        "Turn on the inbound email bridge (email aliases on a separate domain)?",
+        false,
+    )? {
+        Some(ui::text(
+            "Alias domain:",
+            "A domain of its own, such as example.email; its mail goes to an ingress adapter",
+            valid_hostname,
+            "Use a lowercase DNS name such as example.email",
+        )?)
+    } else {
+        None
+    };
     let answers = Answers {
         api_host,
         web_host,
@@ -271,6 +300,7 @@ fn gather_answers(state: &State, options: &Options) -> Result<Answers> {
         secrets_to_file: false,
         ingress,
         tunnel_token,
+        email_bridge_domain,
     };
     answers.check()?;
     ensure!(
