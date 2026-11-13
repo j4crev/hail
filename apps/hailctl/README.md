@@ -97,6 +97,8 @@ secrets_to_file = true
 # Optional: no open ports, through a Cloudflare Tunnel (default "direct").
 # ingress = "cloudflare-tunnel"
 # tunnel_token = "eyJ..."   # moved into .env, never stored in hailctl.json
+# Optional: the inbound email bridge, for aliases on a domain of their own.
+# email_bridge_domain = "example.email"
 ```
 
 ```bash
@@ -105,6 +107,29 @@ curl -fsSL https://get.racrproto.com | sh -s -- --answers answers.toml
 
 The emailed operator code is still required: `hailctl` reads it from
 `HAILCTL_OPERATOR_CODE` or from one line on standard input.
+
+## Email bridge
+
+The [email bridge](../../spec/email-bridge.md) lets users create email aliases whose mail
+reaches them as Hail messages from the provider's `email@` account. Turn it on with an
+alias domain of its own (`email_bridge_domain`, or the interactive question). `hailctl`
+then:
+
+- sets the bridge's settings in `.env`, including a fresh intake token and converter
+  password;
+- creates the converter's database role, which can touch only the intake queue, and
+  starts the converter (Compose profile `email-bridge`);
+- creates the `email@` service account with a Sender Profile offering the `email`
+  category, which users grant to receive bridged mail;
+- recreates the converter's roles after a restore into a new server, and refreshes its
+  grants after upgrades.
+
+Mail reaches the provider through an ingress adapter that you deploy. With Cloudflare,
+put the alias domain on Cloudflare and deploy the
+[email Worker](../server/deploy/cloudflare-email-worker/README.md) with
+`PROVIDER_ORIGIN`, `ALIAS_DOMAIN` and the intake token from `.env`. Then set the alias
+domain's Email Routing catch-all to the Worker. `hailctl` prints these steps when it
+finishes.
 
 ## Other commands
 

@@ -39,6 +39,10 @@ pub struct Answers {
     /// kept in hailctl.json.
     #[serde(default, skip_serializing)]
     pub tunnel_token: Option<String>,
+    /// Turns on the inbound email bridge for aliases on this separate domain, such as
+    /// `example.email` (spec/email-bridge.md).
+    #[serde(default)]
+    pub email_bridge_domain: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -135,6 +139,12 @@ impl Answers {
             self.monitor_api.starts_with("https://") && valid_hostname(&self.monitor_api[8..]),
             "monitor_api must be an https:// origin"
         );
+        if let Some(domain) = &self.email_bridge_domain {
+            ensure!(
+                valid_hostname(domain) && domain != &self.web_host && domain != &self.api_host,
+                "email_bridge_domain must be a lowercase DNS name of its own, such as example.email"
+            );
+        }
         if let Some(token) = &self.tunnel_token {
             ensure!(
                 self.ingress == Ingress::CloudflareTunnel,
@@ -183,6 +193,8 @@ pub struct State {
     pub registration: Option<Registration>,
     pub registered: bool,
     pub accounts: bool,
+    /// The email bridge's converter role, converter and sender account exist.
+    pub bridge: bool,
     /// The daily backup timer is installed.
     pub backups_scheduled: bool,
     /// Set by a successful upgrade: what `hailctl rollback` returns to.
@@ -418,6 +430,7 @@ mod tests {
             secrets_to_file: false,
             ingress: Ingress::Direct,
             tunnel_token: None,
+            email_bridge_domain: None,
         }
     }
 

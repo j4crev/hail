@@ -456,6 +456,13 @@ pub fn restore_database(compose: &Compose, dump: &Path) -> Result<()> {
     };
     psql("DROP DATABASE IF EXISTS hail_restore WITH (FORCE)")?;
     psql("CREATE DATABASE hail_restore OWNER hail")?;
+    // Roles are not part of a dump. The email bridge grants to this group role, so a
+    // restore into a new database server needs it first (bridge::database_roles then
+    // completes it); creating it unused is harmless.
+    psql(
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='hail_email_converter') \
+         THEN CREATE ROLE hail_email_converter NOLOGIN; END IF; END $$",
+    )?;
     if let Err(error) = compose.feed_file(
         &[
             "exec",

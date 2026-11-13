@@ -360,6 +360,14 @@ pub fn upgrade(dir: &Path, tag: Option<String>) -> Result<()> {
             )),
         }
     }
+    let env = Env::load(&paths.env())?;
+    if crate::bridge::enabled(&env)
+        && let Err(error) = crate::bridge::database_roles(&compose, &env)
+    {
+        ui::info(&format!(
+            "Warning: the email bridge's database role was not updated ({error:#})."
+        ));
+    }
     if let Err(error) = ensure_schedule(&paths, &mut state) {
         ui::info(&format!(
             "Warning: daily backups are not scheduled ({error:#})."
@@ -554,6 +562,11 @@ pub fn finish_seed(paths: &Paths, state: &mut State, compose: &Compose) -> Resul
     ui::step("Restoring the database");
     compose.run(&["up", "-d", "--wait", "db"])?;
     backup::restore_database(compose, &paths.restore().join(DUMP))?;
+    // A new database server has none of the bridge converter's roles.
+    let env = Env::load(&paths.env())?;
+    if crate::bridge::enabled(&env) {
+        crate::bridge::database_roles(compose, &env)?;
+    }
     fs::remove_dir_all(paths.restore())?;
     state.restoring = None;
     state.save(paths)?;

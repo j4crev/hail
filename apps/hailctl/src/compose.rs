@@ -7,6 +7,11 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+/// Whether the email bridge's converter runs (its database role exists).
+fn bridge_ready(paths: &Paths) -> bool {
+    Env::load(&paths.env()).is_ok_and(|env| env.get(crate::bridge::READY) == Some("on"))
+}
+
 /// Whether this installation reaches the internet through a Cloudflare Tunnel.
 pub fn tunnel(paths: &Paths) -> bool {
     Env::load(&paths.env())
@@ -15,6 +20,8 @@ pub fn tunnel(paths: &Paths) -> bool {
 
 pub struct Compose {
     args: Vec<String>,
+    /// The email bridge's converter is part of this deployment.
+    bridge: bool,
 }
 
 impl Compose {
@@ -22,6 +29,7 @@ impl Compose {
         let release = paths.release();
         let path = |name: &str| release.join(name).to_string_lossy().into_owned();
         Compose {
+            bridge: bridge_ready(paths),
             args: vec![
                 "compose".into(),
                 "--project-directory".into(),
@@ -40,6 +48,12 @@ impl Compose {
             .chain(
                 tunnel(paths)
                     .then(|| ["-f".to_string(), path("compose.tunnel.yaml")])
+                    .into_iter()
+                    .flatten(),
+            )
+            .chain(
+                bridge_ready(paths)
+                    .then(|| ["--profile".to_string(), "email-bridge".to_string()])
                     .into_iter()
                     .flatten(),
             )
@@ -123,9 +137,34 @@ impl Compose {
         Ok(())
     }
 
+    /// Runs with standard input from memory; returns standard output.
+    pub fn input(&self, extra: &[&str], input: &[u8]) -> Result<String> {
+        use std::io::Write;
+        let mut child = self
+            .command(extra)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .context("could not run docker compose")?;
+        child.stdin.take().expect("piped stdin").write_all(input)?;
+        let output = child.wait_with_output()?;
+        ensure!(
+            output.status.success(),
+            "docker compose {} failed",
+            extra.join(" ")
+        );
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
     /// Stops the services that write to the database. PostgreSQL and Caddy keep running.
     pub fn stop_writers(&self) -> Result<()> {
-        self.run(&["stop", "provider", "web-client"])
+        // The email bridge's converter, when it runs, writes too.
+        if self.bridge {
+            self.run(&["stop", "provider", "web-client", "email-converter"])
+        } else {
+            self.run(&["stop", "provider", "web-client"])
+        }
     }
 
     /// Runs a provider command (from its image's working directory) and parses its JSON output.
