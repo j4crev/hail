@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 pub const USER: &str = "hail";
 pub const SHIM: &str = "/usr/local/bin/hailctl";
+pub const UNINSTALL: &str = "/usr/local/sbin/hailctl-uninstall";
 const SYSCTL: &str = "/etc/sysctl.d/90-hail-provider.conf";
 const PACKAGES: [&str; 8] = [
     "docker-ce",
@@ -381,6 +382,49 @@ pub fn shim(account: &Account) -> String {
     )
 }
 
+/// Root's half of decommissioning, after `hailctl decommission` (as `hail`) deleted the
+/// provider: removes everything the root setup created except the packages.
+pub fn uninstall_script(account: &Account, dir: &Path) -> String {
+    format!(
+        r#"#!/bin/sh
+# Installed by hailctl. After `sudo hailctl decommission`, removes what the installer's
+# root setup created: the {user} user with its rootless Docker data, {dir}, hailctl and
+# the low-port setting. Docker Engine and the other packages stay installed.
+set -eu
+[ "$(id -u)" -eq 0 ] || {{ echo "hailctl-uninstall: run as root" >&2; exit 1; }}
+dir='{dir}'
+home='{home}'
+uid={uid}
+if [ "${{1:-}}" != --force ] && [ -d "$dir" ] && [ ! -f "$dir/{marker}" ]; then
+  echo "hailctl-uninstall: run 'sudo hailctl decommission' first (or --force deletes the provider without a final backup or deregistration)" >&2
+  exit 1
+fi
+keep=/root/hail-provider-final-backups
+if ls "$home"/decommissioned/*.tar.age >/dev/null 2>&1; then
+  mkdir -p "$keep" && chmod 0700 "$keep"
+  mv "$home"/decommissioned/*.tar.age "$keep"/
+  echo "Kept the final backup in $keep."
+fi
+loginctl disable-linger {user} 2>/dev/null || true
+systemctl stop "user@$uid.service" 2>/dev/null || true
+pkill -KILL -u {user} 2>/dev/null || true
+userdel --remove {user} 2>/dev/null || userdel {user} 2>/dev/null || true
+rm -rf "$home" "$dir" {shim} {sysctl}
+sysctl -q -w net.ipv4.ip_unprivileged_port_start=1024 || true
+rm -f "$0"
+echo "Removed the {user} user, its rootless Docker data, $dir and hailctl."
+echo "Docker Engine is still installed; remove it with apt-get purge if nothing else uses it."
+"#,
+        user = USER,
+        dir = dir.display(),
+        home = account.home.display(),
+        uid = account.uid,
+        marker = crate::decommission::MARKER,
+        shim = SHIM,
+        sysctl = SYSCTL,
+    )
+}
+
 /// The install directory, owned by `hail`. A directory owned by anyone else belongs to a
 /// root-mode installation (hailctl 0.3) and is not adopted.
 fn install_dir(account: &Account, dir: &Path) -> Result<()> {
@@ -446,6 +490,11 @@ pub fn bootstrap(os: &Os, dir: &Path, assume_yes: bool) -> Result<Account> {
     fs::set_permissions(&staged, fs::Permissions::from_mode(0o755))?;
     std::os::unix::fs::chown(&staged, Some(0), Some(0))?;
     fs::rename(&staged, SHIM)?;
+    let staged = format!("{UNINSTALL}.new");
+    fs::write(&staged, uninstall_script(&account, dir))?;
+    fs::set_permissions(&staged, fs::Permissions::from_mode(0o700))?;
+    std::os::unix::fs::chown(&staged, Some(0), Some(0))?;
+    fs::rename(&staged, UNINSTALL)?;
     ui::info(&format!(
         "Installed hailctl for the {USER} user; run it as `sudo hailctl ...` or as {USER}."
     ));
@@ -514,6 +563,18 @@ mod tests {
         assert!(shim.contains("bin='/home/hail/.local/bin/hailctl'"));
         assert!(shim.contains(
             "${HAILCTL_OPERATOR_CODE:+\"HAILCTL_OPERATOR_CODE=$HAILCTL_OPERATOR_CODE\"}"
+        ));
+    }
+
+    #[test]
+    fn the_uninstaller_requires_a_decommissioned_provider() {
+        let script = uninstall_script(&hail(), Path::new("/opt/hail-provider"));
+        assert!(script.starts_with("#!/bin/sh\n"));
+        assert!(script.contains("dir='/opt/hail-provider'"));
+        assert!(script.contains("[ ! -f \"$dir/DECOMMISSIONED\" ]"));
+        assert!(script.contains("userdel --remove hail"));
+        assert!(script.contains(
+            "rm -rf \"$home\" \"$dir\" /usr/local/bin/hailctl /etc/sysctl.d/90-hail-provider.conf"
         ));
     }
 
