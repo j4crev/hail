@@ -209,9 +209,12 @@ The base Compose publishes no API port. For automatic enrollment, bind the monit
 API to `0.0.0.0:3001` inside the container and add only a host-loopback port mapping
 in your private deployment overlay. Put a loopback reverse proxy in front of it and
 route your HTTPS ingress to that proxy. Preserve the enrollment Host, POST
-method and exact `/api/v1/onboarding`, `/api/v1/onboarding/stop`, `/api/v1/onboarding/handoff`, and
-`/api/v1/providers/register` paths. Keep the service-token check for enrollment and
-stop; registration instead proves control of both HTTPS origins. Provider IP
+method and exact `/api/v1/onboarding`, `/api/v1/onboarding/stop`, `/api/v1/onboarding/handoff`,
+`/api/v1/providers/register` and `/api/v1/providers/deregister` paths. Keep the
+service-token check for enrollment, stop and deregistration; registration instead
+proves control of both HTTPS origins. An ingress that omits the deregistration path
+answers it with 403, and providers then cannot leave or rebuild without the monitor
+operator. Provider IP
 allowlists are no longer required. Preserve the separate incident UI routes.
 
 For Cloudflare, trust `CF-Connecting-IP` only on the connector's private loopback
