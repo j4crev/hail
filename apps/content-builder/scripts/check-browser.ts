@@ -9,9 +9,10 @@ const origin=`http://127.0.0.1:${server.port}`;
 const work=await mkdtemp('/tmp/hail-builder-browser-');
 const chrome=Bun.spawn([process.env.CHROMIUM??'chromium','--headless','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${work}`,'about:blank'],{stdout:'ignore',stderr:'ignore'});
 let socket:WebSocket|undefined;
-const wait=async(fn:()=>Promise<unknown>)=>{for(let n=0;n<150;n++){if(await fn())return;await Bun.sleep(100);}throw Error('Timed out: '+String(fn));};
+const wait=async(fn:()=>Promise<unknown>,tries=150)=>{for(let n=0;n<tries;n++){if(await fn())return;await Bun.sleep(100);}throw Error('Timed out: '+String(fn));};
 try{
-let port='';await wait(async()=>{try{port=(await readFile(work+'/DevToolsActivePort','utf8')).split('\n')[0];return port;}catch{return false;}});
+// Chrome can take more than 15 seconds to start on a busy CI runner.
+let port='';await wait(async()=>{try{port=(await readFile(work+'/DevToolsActivePort','utf8')).split('\n')[0];return port;}catch{return false;}},250);
 const tabs=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();socket=new WebSocket(tabs.find((v:any)=>v.type==='page').webSocketDebuggerUrl);
 await new Promise<void>(resolve=>socket!.onopen=()=>resolve());
 let id=0;const pending=new Map<number,any>(),requests:string[]=[],exceptions:unknown[]=[];
