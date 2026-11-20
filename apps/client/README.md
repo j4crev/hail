@@ -511,7 +511,9 @@ image loads from `/media/images/{sender}/{messageId}/{digest}` on this origin: t
 server fetches it with the session, verifies its digest and PNG/JPEG structure,
 and serves it with `Cache-Control: private, max-age=2592000, immutable`, a sandbox
 CSP and `nosniff`. The URL names the image's content digest, so a cached copy
-never goes stale. Sign-out sends `Clear-Site-Data: "cache"`.
+never goes stale. Cached images can remain in the browser after sign-out:
+sign-out does not send `Clear-Site-Data: "cache"`, which can hold the sign-out
+response for many seconds while the browser clears its cache.
 
 Desktop folders place a compact refresh icon alongside their heading and a
 conditional “Updates available” pill below it. On mobile folders, pending updates

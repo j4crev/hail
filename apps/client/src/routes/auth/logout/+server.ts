@@ -9,6 +9,5 @@ export async function POST({cookies}){
     if(!response.ok)error(502,"Provider logout failed");
   }
   cookies.delete("hail_session",{path:"/"});
-  // Message images are cached privately by the browser; drop them with the session.
-  return new Response(null,{status:303,headers:{location:"/","clear-site-data":'"cache"',"cache-control":"no-store"}});
+  return new Response(null,{status:303,headers:{location:"/","cache-control":"no-store"}});
 }

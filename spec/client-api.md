@@ -265,8 +265,11 @@ valid PNG/JPEG, and serves them with that fixed type, `nosniff`,
 `Content-Security-Policy: sandbox; default-src 'none'`,
 `Cross-Origin-Resource-Policy: same-origin` and `Cache-Control: private,
 max-age=2592000, immutable` (the URL is content-addressed and messages are
-immutable). Refusals are `no-store`. Sign-out responds with `Clear-Site-Data:
-"cache"` so cached images do not outlive the session in that browser. Browser avatar/attachment routes return redirects to
+immutable). Refusals are `no-store`. Cached images can remain in that browser
+after sign-out; the URL can only be known by someone who could already see the
+message. The reference client does not send `Clear-Site-Data: "cache"` on
+sign-out, because browsers may hold that response for many seconds while they
+clear the cache. Browser avatar/attachment routes return redirects to
 provider capabilities, with no-store/no-referrer headers. Host-only application
 cookies are never shared using a parent-domain cookie. CORS is not opened to the
 media origin; server-to-server JSON bridging preserves the actual browser Origin

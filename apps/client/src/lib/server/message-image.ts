@@ -11,7 +11,8 @@ const unavailable=(status:number)=>new Response(null,{status,headers:{'cache-con
  * stale. Every miss re-authenticates with the provider. Bytes are verified against
  * the digest and must be structurally valid PNG/JPEG; they are served with a fixed
  * image type, nosniff and a sandbox CSP so they can never run as a document.
- * Logout clears the browser cache (Clear-Site-Data).
+ * Cached copies can remain in the browser after sign-out; the URL can only be
+ * known by someone who could already see the message.
  */
 export async function messageImageResponse(params:Record<string,string>,client:()=>Promise<Pick<AccountApiClient,'messageImage'>>){
   const {sender='',messageId='',digest=''}=params;
