@@ -50,7 +50,8 @@ still makes no network request itself.
 
 - An image is bundled when it is in an admitted format, structurally valid,
   static, and inside the per-image and whole-body budgets of the `ImagePolicy`.
-  The default policy is today's `spt-3` rule set: PNG only, eight images.
+  The default policy, `CURRENT_IMAGE_POLICY`, takes the current `spt-3` limits
+  from the codec: PNG or JPEG, up to 24 images of at most 512 KiB each.
 - Any other image becomes a text link to the destination it pointed at, or to
   the image itself.
 - An image smaller than three pixels in either direction is dropped as a tracker.
