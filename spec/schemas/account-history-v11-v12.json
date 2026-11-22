@@ -769,7 +769,7 @@
           ]
         }
       },
-      "description": "Maximum 1,450,000 UTF-8 JSON bytes for body. Codec validation is additionally required: canonical base64url, link rules and annotation scope, resource budgets, PNG structure, digest, dimensions and pixels, asset binding, and NFC/control-free alt/caption. Block/span editor keys are not stored here. Up to eight image blocks and eight million displayed pixels. Every bundled asset must be referenced; header-role references must lead. Image alt may be empty only in drafts. CTA drafts may retain a blank label and any destination string up to 2048 UTF-8 bytes, but publishing requires a valid label and HTTPS link. Alignment is limited to left, center or right."
+      "description": "Maximum 1,450,000 UTF-8 JSON bytes for body. Codec validation is additionally required: canonical base64url, link rules and annotation scope, resource budgets, PNG or JPEG structure, digest, dimensions and pixels, asset binding, and NFC/control-free alt/caption. Block/span editor keys are not stored here. Up to 24 image blocks and eight million displayed pixels. Every bundled asset must be referenced; header-role references must lead. Image alt may be empty only in drafts. CTA drafts may retain a blank label and any destination string up to 2048 UTF-8 bytes, but publishing requires a valid label and HTTPS link. Alignment is limited to left, center or right."
     },
     "connections-connection_invitations": {
       "type": "object",

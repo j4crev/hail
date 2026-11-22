@@ -9,7 +9,7 @@
         <email>j4@j4crev.com</email>
       </address>
     </author>
-    <date year="2026" month="November" day="11" />
+    <date year="2026" month="November" day="22" />
     <area>Applications and Real-Time</area>
     <workgroup>Individual Submission</workgroup>
     <keyword>permission-based messaging</keyword>
@@ -26,7 +26,7 @@
       <name>Introduction</name>
       <t>Recipient-Authorized Content Retrieval (RACR) is a messaging protocol in which recipients decide who may send them messages and which categories of messages they wish to receive. Senders make message content available for retrieval and submit a small delivery envelope to each recipient. The content is retrieved only after the envelope has been checked against the recipient's current permissions. Recipients can revoke a sender's permission at any time.</t>
       <t>RACR aims to preserve recipient consent when users change providers, let senders establish their identities independently of the domains that host their services, and protect recipient activity from being exposed through content retrieval. It does not prevent abuse by an authorized sender, guarantee message availability, or provide end-to-end confidentiality for content held by providers.</t>
-      <t>RACR defines a separate messaging protocol, not an extension to SMTP or MIME. Although its addresses may resemble email addresses, they do not imply compatibility with email systems. This specification does not define a gateway between RACR and email.</t>
+      <t>RACR defines a separate messaging protocol, not an extension to SMTP or MIME. Although its addresses may resemble email addresses, they do not imply compatibility with email systems. This specification does not define a gateway between RACR and email. A sender that relays received email as hails can say so in a signed statement inside the body (<xref target="body-origin" />); receiving and converting email remain that sender's own service.</t>
     </section>
     <section anchor="conventions">
       <name>Conventions and Scope</name>
@@ -235,11 +235,17 @@
     </section>
     <section anchor="bodies">
       <name>Body Content and Retrieval</name>
-      <t>A body is a closed Safe Portable Text (SPT) document, not arbitrary HTML. Every provider MUST validate, retrieve, and store <tt>spt-1</tt>, <tt>spt-2</tt>, and <tt>spt-3</tt>. Plain-text-only support is insufficient. <tt>spt-1</tt> contains normal text blocks and unmarked spans. <tt>spt-2</tt> adds specified headings, blockquotes, captions, lists, <tt>strong</tt>, <tt>em</tt>, and <tt>code</tt> decorators, and declared HTTPS links, plus optional <tt>left</tt>, <tt>center</tt>, or <tt>right</tt> text alignment and a <tt>cta</tt> style for prominent navigation links. <tt>spt-3</tt> interleaves one to eight image blocks referencing bundled static Portable Network Graphics (PNG) assets with rich text. All assets must be referenced. Image-role assets may appear anywhere; a header-role asset is reserved for a leading image.</t>
+      <t>A body is a closed Safe Portable Text (SPT) document, not arbitrary HTML. Every provider MUST validate, retrieve, and store <tt>spt-1</tt>, <tt>spt-2</tt>, and <tt>spt-3</tt>. Plain-text-only support is insufficient. <tt>spt-1</tt> contains normal text blocks and unmarked spans. <tt>spt-2</tt> adds specified headings, blockquotes, captions, lists, <tt>strong</tt>, <tt>em</tt>, and <tt>code</tt> decorators, and declared HTTPS links, plus optional <tt>left</tt>, <tt>center</tt>, or <tt>right</tt> text alignment and a <tt>cta</tt> style for prominent navigation links. <tt>spt-3</tt> interleaves 1 to 24 image blocks referencing bundled static Portable Network Graphics (PNG) or Joint Photographic Experts Group (JPEG) assets with rich text. All assets must be referenced. Image-role assets may appear anywhere; a header-role asset is reserved for a leading image.</t>
       <t>Clients MUST treat text as text, validate link schemes and attributes, and not interpret unknown nodes as executable markup. The <tt>spt-1</tt>, <tt>spt-2</tt>, and <tt>spt-3</tt> profiles define neither arbitrary HTML/CSS/scripts nor sender-controlled remote image loading. Advanced publisher layouts require new explicit nodes, validation, and presentation rules. A profile is not extensible merely because its data is represented as a map.</t>
       <t>A <tt>cta</tt> text block has exactly one <tt>spt.link</tt> annotation, with every span carrying only that annotation key, no list fields, and a concatenated single-line label of at most 128 UTF-8 bytes containing a character other than ASCII whitespace. Carriage return (CR) and line feed (LF) are prohibited. Its absolute HTTPS destination has no credentials and is at most 2048 UTF-8 bytes. It renders as an accessible navigation link with client-controlled button styling, never fetching its destination until explicit navigation. Optional text-block alignment is <tt>left</tt>, <tt>center</tt>, or <tt>right</tt>; absent means <tt>left</tt>. This hint changes neither reading order nor directionality and may be adapted for accessibility. These fields are supported by the <tt>spt-2</tt> and <tt>spt-3</tt> definitions in <xref target="HAIL-SPEC" />, not <tt>spt-1</tt>.</t>
-      <t>Each image is limited to 196608 bytes, width and height 2400, and 2000000 pixels; header-role height remains 1200. Image occurrences total at most eight and 8000000 decoded pixels, including repeated references. Readers preserve document order and aspect ratio. Asset size, digest, and PNG dimensions must agree with the bytes; animated PNG is prohibited. A message image requires plain-text alt text and may carry a caption, each at most 1024 UTF-8 bytes under the specified NFC and character rules. The complete body, including bundled bytes, still fits within 1 MiB. Sender Profile avatar limits are separately 32768 bytes, 512 by 512, and 262144 pixels.</t>
+      <t>Each image is limited to 524288 bytes, width and height 2400, and 2000000 pixels; header-role height remains 1200. Image occurrences total at most 24 and 8000000 decoded pixels, including repeated references. Readers preserve document order and aspect ratio. The declared media type selects the validator, and asset size, digest, and dimensions must agree with the bytes. PNG assets must be static; animated PNG is prohibited. JPEG assets must be baseline or progressive 8-bit images with exactly one frame, one to four components, only frame, table, restart-interval, scan, comment, and application segments, and no bytes after the end-of-image marker; arithmetic-coded, lossless, hierarchical, and multi-frame JPEG is prohibited. A message image requires plain-text alt text and may carry a caption, each at most 1024 UTF-8 bytes under the specified NFC and character rules. The complete body, including bundled bytes, still fits within 1 MiB. Sender Profile avatars remain PNG only, with separate limits of 32768 bytes, 512 by 512, and 262144 pixels.</t>
       <t>These byte, pixel, and structural budgets apply to encoded bodies and bundled assets. Detached file attachments have separate limits: at most 20 files totaling 25 MiB per message. Attachment metadata counts toward the encoded-body limit; detached file bytes do not. Attachment formats, authorization, retrieval, and delivery requirements are specified separately in <xref target="HAIL-ATTACHMENTS" />.</t>
+      <section anchor="body-origin">
+        <name>Relayed Origin</name>
+        <t>An <tt>spt-2</tt> or <tt>spt-3</tt> body MAY contain one <tt>origin</tt> member: the sender's signed statement that it obtained the content from an external source and relayed it, for example a bridge that receives email and delivers it as a hail. An <tt>spt-1</tt> body MUST NOT contain <tt>origin</tt>. The member is covered by the body digest and therefore by the envelope signature. It attests only what the sender says about where the content came from. It is not evidence of authorship and grants no authority: delivery is authorized exactly as for any other body from that sender.</t>
+        <t>The only current origin type is <tt>email</tt>. It carries the author address the sender read from the source message (<tt>from_address</tt>), an optional display name (<tt>from_name</tt>), an optional mailing-list identifier (<tt>list_id</tt>), the sender's DomainKeys Identified Mail (DKIM) result (<tt>authentication</tt>), and the time the sender received the source message (<tt>received_at</tt>). <tt>dkim-aligned</tt> means the sender verified a DKIM signature whose signing domain is the <tt>from_address</tt> domain or shares its registrable domain; any other outcome, including a valid signature for an unrelated domain, is <tt>none</tt>. Recipients cannot re-verify this result from the body. Address, name, and list-identifier syntax are defined in <xref target="HAIL-SPEC" />. Unknown origin types, authentication values, and members MUST be rejected.</t>
+        <t>A reader that displays <tt>origin</tt> MUST keep the verified sender visible and distinct from the origin, and MUST NOT present the origin address as a RACR address, a verified identity, or the sender of the hail. It MUST indicate that the content was relayed and SHOULD show <tt>authentication</tt> when it is <tt>none</tt>. Readers MUST NOT use <tt>origin</tt> for authorization, reply addressing, contact matching, or sender-avatar selection. A reader MAY ignore <tt>origin</tt> for presentation, but a provider MUST still validate it. The member does not change what a body may contain. A participant that forwards or quotes a relayed body is composing new content and MUST NOT copy the original <tt>origin</tt> into it. Whether an account may state an origin at all is provider policy.</t>
+      </section>
       <section anchor="body-auth">
         <name>Token and Recipient Proof of Possession</name>
         <t>For each recipient envelope, the sender generates exactly 32 cryptographically random token bytes. The signed body descriptor carries the token, body identity, and expiry. A token may be reused for retries of the same envelope, but MUST NOT be reused for another recipient or unrelated envelope. The server stores a token digest associated with body digest, recipient, message, expiry, and active state.</t>
@@ -282,12 +288,12 @@
           <t>Detached attachments support PNG, JPEG, WebP, PDF, TXT, and LOG files in all three body profiles. The authenticated body binds each file's name, media type, size, and digest. The envelope body-access token and a separate target-bound recipient signature authorize retrieval of each declared file. Recipients MUST verify and durably retain every declared file before committing <tt>delivered</tt>. The complete format and lifecycle rules are defined in <xref target="HAIL-ATTACHMENTS" />.</t>
         </li>
         <li>
-          <t>Provider transfer uses authenticated handover, fencing, and portable snapshot version 11, managed snapshot version 12, connection checkpoint version 3, and conversation checkpoint version 1. Copying an export or retaining a signature does not grant live service authority. Snapshots use RFC 9995 with exact retained JSON manifest preimages, an empty unprotected map, and purpose/version-specific <tt>preimage_type</tt> values. Their larger limits and live cutover authority remain separate from envelope admission. Read state, drafts and required uploads, preferences, Trash, category-send groups and Sent dispositions are preserved; local synchronization state resets.</t>
+          <t>Provider transfer uses authenticated handover, fencing, and portable snapshot version 11, managed snapshot version 12, connection checkpoint version 3, and conversation checkpoint version 1. The user-signed transfer grant names the destination by its service base and its native address domain, which may differ; the source verifies the delegation between them. Copying an export or retaining a signature does not grant live service authority. Snapshots use RFC 9995 with exact retained JSON manifest preimages, an empty unprotected map, and purpose/version-specific <tt>preimage_type</tt> values. Their larger limits and live cutover authority remain separate from envelope admission. Read state, drafts and required uploads, preferences, Trash, category-send groups and Sent dispositions are preserved; local synchronization state resets.</t>
         </li>
       </ul>
       <t>The optional client-to-provider Hail JMAP profile uses <xref target="RFC8620" /> for Session discovery, typed methods, changes, binary transfer and connected events. Domain-controlled capabilities cover messages, drafts, account operations, events and optionally encrypted Web Push. These do not imply RFC 8621 Mail compatibility or a shared OAuth login profile. Provider authentication remains provider-owned, separate from owner/recovery authority. Notifications contain state hints, recover through synchronization, and neither mutate read state nor constitute RACR delivery evidence. The complete profiles are in <xref target="HAIL-SPEC" />.</t>
       <t>Attachment definitions are in <xref target="HAIL-ATTACHMENTS" />; the other extension definitions are in the fixed snapshot <xref target="HAIL-SPEC" />. Their eventual division into companion Internet-Drafts is an editorial decision, not removal of implemented functionality. Local account application programming interfaces (APIs), command-line interface (CLI) commands, passkey flows, database tables, and deployment topology are not federation requirements.</t>
-      <t>End-to-end encryption, attachment formats beyond PNG/JPEG/WebP/PDF/TXT/LOG, additional publisher layouts, optional-profile capability discovery, bulk federation submission, and federated read/open receipts remain deferred. A provider-local implementation of an undeclared feature is not a negotiated interoperable extension.</t>
+      <t>End-to-end encryption, outbound email and bridge-to-bridge email profiles, attachment formats beyond PNG/JPEG/WebP/PDF/TXT/LOG, additional publisher layouts, optional-profile capability discovery, bulk federation submission, and federated read/open receipts remain deferred. A provider-local implementation of an undeclared feature is not a negotiated interoperable extension.</t>
     </section>
     <section anchor="security">
       <name>Security Considerations</name>
@@ -296,6 +302,7 @@
       <t>Implementations MUST verify algorithm, key role, controller, protected content type, payload type, schema, and canonical bytes in addition to the signature. Closed maps and exact digest domains reduce ambiguity and cross-protocol confusion. Unknown versions require explicit rejection or their separately defined extension handling; they are not best-effort parsing opportunities.</t>
       <t>Acceptance, revocation, replay reservation, reply consumption, cancellation, and terminal publication require atomic ordering. A valid signature does not resolve races. Incorrect transaction boundaries can create duplicate messages, bypass revocation, consume a capability more than once, or publish after a terminal failure.</t>
       <t>Resource attacks include large declared CBOR lengths, deeply nested structures, expensive signatures, DID-resolution amplification, stalled transfers, gzip expansion, and image decoder attacks. Apply structural limits before expensive work; bound concurrent work and scratch allocation separately. Grants authorize delivery categories, not unlimited resource consumption.</t>
+      <t>A relayed-origin statement (<xref target="body-origin" />) is signed by the sender, not by the original author, and an authorized sender can state a false origin. Presenting it as the sender, or using it for authorization or reply addressing, would let a sender impersonate arbitrary email authors.</t>
       <t>Retrieval tokens remain sensitive even though possession alone no longer authorizes content access. The current recipient messaging-key proof is also mandatory; compromise of both proofs defeats that protection. Store lookup digests and redact secrets from logs, but also protect signed representations and backups that necessarily retain raw tokens. Network redirects, ambient cookies, arbitrary URLs, and unsafe DNS resolution can exfiltrate tokens or reach private services; endpoint derivation does not remove the need for safe-fetch validation.</t>
       <t>Retention and migration must preserve immutable bodies through their commitments, replay state through its deadline, and status evidence through retry/correlation windows. Storage deduplication cannot erase recipient-specific ownership and authorization. Operator recovery procedures require review beyond these wire requirements.</t>
     </section>
@@ -565,16 +572,16 @@ been incorporated into this document. This document obsoletes RFC
         <seriesInfo name="RFC" value="6839" />
         <seriesInfo name="DOI" value="10.17487/RFC6839" />
       </reference>
-      <reference anchor="HAIL-ATTACHMENTS" target="https://github.com/j4crev/hail/blob/7f05efcbdde7775e108288bf9c210c5b56f607d2/spec/attachments.md">
+      <reference anchor="HAIL-ATTACHMENTS" target="https://github.com/j4crev/hail/blob/7b21f960dee7c236972a6bda667e4e3f52762007/spec/attachments.md">
         <front>
-          <title>Message attachments, commit 7f05efcbdde7775e108288bf9c210c5b56f607d2</title>
+          <title>Message attachments, commit 7b21f960dee7c236972a6bda667e4e3f52762007</title>
           <author fullname="Hail contributors" />
           <date year="2026" month="November" />
         </front>
       </reference>
-      <reference anchor="HAIL-SPEC" target="https://github.com/j4crev/hail/tree/7f05efcbdde7775e108288bf9c210c5b56f607d2/spec">
+      <reference anchor="HAIL-SPEC" target="https://github.com/j4crev/hail/tree/7b21f960dee7c236972a6bda667e4e3f52762007/spec">
         <front>
-          <title>Hail alpha specification, commit 7f05efcbdde7775e108288bf9c210c5b56f607d2</title>
+          <title>Hail alpha specification, commit 7b21f960dee7c236972a6bda667e4e3f52762007</title>
           <author fullname="Hail contributors" />
           <date year="2026" month="November" />
         </front>
@@ -608,14 +615,16 @@ been incorporated into this document. This document obsoletes RFC
     </section>
     <section anchor="source-map">
       <name>Source Map and Review Boundary</name>
-      <t>The normative source snapshot is 7f05efcbdde7775e108288bf9c210c5b56f607d2 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, retrieval-signatures.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md; transfer to transfer-formats.md and account-history.md; optional account access to provider-authentication.md and the jmap*.md profiles.</t>
-      <t>This working revision updates the pinned snapshot only for protocol namespaces: current envelope preimage labels use the protocol domain, and Hail JMAP capability URIs use the prefix <tt>https://racrproto.com/ns/jmap/</tt>. Only the current envelope label is accepted; JMAP clients and providers upgrade together. Protected signature inputs and authorization rules do not change. The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.</t>
+      <t>The normative source snapshot is 7b21f960dee7c236972a6bda667e4e3f52762007 for both HAIL references. This document is maintained separately from the implementation specification. Its chapter mapping is: identity/discovery to did-profile.md, address-binding.md, sender-profile.md and plc-read-evidence.md; encoding to encoding.md and hail.cddl; Grants to grants.md; core delivery to core-delivery.md and envelopes.md; HTTP operations to http-binding.md; content to bodies.md, retrieval-signatures.md, assets.md, and the separately referenced attachments.md; state to delivery-state.md; transfer to transfer-formats.md and account-history.md; optional account access to provider-authentication.md and the jmap*.md profiles.</t>
+      <t>This working revision advances the pinned snapshot to include the protocol namespace correction, the expanded <tt>spt-3</tt> image limits with JPEG assets, the signed relayed-origin body member, and transfer destinations whose service and address domains differ. Envelope preimage labels use the protocol domain, and Hail JMAP capability URIs use the prefix <tt>https://racrproto.com/ns/jmap/</tt>. Only the current envelope label is accepted; JMAP clients and providers upgrade together. The feature inventory includes the separately referenced attachment specification. Connections, shared conversations, detached attachments, and portability are implemented extensions. Additional attachment formats, advanced layouts, end-to-end encryption, and federated read/open receipts remain deferred.</t>
       <t>The open protocol questions do not reopen established requirements. In particular, current body size, mandatory SPT support, token-plus-signature body retrieval, Address Binding non-expiration, and permission ordering are already specified; they are not re-opened by this draft.</t>
     </section>
     <section anchor="body-cddl">
       <name>Body Structural Schema Excerpt</name>
-      <t>The following Concise Data Definition Language (CDDL) excerpt (<xref target="RFC8610" />) uses the pinned <tt>hail.cddl</tt> body, asset, and attachment definitions, with attachment semantics from <xref target="HAIL-ATTACHMENTS" /> and the digest dependency included. It defines structure only: the prose and source specification impose additional mark-reference, role, PNG, text, attachment-content, aggregate-size, and cross-field validation. In particular, <tt>spt-3</tt> permits one to eight image or header assets, all referenced, and at most eight image blocks with eight million total displayed pixels; only the first block may reference a header asset. Unknown fields are not permitted.</t>
-      <sourcecode type="cddl">sha256 = bstr .size 32
+      <t>The following Concise Data Definition Language (CDDL) excerpt (<xref target="RFC8610" />) uses the pinned <tt>hail.cddl</tt> body, asset, and attachment definitions, with attachment semantics from <xref target="HAIL-ATTACHMENTS" /> and the digest and timestamp dependencies included. It defines structure only: the prose and source specification impose additional mark-reference, role, image-format, origin-syntax, text, attachment-content, aggregate-size, and cross-field validation. In particular, <tt>spt-3</tt> permits 1 to 24 image or header assets, all referenced, and at most 24 image blocks with eight million total displayed pixels; only the first block may reference a header asset, and an avatar asset is PNG only. Unknown fields are not permitted.</t>
+      <sourcecode type="cddl">hail-uint = 0..9007199254740991
+timestamp = hail-uint
+sha256 = bstr .size 32
 
 digest = {
   "algorithm": "sha-256",
@@ -658,7 +667,8 @@ hail-body-spt-2 = {
   "version": 1,
   "profile": "spt-2",
   "blocks": [* spt-2-text-block],
-  ? "attachments": [1*20 hail-attachment]
+  ? "attachments": [1*20 hail-attachment],
+  ? "origin": body-origin
 }
 
 spt-2-text-block = {
@@ -685,13 +695,16 @@ spt-link = {
   ? "title": tstr
 }
 
-; spt-3 interleaves bounded, digest-bound PNG images and rich text.
+; spt-3 interleaves bounded, digest-bound PNG or JPEG images
+; and rich text. Role-specific formats and sizes (avatar: PNG,
+; 32768 bytes) are semantic checks.
 hail-body-spt-3 = {
   "version": 1,
   "profile": "spt-3",
   "assets": asset-manifest-v1,
   "blocks": [1* (spt-image-block / spt-2-text-block)],
-  ? "attachments": [1*20 hail-attachment]
+  ? "attachments": [1*20 hail-attachment],
+  ? "origin": body-origin
 }
 
 spt-image-block = {
@@ -701,19 +714,33 @@ spt-image-block = {
   ? "caption": tstr
 }
 
+; The sender's statement that it relayed the content from an
+; external source. Address, name and list-identifier syntax
+; are semantic checks.
+body-origin = body-origin-email
+
+body-origin-email = {
+  "type": "email",
+  "from_address": tstr,
+  ? "from_name": tstr,
+  ? "list_id": tstr,
+  "authentication": "dkim-aligned" / "none",
+  "received_at": timestamp
+}
+
 ; Reusable bundled-image manifest for future body
 ; and profile versions.
 asset-manifest-v1 = {
   "version": 1,
-  "assets": [1*8 bundled-image-asset-v1]
+  "assets": [1*24 bundled-image-asset-v1]
 }
 
 bundled-image-asset-v1 = {
   "id": tstr,
   "role": "avatar" / "header" / "image",
-  "media_type": "image/png",
+  "media_type": "image/png" / "image/jpeg",
   "loading": "bundled",
-  "size": 1..196608,
+  "size": 1..524288,
   "digest": digest,
   "width": 1..2400,
   "height": 1..2400,

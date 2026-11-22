@@ -3,9 +3,9 @@
 
 
 Individual Submission                                       J. Creviston
-Internet-Draft                                          11 November 2026
+Internet-Draft                                          22 November 2026
 Intended status: Experimental                                           
-Expires: 15 May 2027
+Expires: 26 May 2027
 
 
          RACR Protocol: Recipient-Authorized Content Retrieval
@@ -53,7 +53,7 @@ Status of This Memo
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 1]
+Creviston                  Expires 26 May 2027                  [Page 1]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -68,7 +68,7 @@ Internet-Draft                    RACR                     November 2026
    time.  It is inappropriate to use Internet-Drafts as reference
    material or to cite them other than as "work in progress."
 
-   This Internet-Draft will expire on 15 May 2027.
+   This Internet-Draft will expire on 26 May 2027.
 
 Copyright Notice
 
@@ -100,27 +100,28 @@ Table of Contents
      7.1.  Validation and Atomic Acceptance  . . . . . . . . . . . .  12
      7.2.  Submission Responses and Disclosure . . . . . . . . . . .  13
    8.  Body Content and Retrieval  . . . . . . . . . . . . . . . . .  14
-     8.1.  Token and Recipient Proof of Possession . . . . . . . . .  15
-     8.2.  Content Verification and Compression  . . . . . . . . . .  16
-   9.  Delivery State and Status Reporting . . . . . . . . . . . . .  17
-   10. Implemented Extensions and Deferred Features  . . . . . . . .  18
-   11. Security Considerations . . . . . . . . . . . . . . . . . . .  20
-   12. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  21
+     8.1.  Relayed Origin  . . . . . . . . . . . . . . . . . . . . .  15
+     8.2.  Token and Recipient Proof of Possession . . . . . . . . .  16
+     8.3.  Content Verification and Compression  . . . . . . . . . .  17
+   9.  Delivery State and Status Reporting . . . . . . . . . . . . .  18
+   10. Implemented Extensions and Deferred Features  . . . . . . . .  19
+   11. Security Considerations . . . . . . . . . . . . . . . . . . .  21
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 2]
+Creviston                  Expires 26 May 2027                  [Page 2]
 
 Internet-Draft                    RACR                     November 2026
 
 
-   13. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  22
-   14. Implementation and Evaluation Status  . . . . . . . . . . . .  23
-   15. Normative References  . . . . . . . . . . . . . . . . . . . .  23
-   Appendix A.  Open Protocol Questions  . . . . . . . . . . . . . .  25
-   Appendix B.  Source Map and Review Boundary . . . . . . . . . . .  26
-   Appendix C.  Body Structural Schema Excerpt . . . . . . . . . . .  27
-   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  29
+   12. Privacy Considerations  . . . . . . . . . . . . . . . . . . .  22
+   13. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  23
+   14. Implementation and Evaluation Status  . . . . . . . . . . . .  24
+   15. Normative References  . . . . . . . . . . . . . . . . . . . .  24
+   Appendix A.  Open Protocol Questions  . . . . . . . . . . . . . .  26
+   Appendix B.  Source Map and Review Boundary . . . . . . . . . . .  27
+   Appendix C.  Body Structural Schema Excerpt . . . . . . . . . . .  28
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  30
 
 1.  Introduction
 
@@ -142,7 +143,10 @@ Internet-Draft                    RACR                     November 2026
    RACR defines a separate messaging protocol, not an extension to SMTP
    or MIME.  Although its addresses may resemble email addresses, they
    do not imply compatibility with email systems.  This specification
-   does not define a gateway between RACR and email.
+   does not define a gateway between RACR and email.  A sender that
+   relays received email as hails can say so in a signed statement
+   inside the body (Section 8.1); receiving and converting email remain
+   that sender's own service.
 
 2.  Conventions and Scope
 
@@ -155,20 +159,22 @@ Internet-Draft                    RACR                     November 2026
    awaiting replacement.  This terminology does not change wire bytes,
    signature domains, or interoperability requirements.
 
+
+
+
+
+
+
+Creviston                  Expires 26 May 2027                  [Page 3]
+
+Internet-Draft                    RACR                     November 2026
+
+
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
    "OPTIONAL" in this document are to be interpreted as described in BCP
    14 [RFC2119] [RFC8174] when, and only when, they appear in all
    capitals, as shown here.
-
-
-
-
-
-Creviston                  Expires 15 May 2027                  [Page 3]
-
-Internet-Draft                    RACR                     November 2026
-
 
    This draft specifies the architecture and summarizes normative core
    requirements from [HAIL-SPEC].  Where a complete wire or semantic
@@ -215,13 +221,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                  [Page 4]
+Creviston                  Expires 26 May 2027                  [Page 4]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -277,7 +277,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 5]
+Creviston                  Expires 26 May 2027                  [Page 5]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -333,7 +333,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 6]
+Creviston                  Expires 26 May 2027                  [Page 6]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -389,7 +389,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 7]
+Creviston                  Expires 26 May 2027                  [Page 7]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -445,7 +445,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 8]
+Creviston                  Expires 26 May 2027                  [Page 8]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -501,7 +501,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                  [Page 9]
+Creviston                  Expires 26 May 2027                  [Page 9]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -557,7 +557,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 10]
+Creviston                  Expires 26 May 2027                 [Page 10]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -613,7 +613,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 11]
+Creviston                  Expires 26 May 2027                 [Page 11]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -669,7 +669,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 12]
+Creviston                  Expires 26 May 2027                 [Page 12]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -725,7 +725,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 13]
+Creviston                  Expires 26 May 2027                 [Page 13]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -758,10 +758,11 @@ Internet-Draft                    RACR                     November 2026
    headings, blockquotes, captions, lists, strong, em, and code
    decorators, and declared HTTPS links, plus optional left, center, or
    right text alignment and a cta style for prominent navigation links.
-   spt-3 interleaves one to eight image blocks referencing bundled
-   static Portable Network Graphics (PNG) assets with rich text.  All
-   assets must be referenced.  Image-role assets may appear anywhere; a
-   header-role asset is reserved for a leading image.
+   spt-3 interleaves 1 to 24 image blocks referencing bundled static
+   Portable Network Graphics (PNG) or Joint Photographic Experts Group
+   (JPEG) assets with rich text.  All assets must be referenced.  Image-
+   role assets may appear anywhere; a header-role asset is reserved for
+   a leading image.
 
    Clients MUST treat text as text, validate link schemes and
    attributes, and not interpret unknown nodes as executable markup.
@@ -777,31 +778,37 @@ Internet-Draft                    RACR                     November 2026
    other than ASCII whitespace.  Carriage return (CR) and line feed (LF)
    are prohibited.  Its absolute HTTPS destination has no credentials
    and is at most 2048 UTF-8 bytes.  It renders as an accessible
-   navigation link with client-controlled button styling, never fetching
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 14]
+Creviston                  Expires 26 May 2027                 [Page 14]
 
 Internet-Draft                    RACR                     November 2026
 
 
+   navigation link with client-controlled button styling, never fetching
    its destination until explicit navigation.  Optional text-block
    alignment is left, center, or right; absent means left.  This hint
    changes neither reading order nor directionality and may be adapted
    for accessibility.  These fields are supported by the spt-2 and spt-3
    definitions in [HAIL-SPEC], not spt-1.
 
-   Each image is limited to 196608 bytes, width and height 2400, and
+   Each image is limited to 524288 bytes, width and height 2400, and
    2000000 pixels; header-role height remains 1200.  Image occurrences
-   total at most eight and 8000000 decoded pixels, including repeated
-   references.  Readers preserve document order and aspect ratio.  Asset
-   size, digest, and PNG dimensions must agree with the bytes; animated
-   PNG is prohibited.  A message image requires plain-text alt text and
-   may carry a caption, each at most 1024 UTF-8 bytes under the
-   specified NFC and character rules.  The complete body, including
-   bundled bytes, still fits within 1 MiB.  Sender Profile avatar limits
-   are separately 32768 bytes, 512 by 512, and 262144 pixels.
+   total at most 24 and 8000000 decoded pixels, including repeated
+   references.  Readers preserve document order and aspect ratio.  The
+   declared media type selects the validator, and asset size, digest,
+   and dimensions must agree with the bytes.  PNG assets must be static;
+   animated PNG is prohibited.  JPEG assets must be baseline or
+   progressive 8-bit images with exactly one frame, one to four
+   components, only frame, table, restart-interval, scan, comment, and
+   application segments, and no bytes after the end-of-image marker;
+   arithmetic-coded, lossless, hierarchical, and multi-frame JPEG is
+   prohibited.  A message image requires plain-text alt text and may
+   carry a caption, each at most 1024 UTF-8 bytes under the specified
+   NFC and character rules.  The complete body, including bundled bytes,
+   still fits within 1 MiB.  Sender Profile avatars remain PNG only,
+   with separate limits of 32768 bytes, 512 by 512, and 262144 pixels.
 
    These byte, pixel, and structural budgets apply to encoded bodies and
    bundled assets.  Detached file attachments have separate limits: at
@@ -810,7 +817,53 @@ Internet-Draft                    RACR                     November 2026
    Attachment formats, authorization, retrieval, and delivery
    requirements are specified separately in [HAIL-ATTACHMENTS].
 
-8.1.  Token and Recipient Proof of Possession
+8.1.  Relayed Origin
+
+   An spt-2 or spt-3 body MAY contain one origin member: the sender's
+   signed statement that it obtained the content from an external source
+   and relayed it, for example a bridge that receives email and delivers
+   it as a hail.  An spt-1 body MUST NOT contain origin.  The member is
+   covered by the body digest and therefore by the envelope signature.
+   It attests only what the sender says about where the content came
+   from.  It is not evidence of authorship and grants no authority:
+   delivery is authorized exactly as for any other body from that
+   sender.
+
+   The only current origin type is email.  It carries the author address
+   the sender read from the source message (from_address), an optional
+   display name (from_name), an optional mailing-list identifier
+   (list_id), the sender's DomainKeys Identified Mail (DKIM) result
+   (authentication), and the time the sender received the source message
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 15]
+
+Internet-Draft                    RACR                     November 2026
+
+
+   (received_at). dkim-aligned means the sender verified a DKIM
+   signature whose signing domain is the from_address domain or shares
+   its registrable domain; any other outcome, including a valid
+   signature for an unrelated domain, is none.  Recipients cannot re-
+   verify this result from the body.  Address, name, and list-identifier
+   syntax are defined in [HAIL-SPEC].  Unknown origin types,
+   authentication values, and members MUST be rejected.
+
+   A reader that displays origin MUST keep the verified sender visible
+   and distinct from the origin, and MUST NOT present the origin address
+   as a RACR address, a verified identity, or the sender of the hail.
+   It MUST indicate that the content was relayed and SHOULD show
+   authentication when it is none.  Readers MUST NOT use origin for
+   authorization, reply addressing, contact matching, or sender-avatar
+   selection.  A reader MAY ignore origin for presentation, but a
+   provider MUST still validate it.  The member does not change what a
+   body may contain.  A participant that forwards or quotes a relayed
+   body is composing new content and MUST NOT copy the original origin
+   into it.  Whether an account may state an origin at all is provider
+   policy.
+
+8.2.  Token and Recipient Proof of Possession
 
    For each recipient envelope, the sender generates exactly 32
    cryptographically random token bytes.  The signed body descriptor
@@ -834,17 +887,16 @@ Internet-Draft                    RACR                     November 2026
    responses that conceal body existence.  Authorization-lookup and
    replay-store outages also use this path.  A missing or unavailable
    body may produce retryable 503 only after BOTH token authorization
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 15]
-
-Internet-Draft                    RACR                     November 2026
-
-
    and recipient proof succeed.  Concealed 404 results use authenticated
    endpoint refresh and bounded retries through the effective deadline,
    never a bearer-only fallback.
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 16]
+
+Internet-Draft                    RACR                     November 2026
+
 
    The hail-retrieval-v1 profile of HTTP Message Signatures [RFC9421]
    requires one hail member in each of Signature-Input and Signature.
@@ -874,7 +926,7 @@ Internet-Draft                    RACR                     November 2026
    copies need access controls and log redaction.  A signature
    authenticates token bytes but does not encrypt them.
 
-8.2.  Content Verification and Compression
+8.3.  Content Verification and Compression
 
    A successful retrieval returns 200 with application/hail-body+cbor
    and private, no-store caching policy.  Receivers MUST support
@@ -885,19 +937,6 @@ Internet-Draft                    RACR                     November 2026
    expansion.  Streaming and bounded buffered implementations are both
    permitted.
 
-
-
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 16]
-
-Internet-Draft                    RACR                     November 2026
-
-
    After decompression, the recipient verifies exact signed length,
    SHA-256 digest, HTTP media type, profile, deterministic CBOR
    equality, and complete schema/resource validity before delivery.
@@ -905,6 +944,15 @@ Internet-Draft                    RACR                     November 2026
    replace the signed uncompressed digest.  Aggregate decompressor
    output, including concatenated gzip members, remains subject to the
    same cap.
+
+
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 17]
+
+Internet-Draft                    RACR                     November 2026
+
 
    A verified cache may avoid retrieval only for matching provenance
    (recipient DID, sender DID, body digest, media type, profile).
@@ -946,19 +994,21 @@ Internet-Draft                    RACR                     November 2026
    states begin at revision 2. on-hold includes reason and retry_at;
    failure and cancellation include the appropriate reason; other states
    omit them.  The status object's from field equals the original
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 17]
-
-Internet-Draft                    RACR                     November 2026
-
-
    envelope's to field, and its to field equals the original envelope's
    from field.  The original recipient messaging key signs it. retry_at
    is no earlier than occurred_at and no later than the effective
    delivery deadline.  Other cross-field rules are fixed by the Delivery
    State specification.
+
+
+
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 18]
+
+Internet-Draft                    RACR                     November 2026
+
 
    The original recipient's provider sends the status to the original
    sender's current service using PUT deliveries/{envelope_digest}. The
@@ -1003,18 +1053,19 @@ Internet-Draft                    RACR                     November 2026
       Envelope version 3; historical unthreaded reply forms are not a
       mandatory compatibility baseline.
 
-
-
-Creviston                  Expires 15 May 2027                 [Page 18]
-
-Internet-Draft                    RACR                     November 2026
-
-
    *  Fixed-roster shared conversations use descriptors, per-recipient
       Envelope version 4, Reply all, leave, and individual participation
       expiry.  The reference provider uses a 90-day timeout renewed only
       by that participant replying, not by reading.  Leaving or expiry
       preserves saved history; expired participation requires a new
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 19]
+
+Internet-Draft                    RACR                     November 2026
+
+
       conversation.  Envelope version 4 does not replace Grant-
       authorized Envelope version 1.  Connection and conversation
       permission is rechecked before retrieval and final delivery,
@@ -1032,14 +1083,17 @@ Internet-Draft                    RACR                     November 2026
    *  Provider transfer uses authenticated handover, fencing, and
       portable snapshot version 11, managed snapshot version 12,
       connection checkpoint version 3, and conversation checkpoint
-      version 1.  Copying an export or retaining a signature does not
-      grant live service authority.  Snapshots use RFC 9995 with exact
-      retained JSON manifest preimages, an empty unprotected map, and
-      purpose/version-specific preimage_type values.  Their larger
-      limits and live cutover authority remain separate from envelope
-      admission.  Read state, drafts and required uploads, preferences,
-      Trash, category-send groups and Sent dispositions are preserved;
-      local synchronization state resets.
+      version 1.  The user-signed transfer grant names the destination
+      by its service base and its native address domain, which may
+      differ; the source verifies the delegation between them.  Copying
+      an export or retaining a signature does not grant live service
+      authority.  Snapshots use RFC 9995 with exact retained JSON
+      manifest preimages, an empty unprotected map, and purpose/version-
+      specific preimage_type values.  Their larger limits and live
+      cutover authority remain separate from envelope admission.  Read
+      state, drafts and required uploads, preferences, Trash, category-
+      send groups and Sent dispositions are preserved; local
+      synchronization state resets.
 
    The optional client-to-provider Hail JMAP profile uses [RFC8620] for
    Session discovery, typed methods, changes, binary transfer and
@@ -1052,20 +1106,6 @@ Internet-Draft                    RACR                     November 2026
    nor constitute RACR delivery evidence.  The complete profiles are in
    [HAIL-SPEC].
 
-
-
-
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 19]
-
-Internet-Draft                    RACR                     November 2026
-
-
    Attachment definitions are in [HAIL-ATTACHMENTS]; the other extension
    definitions are in the fixed snapshot [HAIL-SPEC].  Their eventual
    division into companion Internet-Drafts is an editorial decision, not
@@ -1074,12 +1114,20 @@ Internet-Draft                    RACR                     November 2026
    passkey flows, database tables, and deployment topology are not
    federation requirements.
 
-   End-to-end encryption, attachment formats beyond
-   PNG/JPEG/WebP/PDF/TXT/LOG, additional publisher layouts, optional-
-   profile capability discovery, bulk federation submission, and
-   federated read/open receipts remain deferred.  A provider-local
-   implementation of an undeclared feature is not a negotiated
-   interoperable extension.
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 20]
+
+Internet-Draft                    RACR                     November 2026
+
+
+   End-to-end encryption, outbound email and bridge-to-bridge email
+   profiles, attachment formats beyond PNG/JPEG/WebP/PDF/TXT/LOG,
+   additional publisher layouts, optional-profile capability discovery,
+   bulk federation submission, and federated read/open receipts remain
+   deferred.  A provider-local implementation of an undeclared feature
+   is not a negotiated interoperable extension.
 
 11.  Security Considerations
 
@@ -1114,17 +1162,27 @@ Internet-Draft                    RACR                     November 2026
    Resource attacks include large declared CBOR lengths, deeply nested
    structures, expensive signatures, DID-resolution amplification,
    stalled transfers, gzip expansion, and image decoder attacks.  Apply
+   structural limits before expensive work; bound concurrent work and
+   scratch allocation separately.  Grants authorize delivery categories,
+   not unlimited resource consumption.
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 20]
+
+
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 21]
 
 Internet-Draft                    RACR                     November 2026
 
 
-   structural limits before expensive work; bound concurrent work and
-   scratch allocation separately.  Grants authorize delivery categories,
-   not unlimited resource consumption.
+   A relayed-origin statement (Section 8.1) is signed by the sender, not
+   by the original author, and an authorized sender can state a false
+   origin.  Presenting it as the sender, or using it for authorization
+   or reply addressing, would let a sender impersonate arbitrary email
+   authors.
 
    Retrieval tokens remain sensitive even though possession alone no
    longer authorizes content access.  The current recipient messaging-
@@ -1171,9 +1229,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-
-
-Creviston                  Expires 15 May 2027                 [Page 21]
+Creviston                  Expires 26 May 2027                 [Page 22]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -1229,7 +1285,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 22]
+Creviston                  Expires 26 May 2027                 [Page 23]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -1263,16 +1319,16 @@ Internet-Draft                    RACR                     November 2026
 
    [HAIL-ATTACHMENTS]
               contributors, H., "Message attachments, commit
-              7f05efcbdde7775e108288bf9c210c5b56f607d2", November 2026,
+              7b21f960dee7c236972a6bda667e4e3f52762007", November 2026,
               <https://github.com/j4crev/hail/
-              blob/7f05efcbdde7775e108288bf9c210c5b56f607d2/spec/
+              blob/7b21f960dee7c236972a6bda667e4e3f52762007/spec/
               attachments.md>.
 
    [HAIL-SPEC]
               contributors, H., "Hail alpha specification, commit
-              7f05efcbdde7775e108288bf9c210c5b56f607d2", November 2026,
+              7b21f960dee7c236972a6bda667e4e3f52762007", November 2026,
               <https://github.com/j4crev/hail/
-              tree/7f05efcbdde7775e108288bf9c210c5b56f607d2/spec>.
+              tree/7b21f960dee7c236972a6bda667e4e3f52762007/spec>.
 
    [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
@@ -1285,7 +1341,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 23]
+Creviston                  Expires 26 May 2027                 [Page 24]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -1341,7 +1397,7 @@ Internet-Draft                    RACR                     November 2026
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 24]
+Creviston                  Expires 26 May 2027                 [Page 25]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -1397,7 +1453,7 @@ Appendix A.  Open Protocol Questions
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 25]
+Creviston                  Expires 26 May 2027                 [Page 26]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -1413,7 +1469,7 @@ Internet-Draft                    RACR                     November 2026
 Appendix B.  Source Map and Review Boundary
 
    The normative source snapshot is
-   7f05efcbdde7775e108288bf9c210c5b56f607d2 for both HAIL references.
+   7b21f960dee7c236972a6bda667e4e3f52762007 for both HAIL references.
    This document is maintained separately from the implementation
    specification.  Its chapter mapping is: identity/discovery to did-
    profile.md, address-binding.md, sender-profile.md and plc-read-
@@ -1425,17 +1481,18 @@ Appendix B.  Source Map and Review Boundary
    formats.md and account-history.md; optional account access to
    provider-authentication.md and the jmap*.md profiles.
 
-   This working revision updates the pinned snapshot only for protocol
-   namespaces: current envelope preimage labels use the protocol domain,
-   and Hail JMAP capability URIs use the prefix
-   https://racrproto.com/ns/jmap/. Only the current envelope label is
-   accepted; JMAP clients and providers upgrade together.  Protected
-   signature inputs and authorization rules do not change.  The feature
-   inventory includes the separately referenced attachment
-   specification.  Connections, shared conversations, detached
-   attachments, and portability are implemented extensions.  Additional
-   attachment formats, advanced layouts, end-to-end encryption, and
-   federated read/open receipts remain deferred.
+   This working revision advances the pinned snapshot to include the
+   protocol namespace correction, the expanded spt-3 image limits with
+   JPEG assets, the signed relayed-origin body member, and transfer
+   destinations whose service and address domains differ.  Envelope
+   preimage labels use the protocol domain, and Hail JMAP capability
+   URIs use the prefix https://racrproto.com/ns/jmap/. Only the current
+   envelope label is accepted; JMAP clients and providers upgrade
+   together.  The feature inventory includes the separately referenced
+   attachment specification.  Connections, shared conversations,
+   detached attachments, and portability are implemented extensions.
+   Additional attachment formats, advanced layouts, end-to-end
+   encryption, and federated read/open receipts remain deferred.
 
    The open protocol questions do not reopen established requirements.
    In particular, current body size, mandatory SPT support, token-plus-
@@ -1452,8 +1509,7 @@ Appendix B.  Source Map and Review Boundary
 
 
 
-
-Creviston                  Expires 15 May 2027                 [Page 26]
+Creviston                  Expires 26 May 2027                 [Page 27]
 
 Internet-Draft                    RACR                     November 2026
 
@@ -1463,14 +1519,17 @@ Appendix C.  Body Structural Schema Excerpt
    The following Concise Data Definition Language (CDDL) excerpt
    ([RFC8610]) uses the pinned hail.cddl body, asset, and attachment
    definitions, with attachment semantics from [HAIL-ATTACHMENTS] and
-   the digest dependency included.  It defines structure only: the prose
-   and source specification impose additional mark-reference, role, PNG,
-   text, attachment-content, aggregate-size, and cross-field validation.
-   In particular, spt-3 permits one to eight image or header assets, all
-   referenced, and at most eight image blocks with eight million total
-   displayed pixels; only the first block may reference a header asset.
-   Unknown fields are not permitted.
+   the digest and timestamp dependencies included.  It defines structure
+   only: the prose and source specification impose additional mark-
+   reference, role, image-format, origin-syntax, text, attachment-
+   content, aggregate-size, and cross-field validation.  In particular,
+   spt-3 permits 1 to 24 image or header assets, all referenced, and at
+   most 24 image blocks with eight million total displayed pixels; only
+   the first block may reference a header asset, and an avatar asset is
+   PNG only.  Unknown fields are not permitted.
 
+   hail-uint = 0..9007199254740991
+   timestamp = hail-uint
    sha256 = bstr .size 32
 
    digest = {
@@ -1503,17 +1562,17 @@ Appendix C.  Body Structural Schema Excerpt
    }
 
    spt-1-span = {
-     "_type": "span",
-     "text": tstr,
-     "marks": []
 
 
 
-Creviston                  Expires 15 May 2027                 [Page 27]
+Creviston                  Expires 26 May 2027                 [Page 28]
 
 Internet-Draft                    RACR                     November 2026
 
 
+     "_type": "span",
+     "text": tstr,
+     "marks": []
    }
 
    ; spt-2 adds a closed set of styles, lists, decorators
@@ -1522,7 +1581,8 @@ Internet-Draft                    RACR                     November 2026
      "version": 1,
      "profile": "spt-2",
      "blocks": [* spt-2-text-block],
-     ? "attachments": [1*20 hail-attachment]
+     ? "attachments": [1*20 hail-attachment],
+     ? "origin": body-origin
    }
 
    spt-2-text-block = {
@@ -1549,43 +1609,60 @@ Internet-Draft                    RACR                     November 2026
      ? "title": tstr
    }
 
-   ; spt-3 interleaves bounded, digest-bound PNG images and rich text.
+   ; spt-3 interleaves bounded, digest-bound PNG or JPEG images
+   ; and rich text. Role-specific formats and sizes (avatar: PNG,
+   ; 32768 bytes) are semantic checks.
    hail-body-spt-3 = {
      "version": 1,
      "profile": "spt-3",
      "assets": asset-manifest-v1,
      "blocks": [1* (spt-image-block / spt-2-text-block)],
-     ? "attachments": [1*20 hail-attachment]
+     ? "attachments": [1*20 hail-attachment],
+
+
+
+Creviston                  Expires 26 May 2027                 [Page 29]
+
+Internet-Draft                    RACR                     November 2026
+
+
+     ? "origin": body-origin
    }
 
    spt-image-block = {
      "_type": "spt.image",
      "asset": tstr,
      "alt": tstr,
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 28]
-
-Internet-Draft                    RACR                     November 2026
-
-
      ? "caption": tstr
+   }
+
+   ; The sender's statement that it relayed the content from an
+   ; external source. Address, name and list-identifier syntax
+   ; are semantic checks.
+   body-origin = body-origin-email
+
+   body-origin-email = {
+     "type": "email",
+     "from_address": tstr,
+     ? "from_name": tstr,
+     ? "list_id": tstr,
+     "authentication": "dkim-aligned" / "none",
+     "received_at": timestamp
    }
 
    ; Reusable bundled-image manifest for future body
    ; and profile versions.
    asset-manifest-v1 = {
      "version": 1,
-     "assets": [1*8 bundled-image-asset-v1]
+     "assets": [1*24 bundled-image-asset-v1]
    }
 
    bundled-image-asset-v1 = {
      "id": tstr,
      "role": "avatar" / "header" / "image",
-     "media_type": "image/png",
+     "media_type": "image/png" / "image/jpeg",
      "loading": "bundled",
-     "size": 1..196608,
+     "size": 1..524288,
      "digest": digest,
      "width": 1..2400,
      "height": 1..2400,
@@ -1600,25 +1677,4 @@ Author's Address
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Creviston                  Expires 15 May 2027                 [Page 29]
+Creviston                  Expires 26 May 2027                 [Page 30]

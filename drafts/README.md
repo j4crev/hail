@@ -31,7 +31,7 @@ with up to 20 files totaling 25 MiB per message. Additional attachment formats a
 advanced publisher layouts remain future work.
 
 It is grounded in the immutable specification snapshot at
-`7f05efcbdde7775e108288bf9c210c5b56f607d2`. Some detailed normative semantics still
+`7b21f960dee7c236972a6bda667e4e3f52762007`. Some detailed normative semantics still
 depend on that snapshot; this draft is explicitly **not yet a self-contained
 implementation specification**. The editorial status note identifies remaining
 document incorporation work.
@@ -72,6 +72,10 @@ Author metadata, internal reference targets, and the body CDDL definitions were
 also checked against the source specification. The plain-text rendering is 25
 pages. These results describe that validation run.
 
+Refresh validation on 2026-11-22: xml2rfc 3.35.0 produced both renderings
+without warnings; idnits 3.3.0 passed with zero errors, warnings, or comments.
+The plain-text rendering is 30 pages.
+
 ## Phase 7 refresh
 
 The unsubmitted `-00` source now reflects the current pinned implementation/spec
@@ -85,8 +89,12 @@ is the single working owner for registration templates, allocation policy and ac
 submission status. The [spec index review](../spec/README.md#standards-profile-security-review)
 owns security-review boundaries, and the [vector index](../spec/vectors/README.md#phase-7-evidence-and-limits)
 owns executable evidence. Do not copy their evolving inventories into this README.
-The pinned draft reference records behavior before the namespace correction.
-Appendix B explicitly records the exclusive current `racrproto.com` namespace; advance the public snapshot before submission so it incorporates that change.
+The 2026-11-22 refresh advanced the pinned snapshot from `7f05efcb` to `7b21f960`.
+That picks up the `racrproto.com` namespace correction, `spt-3` bodies with up to
+24 PNG or JPEG images of 512 KiB, the signed relayed-origin body member, and
+transfer destinations whose service and address domains differ. Appendix B
+records these changes, and Appendix C was checked rule by rule against
+`spec/hail.cddl` at the new snapshot.
 
 Validation of this refresh is recorded with the phase 7 vector evidence below its
 protocol checks. Existing `-00` may be edited because it has never been submitted;
